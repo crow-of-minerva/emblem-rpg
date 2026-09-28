@@ -349,7 +349,7 @@ const GROUP_C_TRIGGERS = triggerOptions(PASSIVE_EFFECT_TRIGGERS).map(entry => en
  */
 const ALL_TRIGGERS = [...GROUP_A_TRIGGERS, ...GROUP_B_TRIGGERS, ...GROUP_C_TRIGGERS];
 
-/** Whether a trigger belongs to the activation group, including the superseded trigger. */
+/** Whether a trigger belongs to the activation group. */
 function isGroupBTrigger(triggerKey) {
   return GROUP_B_TRIGGERS.some(t => t.key === triggerKey);
 }

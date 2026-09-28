@@ -356,11 +356,10 @@ function refusedBond(code, named = null) {
 }
 
 /**
- * Whether every use of an Item reaches a Guard step: an entry with no condition that runs on `onActivation`, or on
- * `onActivate` with no save outcome named, lists one among its top-level steps. The item projection
- * (projections/items.mjs) uses it so engine/items/activation.mjs checks such a use's bonds with resolveGuardBond
- * before it writes anything. A Guard step behind a save outcome or a condition is checked by the bond writer only
- * when its effect runs.
+ * Whether every use of an Item reaches a Guard step: an entry with no condition that runs on `onActivation` lists
+ * one among its top-level steps. The item projection (projections/items.mjs) uses it so engine/items/activation.mjs
+ * checks such a use's bonds with resolveGuardBond before it writes anything. A Guard step behind a save outcome or a
+ * condition is checked by the bond writer only when its effect runs.
  * @param {readonly object[]} entries The Item's activation entries.
  * @returns {boolean}
  */

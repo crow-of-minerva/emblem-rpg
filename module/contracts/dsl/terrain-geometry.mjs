@@ -103,8 +103,8 @@ export function normalizeGeometry(raw) {
 }
 
 /**
- * A custom budget is a count of squares. A finite number stays, a numeric string (as older content stored it)
- * becomes that number, and anything else clears to '' so the editor shows an empty amount and validation asks for one.
+ * A custom budget is a count of squares. A finite number stays, a numeric string becomes that number, and anything
+ * else clears to '' so the editor shows an empty amount and validation asks for one.
  */
 function numericBudget(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : '';

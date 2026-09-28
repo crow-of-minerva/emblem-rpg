@@ -192,7 +192,7 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
           materials: new F.ArrayField(material(), { initial: () => [] })
         }),
         refinement: new F.SchemaField({
-          // Default tiers are already relative, so migrateRefinementToRelative leaves a defaulted refinement as built.
+          // Refinement tiers hold changes from the item's base stats, never absolute values.
           relative: bool(true),
           tiers: new F.ArrayField(refinementTier(), { initial: () => Array.from({ length: REFINEMENT_TIER_COUNT }, () => ({
             enabled: false, xpReq: 0, forgeMult: null, skillCheck: '', materials: [],

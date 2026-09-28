@@ -92,8 +92,7 @@ function idTail(raw) {
 export const MAX_TOKEN_ART_TABS = 10;
 
 /**
- * An entry's triggers, any one of which fires it, for token art transitions and the appearance editor. An older
- * entry with only a `name` counts as that single trigger.
+ * An entry's triggers, any one of which fires it, for token art transitions and the appearance editor.
  */
 export function readTokenEntryTriggers(entry) {
   if (Array.isArray(entry?.triggers) && entry.triggers.length) {

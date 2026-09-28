@@ -38,8 +38,7 @@ const FALLBACK_IMG = RESOURCE_FALLBACK_IMG;
 /**
  * Collect the forging and refinement fields for the Item update. A blank tier cost, skill or material list keeps
  * the one from the tier below (forgingTerms in game/items/rules.mjs), and a blank tier stat is saved as null, which
- * leaves the item's base stat as it is. The tiers are saved with `relative: true` so the Item migration doesn't
- * convert them again.
+ * leaves the item's base stat as it is. Tier stats are changes from the item's base stats (`relative: true`).
  * @param {object} forging                The forging working copy, carrying its materials.
  * @param {boolean} showRefinement        Whether refinement is offered at all.
  * @param {boolean} isArmor               Which stat set to read.

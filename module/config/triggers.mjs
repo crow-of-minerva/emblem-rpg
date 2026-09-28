@@ -20,7 +20,7 @@ export const TRIGGER_PRESENTATION = Object.freeze({
   onUseItem: ['On Use Item', 'fas fa-flask']
 });
 
-/** How a trigger reads, falling back to its own key for one no longer offered. */
+/** How a trigger reads, falling back to its own key for one with no presentation entry. */
 export function triggerLabel(key) {
   return TRIGGER_PRESENTATION[key]?.[0] ?? key;
 }
