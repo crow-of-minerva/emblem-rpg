@@ -3,6 +3,7 @@ import { AURA_TARGET_TYPES } from '../../contracts/domains/items.mjs';
 import { areFactionsFriendly, areFactionsHostile } from '../character/rules.mjs';
 import { ALL_UNIT_TYPE_KEYS, STATS } from '../../contracts/domains/characters.mjs';
 import { evaluate as evaluateConditionTree } from './conditions.mjs';
+import { baseItemName } from '../items/rules.mjs';
 import { isEmpty as conditionIsEmpty } from '../../contracts/dsl/conditions.mjs';
 import { footprintDistance } from '../../lib/core/geometry.mjs';
 import { isInMeleeRange } from '../targeting/attack-grid.mjs';
@@ -150,7 +151,7 @@ function collectExpressionGearReads(text, reads) {
 /**
  * The aura bonuses one placed unit receives from every unit on the board. Called by planAuraFields and by the board
  * projection (foundry/adapters/projections/board.mjs). A unit's own aura ignores distance. A non-stackable modifier
- * counts once per source item, so copies of the same relic don't stack.
+ * counts once per item name, refinement suffix ignored, so copies of the same relic don't stack.
  * @param {{units: object[]}} board Detached snapshot of the placed units.
  * @param {string} receiverTokenUuid Token receiving the auras.
  * @returns {object[]} Frozen contribution facts.
@@ -223,8 +224,7 @@ function resolveContribution(emission, source, receiver, state) {
   if (!target) return null;
 
   if (modifier.stackable !== true) {
-    const identity = emission.itemSource || emission.itemName || '';
-    const key = `${identity}::${modifier.name || modifier.target}::${target}`;
+    const key = `${baseItemName(emission.itemName)}::${modifier.name || modifier.target}::${target}`;
     if (state.appliedNonStackable.has(key)) return null;
     state.appliedNonStackable.add(key);
   }
