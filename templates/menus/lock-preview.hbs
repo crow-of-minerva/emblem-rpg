@@ -16,6 +16,7 @@
         <div class="skill-check-dc">
           <div class="skill-info">{{skillLabel}} vs DC {{difficultyClass}}</div>
           <div class="failure-chance {{chanceBand}}">Success Rate: {{successPercent}}%</div>
+          {{#if energyCost}}<div class="skill-info">Energy Cost: {{energyCost}}</div>{{/if}}
         </div>
       </div>
     </div>
