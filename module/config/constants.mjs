@@ -9,8 +9,10 @@ export const SYSTEM_VERSION = '1.0.1';
 /**
  * World schema version stored in the `schemaVersion` setting. `stampWorldSchema` in
  * `foundry/adapters/services/settings-policy.mjs` stamps it on a fresh world and reports a world behind or ahead.
+ * A world behind it is brought up to date by `init/migrate-world.mjs` on the host's next load, so raise it whenever
+ * the Migrate World Content macro gains work that existing worlds need.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** Delay used by ui/controls/movement.mjs to bridge key presses before native WASD repeat starts. */
 export const MOVEMENT_HOLD_REPEAT_DELAY_MS = 125;

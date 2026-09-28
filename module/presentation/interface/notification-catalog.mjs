@@ -633,6 +633,28 @@ export const NOTIFICATIONS = Object.freeze({
     text: ({ stored, current }) =>
       `This world's data schema is ${stored}, but this build writes schema ${current}. No migration runs.`
   },
+  [NOTIFICATION_IDS.WORLD_MIGRATION_STARTED]: {
+    level: 'info', permanent: true, text: () => 'Automatic world content migration in process. Please wait.'
+  },
+  [NOTIFICATION_IDS.WORLD_MIGRATION_COMPLETED]: { level: 'info', text: () => 'Content migration completed. Have fun!' },
+  [NOTIFICATION_IDS.WORLD_MIGRATION_CONFLICTS]: {
+    level: 'warn',
+    permanent: true,
+    text: ({ count }) => `Content migration left ${count} item(s) unchanged because they hold animations or effects `
+      + 'under both the old and new names. The console lists them.'
+  },
+  [NOTIFICATION_IDS.WORLD_MIGRATION_INCOMPLETE]: {
+    level: 'warn',
+    permanent: true,
+    text: ({ count }) => `Content migration finished with ${count} failure(s). The console lists them. Fix them, then `
+      + 'run the Migrate World Content macro from the Emblem RPG | Macros compendium.'
+  },
+  [NOTIFICATION_IDS.WORLD_MIGRATION_FAILED]: {
+    level: 'error',
+    permanent: true,
+    text: () => 'Automatic world content migration failed. Details are in the console. It runs again on the next '
+      + 'load, or run the Migrate World Content macro from the Emblem RPG | Macros compendium.'
+  },
   // Table commands. Recovery itself says nothing: its result codes carry no copy and show no notification.
   [NOTIFICATION_IDS.TABLE_COMMAND_GM_ONLY]: { level: 'warn', text: ({ label }) => `${label} is GM-only.` },
   [NOTIFICATION_IDS.TABLE_COMMAND_USAGE]: { level: 'warn', text: ({ message }) => message },

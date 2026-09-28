@@ -10,9 +10,11 @@ import {
 import { createRecoveryChatCommands } from '../ui/apps/foundry/chat-commands.mjs';
 import {
   WORLD_SCHEMA_STATES,
+  stampMigratedWorldSchema,
   stampWorldSchema,
   tokenOutlineColours
 } from '../foundry/adapters/services/settings-policy.mjs';
+import { migrateWorldContent } from './migrate-world.mjs';
 import { projectUserLordUuid } from '../foundry/adapters/projections/parties.mjs';
 import { projectCharacterSource } from '../foundry/adapters/projections/characters.mjs';
 import {
@@ -966,6 +968,19 @@ export function createSystemRuntime() {
   }
 
   /**
+   * Bring a world an earlier build wrote up to this build's schema through migrateWorldContent
+   * (init/migrate-world.mjs). Its execution segment opens like a startup sweep, retried while a reconciliation
+   * MaintenanceScheduler started still holds world execution.
+   */
+  function migrateWorld() {
+    return migrateWorldContent({ notifications, diagnostics, recordSchema: stampMigratedWorldSchema,
+      openSegment: () => retryWhileBusy({ label: 'startup:content-migration', bound: STARTUP_RELEASE_RETRY,
+        wait: presentationDelivery.wait, diagnostics, retryable: result => STARTUP_RETRY_CODES.has(result?.code),
+        exhausted: { detail: 'startup-migration-busy', message: 'startup.migration-busy' },
+        run: () => openExecutionSegment({ label: 'content-migration' }) }) });
+  }
+
+  /**
    * Update CommandGateway and the processing blockers when HostPagePresence sees a second host tab open or close.
    * Regaining sole eligibility makes this page the authoritative host again, so it restores whatever an
    * interrupted host left. Only one restoration runs at a time, and never while one of this page's own handlers
@@ -1310,13 +1325,15 @@ export function createSystemRuntime() {
     void audio.preload(SOUND_IDS.COMBAT_PHASE_PLAYER);
     void audio.preload(SOUND_IDS.COMBAT_PHASE_ENEMY);
     const readyPlayerCharacters = playerCharacterHooks.onReadyPlayerCharacters();
-    void stampWorldSchema().then(verdict => {
-      if ([WORLD_SCHEMA_STATES.BEHIND, WORLD_SCHEMA_STATES.AHEAD].includes(verdict.state)) {
-        platformNotifier.schemaMismatch(verdict);
-      }
+    const schema = stampWorldSchema().catch(error => {
+      recordDiagnostic(diagnostics, { sourcePath: import.meta.url, error, detail: 'world-schema' });
+      return null;
     });
     await settleStartupMaintenance(readyPlayerCharacters);
     executionLifecycle.advance(EXECUTION_LIFECYCLE.READY);
+    const verdict = await schema;
+    if (verdict?.state === WORLD_SCHEMA_STATES.AHEAD) platformNotifier.schemaMismatch(verdict);
+    if (verdict?.state === WORLD_SCHEMA_STATES.BEHIND && localUserIsActiveGm()) await migrateWorld();
     console.info(`Emblem RPG | ${SYSTEM_VERSION} ready`);
   }
 

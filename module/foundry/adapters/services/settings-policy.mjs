@@ -120,6 +120,18 @@ export async function stampWorldSchema() {
   return { state, stored, current };
 }
 
+/**
+ * Record the system schema version on a world `migrateWorldContent` (init/migrate-world.mjs) has just brought up to
+ * date. Only the command host writes it, and a world a newer build stamped keeps its version.
+ * @returns {Promise<boolean>} Whether the version was written.
+ */
+export async function stampMigratedWorldSchema() {
+  const stored = Number(readSystemSetting(SCHEMA_VERSION_SETTING)) || 0;
+  if (stored >= SCHEMA_VERSION || !localUserIsActiveGm()) return false;
+  await globalThis.game.settings.set(SYSTEM_ID, SCHEMA_VERSION_SETTING, SCHEMA_VERSION);
+  return true;
+}
+
 /* -------------------------------------------- */
 /*  Gameplay setting reads                      */
 /* -------------------------------------------- */

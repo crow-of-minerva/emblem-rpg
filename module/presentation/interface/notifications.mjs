@@ -41,14 +41,25 @@ export class NotificationService {
     this.diagnostics = diagnostics;
   }
 
+  /** Show the notice with this id, and return Foundry's handle for it, or undefined when no toast went up. */
   show(id, data = {}) {
-    this.showResult({ code: id, data });
+    return this.showResult({ code: id, data });
   }
 
   showResult(result) {
-    try { this.#showResult(result); }
+    try { return this.#showResult(result); }
     catch (error) {
       recordDiagnostic(this.diagnostics, { sourcePath: import.meta.url, error, detail: 'Render a notification' });
+      return undefined;
+    }
+  }
+
+  /** Take down a notice `show` returned, such as a permanent one whose work has finished. */
+  dismiss(notice) {
+    if (!notice) return;
+    try { ui.notifications?.remove?.(notice); }
+    catch (error) {
+      recordDiagnostic(this.diagnostics, { sourcePath: import.meta.url, error, detail: 'Dismiss a notification' });
     }
   }
 
@@ -88,7 +99,7 @@ export class NotificationService {
     if (REFUSAL_LEVELS.includes(definition.level)) this.playSound(SOUND_IDS.UI_ERROR);
     const method = ui.notifications?.[definition.level] ?? ui.notifications?.info;
     // A permanent notice stays until the reader dismisses it. Foundry fades out every other one.
-    method?.call(ui.notifications, definition.text(result.data ?? {}),
+    return method?.call(ui.notifications, definition.text(result.data ?? {}),
       definition.permanent === true ? { permanent: true } : undefined);
   }
 }
