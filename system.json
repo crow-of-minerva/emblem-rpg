@@ -62,8 +62,8 @@
         "id": "emblem-rpg-studio",
         "type": "module",
         "compatibility": {
-          "minimum": "1.0.0",
-          "verified": "1.0.0"
+          "minimum": "1.0.1",
+          "verified": "1.0.1"
         },
         "manifest": "https://github.com/crow-of-minerva/emblem-rpg-studio/releases/latest/download/module.json"
       },
@@ -71,8 +71,8 @@
         "id": "emblem-rpg-content",
         "type": "module",
         "compatibility": {
-          "minimum": "1.0.0",
-          "verified": "1.0.0"
+          "minimum": "1.0.1",
+          "verified": "1.0.1"
         },
         "manifest": "https://github.com/crow-of-minerva/emblem-rpg-content/releases/latest/download/module.json"
       },
@@ -80,8 +80,8 @@
         "id": "emblem-rpg-enemy-ai",
         "type": "module",
         "compatibility": {
-          "minimum": "1.0.0",
-          "verified": "1.0.0"
+          "minimum": "1.0.1",
+          "verified": "1.0.1"
         },
         "manifest": "https://github.com/crow-of-minerva/emblem-rpg-enemy-ai/releases/latest/download/module.json"
       }
