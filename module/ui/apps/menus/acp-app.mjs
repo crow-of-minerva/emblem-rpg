@@ -585,10 +585,10 @@ export class ActorControlPanel extends ActorControlApplication {
     });
   }
 
-  /** Open Token Studio through the staff-only Studio adapter. */
+  /** Open Token Studio through the Studio adapter. */
   static async editTokenSlot(event, target) {
     event.preventDefault();
-    if (this.actor.isToken || !game.user.isGM) return;
+    if (this.actor.isToken || !canFoundryUserAuthorDocument(game.user, this.actor)) return;
     const outcome = await openStudioForSlot(this.actor, target.dataset.slot === 'avatar' ? 'default' : target.dataset.slot);
     if (!outcome.ok) showStudioFailure(outcome);
   }
@@ -743,7 +743,7 @@ export class ActorControlPanel extends ActorControlApplication {
   /** Open the class art slot through the staff-only Studio adapter. */
   static async editTabTokenSlot(event, target) {
     event.preventDefault();
-    if (this.actor.isToken || !game.user.isGM) return;
+    if (this.actor.isToken || !canFoundryUserAuthorDocument(game.user, this.actor)) return;
     const outcome = await openStudioForSlot(this.actor, target.dataset.slot, { tabId: target.dataset.tab });
     if (!outcome.ok) showStudioFailure(outcome);
   }
@@ -761,7 +761,7 @@ export class ActorControlPanel extends ActorControlApplication {
   /** Open the conditional art slot through the staff-only Studio adapter. */
   static async editConditionalSlot(event, target) {
     event.preventDefault();
-    if (this.actor.isToken || !game.user.isGM) return;
+    if (this.actor.isToken || !canFoundryUserAuthorDocument(game.user, this.actor)) return;
     const entryIndex = Number(target.dataset.entry);
     if (!Number.isInteger(entryIndex)) return;
     const outcome = await openStudioForSlot(this.actor, target.dataset.slot,
