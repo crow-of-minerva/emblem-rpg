@@ -17627,14 +17627,7 @@ img.ect-name-badge {
   flex: 0 0 auto;
   display: flex;
   gap: 2px;
-  opacity: 0;
   transition: opacity 100ms ease;
-}
-
-.emblem-terrain-builder .terrain-zone-row:hover .terrain-zone-row-btns,
-.emblem-terrain-builder .terrain-zone-row.is-editing .terrain-zone-row-btns,
-.emblem-terrain-builder .terrain-zone-row:focus-within .terrain-zone-row-btns {
-  opacity: 1;
 }
 
 .emblem-terrain-builder .terrain-mini-btn {
