@@ -247,11 +247,6 @@ function passesOutcomeGate(entry, context) {
     case 'onSucceedSave': return Boolean(savingThrow && savingThrow.success === true);
     case 'onFailedCheck': return Boolean(skillCheck && skillCheck.success === false);
     case 'onSucceedCheck': return Boolean(skillCheck && skillCheck.success === true);
-    case 'onActivate': {
-      if (entry.failedSave !== true && entry.failedSave !== false) return true;
-      const result = savingThrow ?? skillCheck;
-      return Boolean(result && (entry.failedSave ? result.success === false : result.success === true));
-    }
     default: return true;
   }
 }
@@ -376,7 +371,7 @@ export function entriesAlwaysGuard(entries) {
 
 function runsOnEveryUse(entry) {
   if (!validateEffectEntry(entry).valid || !conditionIsEmpty(entry.condition)) return false;
-  return entry.trigger === 'onActivation' || (entry.trigger === 'onActivate' && typeof entry.failedSave !== 'boolean');
+  return entry.trigger === 'onActivation';
 }
 
 /**

@@ -20,12 +20,6 @@ export class ConvoyDataModel extends foundry.abstract.TypeDataModel {
       notes: new F.SchemaField({ description: new F.StringField({ initial: '' }) })
     };
   }
-
-  /** Bring older saved Convoy data up to the current schema (migrateContainerSource). */
-  static migrateData(source) {
-    if (source && typeof source === 'object') migrateContainerSource(source);
-    return super.migrateData(source);
-  }
 }
 
 /* -------------------------------------------- */
@@ -61,39 +55,5 @@ export class VendorDataModel extends foundry.abstract.TypeDataModel {
         bonus: new F.NumberField({ initial: 0, integer: true, min: -10, max: 10 })
       }), { initial: () => [] })
     };
-  }
-
-  /** Bring older saved Vendor data up to the current schema (migrateContainerSource). */
-  static migrateData(source) {
-    if (source && typeof source === 'object') migrateContainerSource(source);
-    return super.migrateData(source);
-  }
-}
-
-/* -------------------------------------------- */
-/*  Source migration                            */
-/* -------------------------------------------- */
-/**
- * Older Convoys and Vendors kept faction, capacity and avatar scale in flags, and the description as a top-level
- * string. Move each into its current place.
- */
-function migrateContainerSource(source) {
-  const flags = source.flags;
-  if (flags && typeof flags === 'object') {
-    const faction = source.faction ?? (source.faction = {});
-    if (faction.name === undefined && flags.factionName !== undefined) faction.name = flags.factionName;
-    if (faction.color === undefined && flags.factionColor !== undefined) faction.color = flags.factionColor;
-    if (source.capacity === undefined && flags.capacity !== undefined) source.capacity = flags.capacity;
-    const avatarScale = flags.tokenScales?.avatar;
-    if (avatarScale !== undefined) {
-      const art = source.art ?? (source.art = {});
-      if (art.avatarScale === undefined) art.avatarScale = avatarScale;
-    }
-    delete source.flags;
-  }
-  if (typeof source.description === 'string') {
-    const notes = source.notes ?? (source.notes = {});
-    if (notes.description === undefined) notes.description = source.description;
-    delete source.description;
   }
 }

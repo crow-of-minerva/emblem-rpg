@@ -16,9 +16,6 @@ const ART_STATES = Object.freeze(['intact', 'destroyed', 'closed', 'opened']);
  * prototype token's scale until the Object sheet sets one.
  */
 const LOCK_ART_STATES = Object.freeze(['closed', 'opened']);
-const SUBTYPE_RENAMES = Object.freeze({
-  Obstacle: 'Destructible', 'Cooking Station': 'Cooking Pot', 'Crafting Station': 'Workshop'
-});
 const ALTAR_TIER_MINIMUMS = Object.freeze({ t2: 1000, t3: 2000, t4: 4000, t5: 8000 });
 const ARMAMENT_REQ = Object.freeze([
   'None', 'Brawling', 'Blade', 'Polearm', 'Heavy', 'Bow', 'Covert', 'Arcane', 'Elemental', 'Divine', 'Occult'
@@ -111,12 +108,6 @@ export class ObjectDataModel extends foundry.abstract.TypeDataModel {
       effects: new F.ArrayField(new F.ObjectField(), { initial: () => [] }),
       ...downtimeStationSchema(F, num)
     };
-  }
-
-  /** Bring older saved Object data up to the current schema (migrateObjectSource) before Foundry loads it. */
-  static migrateData(source) {
-    if (source && typeof source === 'object') migrateObjectSource(source);
-    return super.migrateData(source);
   }
 
   /**
@@ -220,101 +211,4 @@ function downtimeStationSchema(F, num) {
       }), { initial: () => [], max: REQUISITION_LIMITS.maxFactions })
     })
   };
-}
-
-/* -------------------------------------------- */
-/*  Source migration                            */
-/* -------------------------------------------- */
-/**
- * Older Objects kept faction and statuses in flags, HP, Integrity and defenses under `attributes`, and protections,
- * vulnerabilities and immunities under `armor`. Their art settings were top-level keys. Move each into its current
- * place, and rename `animV2` and `effectsV2` to `anim` and `effects`.
- */
-function migrateObjectSource(source) {
-  migrateObjectSubtype(source);
-  migrateObjectPools(source);
-  migrateArmamentShape(source);
-  if (source.faction !== undefined && source.flags === undefined && source.attributes === undefined) return;
-  const flags = source.flags ?? {};
-  const faction = source.faction ?? (source.faction = {});
-  for (const [from, to] of [['actorType', 'role'], ['factionName', 'name'], ['factionColor', 'color']]) {
-    if (faction[to] === undefined && flags[from] !== undefined) faction[to] = flags[from];
-  }
-  const statuses = source.statuses ?? (source.statuses = {});
-  if (statuses.passing === undefined && flags.isPassing !== undefined) statuses.passing = flags.isPassing === true;
-  if (statuses.passable === undefined && flags.isPassable !== undefined) statuses.passable = flags.isPassable === true;
-  delete source.flags;
-
-  const attributes = source.attributes;
-  if (attributes && typeof attributes === 'object') {
-    const resources = source.resources ?? (source.resources = {});
-    for (const key of ['hp', 'stn']) {
-      if (resources[key] === undefined && attributes[key] !== undefined) resources[key] = attributes[key];
-    }
-    const stats = source.stats ?? (source.stats = {});
-    for (const key of ['def', 'res']) {
-      if (stats[key] === undefined && attributes[key] !== undefined) {
-        stats[key] = { base: Number(attributes[key]?.total) || 0 };
-      }
-    }
-    delete source.attributes;
-  }
-
-  const armor = source.armor;
-  if (armor && typeof armor === 'object') {
-    if (source.prots === undefined && armor.prots !== undefined) source.prots = armor.prots;
-    if (source.vulns === undefined && armor.vulns !== undefined) source.vulns = armor.vulns;
-    if (source.imms === undefined && armor.immunities !== undefined) source.imms = armor.immunities;
-    delete source.armor;
-  }
-
-  const art = source.art ?? (source.art = {});
-  for (const [from, to] of [['altImagePath', 'altImagePath'], ['destroyedImagePath', 'destroyedImagePath']]) {
-    if (art[to] === undefined && source[from] !== undefined) art[to] = source[from];
-    delete source[from];
-  }
-  for (const state of ART_STATES) {
-    if (art[state] === undefined) {
-      const collected = {};
-      for (const [suffix, leaf] of [['Scale', 'scale'], ['Tint', 'tint'], ['OffsetX', 'offsetX'], ['OffsetY', 'offsetY']]) {
-        const key = `${state}${suffix}`;
-        if (source[key] !== undefined) collected[leaf] = source[key];
-      }
-      if (Object.keys(collected).length > 0) art[state] = collected;
-    }
-    for (const suffix of ['Scale', 'Tint', 'OffsetX', 'OffsetY']) delete source[`${state}${suffix}`];
-  }
-
-  if (source.anim === undefined && source.animV2 !== undefined) source.anim = source.animV2;
-  delete source.animV2;
-  if (source.effects === undefined && source.effectsV2 !== undefined) source.effects = source.effectsV2;
-  delete source.effectsV2;
-  if (source.unitType && typeof source.unitType === 'object') delete source.unitType.magic;
-}
-
-/** Rename retired subtypes (SUBTYPE_RENAMES). A drop chest was a flagged Chest before the Loot type existed. */
-function migrateObjectSubtype(source) {
-  const renamed = SUBTYPE_RENAMES[source.objectType];
-  if (renamed) source.objectType = renamed;
-  if (source.objectType === 'Chest' && source.isDropChest) source.objectType = 'Loot';
-}
-
-/** A stored aim shape outside the vocabulary (the retired Diamond and Line) folds onto Cross. */
-function migrateArmamentShape(source) {
-  const armament = source.armament;
-  if (!armament || typeof armament !== 'object' || armament.targetShape === undefined) return;
-  if (!TARGET_SHAPES.includes(armament.targetShape)) armament.targetShape = 'Cross';
-}
-
-/** Move the old `specialEffects.extraLives` pool to `special`, where its `remaining` count becomes its `value`. */
-function migrateObjectPools(source) {
-  const legacy = source.specialEffects;
-  delete source.specialEffects;
-  delete source.statusEffects;
-  const node = legacy?.extraLives;
-  if (!node || typeof node !== 'object') return;
-  const special = source.special ?? (source.special = {});
-  if (special.extraLives === undefined) {
-    special.extraLives = { value: node.remaining ?? node.value ?? 0, max: node.max ?? 0 };
-  }
 }

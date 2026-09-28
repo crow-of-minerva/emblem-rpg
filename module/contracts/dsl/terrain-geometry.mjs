@@ -202,7 +202,7 @@ export function findPromptGeometryStep(entries) {
   for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
     const entry = entries[entryIndex];
     if (!isPlainObject(entry)) continue;
-    if (entry.trigger !== 'onActivation' && entry.trigger !== 'onActivate') continue;
+    if (entry.trigger !== 'onActivation') continue;
     const steps = entry.action?.steps;
     if (!Array.isArray(steps)) continue;
     for (let stepIndex = 0; stepIndex < steps.length; stepIndex += 1) {

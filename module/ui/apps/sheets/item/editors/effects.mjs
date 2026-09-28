@@ -22,7 +22,6 @@ import {
   validate as validateAction,
   ACTIVATION_EFFECT_TRIGGERS,
   ATTACK_EFFECT_TRIGGERS,
-  LEGACY_EFFECT_TRIGGERS,
   PASSIVE_EFFECT_TRIGGERS
 } from '../../../../../contracts/dsl/effects.mjs';
 import { STATUS_EFFECTS, STATUS_KEYS, STATUS_NAMES, statusLabel } from '../../../../../config/statuses.mjs';
@@ -302,7 +301,7 @@ const TERRAIN_EDIT_PARAM_KEYS = Object.freeze([
   'lightLuminosity', 'lightAttenuation', 'lightSaturation', 'lightContrast', 'lightShadows'
 ]);
 let terrainPresetPromise = null;
-let terrainPresetData = { presets: [], legacyIcons: {}, names: new Set(), custom: {} };
+let terrainPresetData = { presets: [], names: new Set(), custom: {} };
 
 /* -------------------------------------------- */
 /*  Clipboard                                   */
@@ -337,12 +336,6 @@ const GROUP_A_TRIGGERS = triggerOptions(ATTACK_EFFECT_TRIGGERS);
 const GROUP_B_TRIGGERS = triggerOptions(ACTIVATION_EFFECT_TRIGGERS);
 
 /**
- * The superseded activation trigger, still offered so an effect authored under it can be opened and re-pointed.
- * @type {object[]}
- */
-const GROUP_B_TRIGGERS_LEGACY = triggerOptions(LEGACY_EFFECT_TRIGGERS);
-
-/**
  * Passive triggers, which fire off the turn cycle rather than off a use.
  * @type {object[]}
  */
@@ -354,12 +347,11 @@ const GROUP_C_TRIGGERS = triggerOptions(PASSIVE_EFFECT_TRIGGERS).map(entry => en
  * Every trigger, for looking one up by key whatever group it belongs to.
  * @type {object[]}
  */
-const ALL_TRIGGERS = [...GROUP_A_TRIGGERS, ...GROUP_B_TRIGGERS, ...GROUP_B_TRIGGERS_LEGACY, ...GROUP_C_TRIGGERS];
+const ALL_TRIGGERS = [...GROUP_A_TRIGGERS, ...GROUP_B_TRIGGERS, ...GROUP_C_TRIGGERS];
 
 /** Whether a trigger belongs to the activation group, including the superseded trigger. */
 function isGroupBTrigger(triggerKey) {
-  return GROUP_B_TRIGGERS.some(t => t.key === triggerKey)
-      || GROUP_B_TRIGGERS_LEGACY.some(t => t.key === triggerKey);
+  return GROUP_B_TRIGGERS.some(t => t.key === triggerKey);
 }
 
 function isGroupCTrigger(triggerKey) {
@@ -593,10 +585,7 @@ function parseTerrainPresets(raw) {
       params: foundry.utils.deepClone(entry.params)
     });
   }
-  const legacyIcons = Object.fromEntries(
-    Object.entries(raw?.legacyIcons ?? {}).map(([name, icon]) => [name, String(icon)])
-  );
-  return { presets, legacyIcons, names: new Set(presets.map(entry => entry.name)) };
+  return { presets, names: new Set(presets.map(entry => entry.name)) };
 }
 
 function normalizeCustomTerrainPresets(raw, defaults) {
@@ -605,11 +594,11 @@ function normalizeCustomTerrainPresets(raw, defaults) {
     if (defaults.names.has(name)) continue;
     output[name] = entry && typeof entry === 'object' && entry.params
       ? {
-          icon: entry.icon || defaults.legacyIcons[name] || TERRAIN_FALLBACK_ICON,
+          icon: entry.icon || TERRAIN_FALLBACK_ICON,
           params: foundry.utils.deepClone(entry.params)
         }
       : {
-          icon: defaults.legacyIcons[name] || TERRAIN_FALLBACK_ICON,
+          icon: TERRAIN_FALLBACK_ICON,
           params: foundry.utils.deepClone(entry ?? {})
         };
   }

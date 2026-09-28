@@ -1,8 +1,7 @@
 /** @layer foundry/data-models/item */
 import { AURA_TARGET_TYPES, WEAPON_PROFICIENCIES } from '../../../contracts/domains/items.mjs';
-import { migrateLegacyTarget } from '../../../contracts/domains/characters.mjs';
 import { UNIT_TYPES } from '../../../game/character/rules.mjs';
-import { ARMOR_DURABILITY_DEFAULTS, baseDurability, seedTierXpRequirement } from '../../../game/items/rules.mjs';
+import { ARMOR_DURABILITY_DEFAULTS } from '../../../game/items/rules.mjs';
 import { DAMAGE_TYPES } from '../../../contracts/domains/damage.mjs';
 import { REQUIREMENT_TYPES } from '../../../contracts/dsl/requirements.mjs';
 
@@ -11,13 +10,8 @@ import { REQUIREMENT_TYPES } from '../../../contracts/dsl/requirements.mjs';
 /* -------------------------------------------- */
 const USE_TYPES = ['limited', 'infinite', 'conditional'];
 const ACTION_TYPES = ['Standard Action', 'Bonus Action'];
-const TIER_MODIFIER_KEYS = ['atk', 'brk', 'wgt', 'acc', 'crit', 'durability', 'stn', 'def', 'res', 'wgtRed'];
 const REFINEMENT_TIER_COUNT = 5;
 const DEFAULT_FORGE_SKILL = 'Handicraft';
-const INT_RE = /^-?\d+$/;
-
-const round2 = number => Math.round(number * 100) / 100;
-
 
 /**
  * The field shapes a general Item schema is written in.
@@ -218,15 +212,13 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
     };
   }
 
-  /** Update older saved item data to the current schema, through the migrate* functions below. */
+  /**
+   * Normalize item data as Foundry cleans it: an unknown action type falls back to a Standard Action, a Booster is
+   * always one, and a whole Armor source without a durability maximum gets its default.
+   */
   static migrateData(source, options) {
-    migrateItemVocabulary(source);
-    if (source?.weapon?.atkStat === 'Conditional') source.weapon.atkStat = 'Hybrid';
     if (typeof source?.actionType === 'string' && !ACTION_TYPES.includes(source.actionType)) source.actionType = 'Standard Action';
     if (source?.itemType === 'Booster' && typeof source.actionType === 'string') source.actionType = 'Standard Action';
-    migrateCraftingOptIn(source?.craftingData);
-    migrateRefinementToRelative(source);
-    migrateRepairToForging(source);
     // Foundry migrates an update's partial diff too, and an infinite item's sheet submits no maximum, so only a whole
     // Armor source gets the default durability.
     if (source?.itemType === 'Armor' && options?.partial !== true) {
@@ -238,127 +230,6 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
     }
     return super.migrateData(source);
   }
-}
-/* -------------------------------------------- */
-/*  Source migration                            */
-/* -------------------------------------------- */
-/** Rename the old armor reduction keys and modifier targets, and drop the old weapon.prfActor. */
-function migrateItemVocabulary(source) {
-  if (!source || typeof source !== 'object') return;
-  const armor = source.armor;
-  if (armor && typeof armor === 'object') {
-    if (armor.brkRed === undefined && armor.brkReduction !== undefined) armor.brkRed = armor.brkReduction;
-    if (armor.critRed === undefined && armor.critReduction !== undefined) armor.critRed = armor.critReduction;
-    delete armor.brkReduction;
-    delete armor.critReduction;
-  }
-  if (source.weapon && typeof source.weapon === 'object') delete source.weapon.prfActor;
-  if (!Array.isArray(source.modifiers)) return;
-  for (const modifier of source.modifiers) {
-    if (!modifier || typeof modifier !== 'object' || typeof modifier.target !== 'string') continue;
-    const target = migrateLegacyTarget(modifier.target);
-    if (target !== modifier.target) modifier.target = target;
-  }
-}
-
-/* -------------------------------------------- */
-/*  Crafting data migration                     */
-/* -------------------------------------------- */
-/** Whether a refinement tier holds any authored materials, DC or modifiers. */
-function hasTierData(tier) {
-  if ((tier?.materials?.length ?? 0) > 0 || (tier?.difficultyClass ?? 0) > 0) return true;
-  const modifiers = tier?.modifiers;
-  if (!modifiers) return false;
-  if (modifiers.prot || Object.values(modifiers.prots ?? {}).some(Boolean)) return true;
-  return TIER_MODIFIER_KEYS.some(key => modifiers[key] !== null && modifiers[key] !== undefined && modifiers[key] !== '');
-}
-
-/**
- * Older data marked repair and refinement with `disabled` rather than `enabled`. Each counts as enabled when it has
- * authored data and wasn't disabled. A tier's single `prot` also moves into its `prots` map.
- */
-function migrateCraftingOptIn(crafting) {
-  if (!crafting) return;
-  const repair = crafting.repair;
-  if (repair && repair.enabled === undefined) {
-    repair.enabled = repair.disabled !== true && (
-      (repair.materials?.length ?? 0) > 0 || (repair.durabilityRestored ?? 0) > 0 || (repair.difficultyClass ?? 0) > 0
-    );
-  }
-  const refinement = crafting.refinement;
-  if (!refinement) return;
-  if (refinement.enabled === undefined) refinement.enabled = refinement.disabled !== true && (refinement.tiers ?? []).some(hasTierData);
-  for (const tier of refinement.tiers ?? []) {
-    const modifiers = tier?.modifiers;
-    if (!modifiers?.prot) continue;
-    modifiers.prots = { ...(modifiers.prots ?? {}), [modifiers.prot]: true };
-    modifiers.prot = '';
-  }
-}
-
-/**
- * Older refinement tiers held a weapon's absolute values. Convert them to changes from the base weapon, with weight
- * as a reduction, and mark the refinement `relative`. Other items keep their tier values, except that `atk` survives
- * only as an integer.
- */
-function migrateRefinementToRelative(source) {
-  const refinement = source?.craftingData?.refinement;
-  if (!refinement || refinement.relative === true) return;
-  refinement.relative = true;
-  if (!Array.isArray(refinement.tiers)) return;
-  const weapon = source.itemType === 'Weapon';
-  const baseAttack = String(source.weapon?.atk ?? '').trim();
-  const attackIsInteger = INT_RE.test(baseAttack);
-  const delta = (absolute, base) => absolute === null || absolute === undefined || absolute === ''
-    ? null : round2(Number(absolute) - (Number(base) || 0));
-  for (const tier of refinement.tiers) {
-    const modifiers = tier?.modifiers;
-    if (!modifiers) continue;
-    const rawAttack = String(modifiers.atk ?? '').trim();
-    if (!weapon) {
-      modifiers.atk = INT_RE.test(rawAttack) ? Number(rawAttack) : null;
-      continue;
-    }
-    modifiers.atk = attackIsInteger && INT_RE.test(rawAttack) ? Number(rawAttack) - Number(baseAttack) : null;
-    modifiers.brk = delta(modifiers.brk, source.weapon?.brk);
-    modifiers.acc = delta(modifiers.acc, source.weapon?.acc);
-    modifiers.crit = delta(modifiers.crit, source.weapon?.crit);
-    modifiers.durability = delta(modifiers.durability, source.uses?.max);
-    modifiers.wgt = modifiers.wgt === null || modifiers.wgt === undefined ? null
-      : round2((Number(source.wgt) || 0) - Number(modifiers.wgt));
-  }
-}
-
-/** Repair becomes the forging base, and each authored tier gains its own gate and a seeded XP requirement. */
-function migrateRepairToForging(source) {
-  const crafting = source?.craftingData;
-  if (!crafting) return;
-  const repair = crafting.repair;
-  if (crafting.forging === undefined && repair) {
-    crafting.forging = {
-      enabled: repair.enabled === true,
-      forgeMult: Number(repair.repairMult) > 0 ? Number(repair.repairMult) : 1,
-      skillCheck: repair.skillCheck || DEFAULT_FORGE_SKILL,
-      materials: Array.isArray(repair.materials) ? repair.materials : []
-    };
-  }
-  delete crafting.repair;
-  const refinement = crafting.refinement;
-  if (!refinement) return;
-  const baseSkill = crafting.forging?.skillCheck || DEFAULT_FORGE_SKILL;
-  const durability = baseDurability(source);
-  (refinement.tiers ?? []).forEach((tier, index) => {
-    if (!tier || typeof tier !== 'object' || tier.xpReq !== undefined) return;
-    const authored = hasTierData(tier);
-    tier.enabled = refinement.enabled === true && authored;
-    tier.xpReq = seedTierXpRequirement(index, durability);
-    tier.forgeMult = null;
-    tier.skillCheck = authored && tier.skillCheck && tier.skillCheck !== baseSkill ? tier.skillCheck : '';
-    delete tier.energyCost;
-    delete tier.difficultyClass;
-  });
-  delete refinement.enabled;
-  delete refinement.disabled;
 }
 
 /* -------------------------------------------- */

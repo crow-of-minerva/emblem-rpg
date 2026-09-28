@@ -15,7 +15,7 @@ export const TRIGGER_PRESENTATION = Object.freeze({
   onSucceedSave: ['Pass Save', 'fas fa-shield-halved'],
   onFailedCheck: ['Fail Check', 'fas fa-dice-d20'],
   onSucceedCheck: ['Pass Check', 'fas fa-dice-d20'],
-  onActivate: ['On Activate (legacy)', 'fas fa-wand-sparkles'], onPhaseBegin: ['Phase Begin', 'fas fa-play'],
+  onPhaseBegin: ['Phase Begin', 'fas fa-play'],
   onPhaseEnd: ['Phase End', 'fas fa-stop'], onDeath: ['On Death', 'fas fa-skull'],
   onUseItem: ['On Use Item', 'fas fa-flask']
 });

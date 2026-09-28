@@ -87,7 +87,7 @@ export const UNLOCKED_ACTIVATION_ITEM_NAME = 'Dash';
 export const ITEM_USE_PROFICIENCY_HIT_RATIO = 1.5;
 
 export const ITEM_ACTIVATION_TRIGGERS = Object.freeze([
-  'onActivation', 'onFailedSave', 'onSucceedSave', 'onFailedCheck', 'onSucceedCheck', 'onActivate'
+  'onActivation', 'onFailedSave', 'onSucceedSave', 'onFailedCheck', 'onSucceedCheck'
 ]);
 
 /* -------------------------------------------- */

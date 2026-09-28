@@ -66,14 +66,9 @@ export class ClassDataModel extends foundry.abstract.TypeDataModel {
     };
   }
 
-  /**
-   * Older Classes named the movement stat `mvmt`. Skill ranks are also held to whole numbers from 0 to
-   * SKILL_RANK_MAX.
-   */
+  /** Hold skill ranks to whole numbers from 0 to SKILL_RANK_MAX, whatever the source data holds. */
   static migrateData(source) {
     const baseStats = source?.baseStats;
-    if (baseStats && baseStats.mov === undefined && baseStats.mvmt !== undefined) baseStats.mov = baseStats.mvmt;
-    if (baseStats) delete baseStats.mvmt;
     if (source?.skills) {
       for (const key of Object.keys(source.skills)) {
         const rank = source.skills[key];

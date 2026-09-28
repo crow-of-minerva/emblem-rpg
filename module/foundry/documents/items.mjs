@@ -3,7 +3,6 @@ import { admitNativeWrite } from '../adapters/services/authority.mjs';
 import { REFINEMENT_OUTCOME_CODES } from '../../contracts/domains/items.mjs';
 import {
   evaluateScaling,
-  baseDurability,
   baseItemName,
   databaseRefinementAllowed,
   forgingTier,
@@ -12,7 +11,6 @@ import {
   reconcileRefinement,
   refinementRenameReset,
   refinementTier,
-  seedTierXpRequirement,
   settleStoredItemState
 } from '../../game/items/rules.mjs';
 /* -------------------------------------------- */
@@ -45,21 +43,6 @@ function publishDocumentOutcome(outcome) {
  * through admitNativeWrite (services/authority.mjs).
  */
 export class EmblemItem extends Item {
-  /**
-   * Items saved before forgingXP existed show their refinement only in the "(+N)" name suffix. They get the forging
-   * XP that tier requires, so they keep it.
-   */
-  static migrateData(data) {
-    const crafting = data?.system?.craftingData;
-    const named = refinementTier(data?.name);
-    if (crafting && typeof crafting === 'object' && crafting.forgingXP === undefined && named > 0) {
-      const authored = crafting.refinement?.tiers?.[named - 1]?.xpReq;
-      crafting.forgingXP = authored !== undefined ? Math.max(0, Number(authored) || 0)
-        : seedTierXpRequirement(named - 1, baseDurability(data.system));
-    }
-    return super.migrateData(data);
-  }
-
   /** Staff and a Trusted owner delete natively. A Player's delete is refused before Foundry sends it. */
   async _preDelete(options, user) {
     if (!admitNativeWrite(user, this, 'delete')) return false;

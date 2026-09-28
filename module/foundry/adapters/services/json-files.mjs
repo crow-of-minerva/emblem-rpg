@@ -385,7 +385,7 @@ function orderedItemPairs(text) {
 /* -------------------------------------------- */
 /*  Terrain presets                             */
 /* -------------------------------------------- */
-let defaultPresetCache = { presets: [], legacyIcons: {} };
+let defaultPresetCache = { presets: [] };
 
 /** Read shipped terrain presets from the system data file. */
 export async function readDefaultTerrainPresets() {
@@ -440,7 +440,7 @@ async function readWorldPresets() {
   const raw = await readWorldJson(TERRAIN_FILE);
   return presetEntries(raw).map(entry => ({
     name: String(entry.name),
-    icon: String(entry.icon || defaultPresetCache.legacyIcons?.[entry.name] || FALLBACK_TERRAIN_ICON),
+    icon: String(entry.icon || FALLBACK_TERRAIN_ICON),
     params: structuredClone(entry.params)
   }));
 }
@@ -452,7 +452,6 @@ function normalizePresetFile(raw) {
       icon: String(entry.icon || FALLBACK_TERRAIN_ICON),
       params: structuredClone(entry.params)
     })),
-    legacyIcons: { ...(raw?.legacyIcons ?? {}) }
   };
 }
 

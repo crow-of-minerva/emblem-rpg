@@ -51,19 +51,6 @@ const FACTION_DISPOSITIONS = Object.freeze({
   Lord: 1, Retainer: 1, Ally: 1, Enemy: -1, Boss: -1, Neutral: 0
 });
 
-/** Presets the effect DSL still accepts (contracts/dsl/effects.mjs) that have no status registry entry. */
-const LEGACY_PRESETS = Object.freeze({
-  covertPenalty: Object.freeze({
-    name: 'Covert Penalty', img: `systems/${SYSTEM_ID}/assets/status/Covert.png`, statuses: Object.freeze([]), harmful: true,
-    flags: Object.freeze({ removeOnFactionPhaseEnd: true, stackable: true })
-  }),
-  burning: Object.freeze({
-    name: 'Burning', id: 'Burning', img: `systems/${SYSTEM_ID}/assets/status/Burning.png`, harmful: true,
-    changes: Object.freeze([{ key: 'system.statuses.burning', type: 'override', value: true, priority: 20 }]),
-    flags: Object.freeze({ removeOnFactionPhaseEnd: true })
-  })
-});
-
 /* -------------------------------------------- */
 /*  Effect host execution                       */
 /* -------------------------------------------- */
@@ -242,7 +229,7 @@ async function modifyShield(targets, step, runtime) {
  */
 async function applyEffects(targets, step, repository, runtime) {
   const definition = step.preset === 'custom' ? step.customData
-    : STATUS_EFFECTS[step.preset] ?? LEGACY_PRESETS[step.preset];
+    : STATUS_EFFECTS[step.preset];
   if (!definition) return Object.freeze({ ok: false, code: 'effect.preset-missing' });
   const caster = await resolveActor(runtime.self?.actorUuid);
   const plans = (await resolveTargetActors(targets)).map(({ actor }) =>
@@ -771,7 +758,7 @@ function playerOwnerUpdates(actor) {
 
 function activeEffectData(definition, step, caster, randomId) {
   const custom = step.preset === 'custom';
-  const { icon: legacyIcon, ...base } = custom ? structuredClone(definition ?? {}) : {};
+  const base = custom ? structuredClone(definition ?? {}) : {};
   const statuses = base.statuses ?? definition.statuses ?? (definition.id ? [definition.id] : []);
   const flags = structuredClone(base.flags ?? {});
   const statusFlags = custom
@@ -806,7 +793,7 @@ function activeEffectData(definition, step, caster, randomId) {
   return {
     ...base,
     name: base.name ?? definition.name ?? definition.label ?? step.preset,
-    img: base.img ?? legacyIcon ?? definition.img,
+    img: base.img ?? definition.img,
     description: String(base.description ?? definition.description ?? ''),
     changes: structuredClone(base.changes ?? definition.changes ?? definition.extraChanges ?? []),
     statuses: structuredClone(statuses),

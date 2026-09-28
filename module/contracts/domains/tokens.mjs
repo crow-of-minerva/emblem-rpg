@@ -43,9 +43,6 @@ export const SPECIFIC_ITEM_CONDITION = 'Wielding: Specific Item';
 export const USING_ABILITY_CONDITION = 'Using Ability';
 export const ON_CAST_CONDITION = 'On Cast';
 
-/** The old name of 'Using Ability'. The Character data model renames it when it migrates an actor. */
-export const LEGACY_USING_ABILITY_CONDITION = 'Using: Specific Ability';
-
 /**
  * The comma-separated reference list each keyed condition reads from an entry. Each holds Item names, but an id or
  * UUID still matches too (see tokenEntryReferenceMatches).
@@ -102,8 +99,7 @@ export function readTokenEntryTriggers(entry) {
   if (Array.isArray(entry?.triggers) && entry.triggers.length) {
     return entry.triggers.map(value => String(value ?? '').trim()).filter(Boolean);
   }
-  const legacy = String(entry?.name ?? '').trim();
-  return legacy ? [legacy] : [];
+  return [];
 }
 
 /** An entry's guards, all of which must hold, for token art transitions and the appearance editor. */

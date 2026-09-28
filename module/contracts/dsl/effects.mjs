@@ -58,14 +58,8 @@ const RESTORABLE_ACTIONS = Object.freeze(['standard', 'bonus', 'movement', 'turn
 /** Symbolic token references a step may address. */
 export const TOKEN_REFS = Object.freeze(['self', 'target']);
 
-/** Preset names older effects may still use. Validation accepts them, but its errors list only EFFECT_PRESETS. */
-const LEGACY_EFFECT_PRESETS = Object.freeze(['covertPenalty', 'burning', 'bleeding']);
-
 /** Presets an `applyEffect` step may name: every registered status, plus a hand-authored `custom` payload. */
 const EFFECT_PRESETS = Object.freeze([...REGISTERED_STATUS_KEYS, 'custom']);
-
-/** Every preset validation accepts, current and legacy. */
-const ALL_EFFECT_PRESETS = Object.freeze([...EFFECT_PRESETS, ...LEGACY_EFFECT_PRESETS]);
 
 /* -------------------------------------------- */
 /*  Trigger vocabulary                          */
@@ -84,14 +78,11 @@ export const PASSIVE_EFFECT_TRIGGERS = Object.freeze([
   'onPhaseBegin', 'onPhaseEnd', 'onDeath', 'onKill', 'onEvade', 'onUseItem'
 ]);
 
-export const LEGACY_EFFECT_TRIGGERS = Object.freeze(['onActivate']);
-
 const EFFECT_TRIGGER_KEYS = Object.freeze([
   ...new Set([
     ...ATTACK_EFFECT_TRIGGERS,
     ...ACTIVATION_EFFECT_TRIGGERS,
     ...PASSIVE_EFFECT_TRIGGERS,
-    ...LEGACY_EFFECT_TRIGGERS
   ])
 ]);
 
@@ -236,7 +227,7 @@ function validateStep(step, path) {
       break;
     case 'applyEffect':
       if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
-      if (step.preset && !ALL_EFFECT_PRESETS.includes(step.preset)) {
+      if (step.preset && !EFFECT_PRESETS.includes(step.preset)) {
         errors.push(`${path}.preset: must be one of ${EFFECT_PRESETS.join('|')}`);
       }
       if (step.preset === 'custom' && !isPlainObject(step.customData)) {
