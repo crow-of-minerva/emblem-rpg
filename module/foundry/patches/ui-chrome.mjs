@@ -322,7 +322,8 @@ function patchLegacyApplication() {
 
 /**
  * The same fades for ApplicationV2 windows. A re-render keeps its scroll positions, and Actor and Item sheets play
- * the expand and collapse sounds.
+ * the expand and collapse sounds. Render arguments reach Foundry exactly as given, so the legacy
+ * `render(force, options)` form keeps its options (the page a journal link opens, a document's render context).
  */
 function patchApplicationV2() {
   const ApplicationV2 = foundry.applications.api.ApplicationV2;
@@ -335,11 +336,11 @@ function patchApplicationV2() {
     return closeAfterFade(this, close);
   });
 
-  patchMethod(ApplicationV2.prototype, 'render', original => function (options = {}) {
-    if (options?.force === true) abandonPendingClose(this);
+  patchMethod(ApplicationV2.prototype, 'render', original => function (...args) {
+    if (forcedRender(args[0])) abandonPendingClose(this);
     const isInitial = !this.rendered;
     const savedScroll = isInitial ? null : captureScrollPositions(this.element);
-    const result = original.call(this, options);
+    const result = original.apply(this, args);
     if (!isInitial) {
       if (savedScroll) settleRender(result, () => restoreScrollPositions(this.element, savedScroll));
       return result;
@@ -411,6 +412,11 @@ function closeAfterFade(application, close) {
   }).finally(() => { if (pendingCloses.get(application) === fade) pendingCloses.delete(application); });
   pendingCloses.set(application, fade);
   return fade.promise;
+}
+
+/** Whether a render call forces the window open, in either the `render(true)` or the `render({force: true})` form. */
+function forcedRender(options) {
+  return options === true || options?.force === true;
 }
 
 /** A forced render during the fade keeps the window: the close never runs and the fade is undone. */
