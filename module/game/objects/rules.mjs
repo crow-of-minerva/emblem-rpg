@@ -5,6 +5,7 @@ import {
   OBJECT_FIXTURE_TYPES
 } from '../../contracts/domains/objects.mjs';
 import { cellKeyOf } from '../../lib/core/geometry.mjs';
+import { energyLaneBlock } from '../downtime/rules.mjs';
 import { holdsProficiencyRank } from '../progression/rules.mjs';
 import { SYSTEM_ID } from '../../contracts/protocol.mjs';
 import { RESULT_CODES } from '../../contracts/results.mjs';
@@ -293,12 +294,19 @@ export function resolveInteractionTarget({ unitCells = [], objects = [], explori
 /*  Lock opening                                */
 /* -------------------------------------------- */
 
+/** The Energy each Locktouch attempt costs in free exploration, pass or fail. */
+const LOCKPICK_ENERGY_COST = 1;
+
 /**
  * Plan lock opening for engine/objects/interaction.mjs from fresh projected facts.
  * Check sight before revealing lock state or spending costs. A key opens the lock outright, while Locktouch
- * requires a pickable lock and a roll. Encounter attempts also require an available action.
- * @param {object} facts Lock and unit facts. `visible` is true only when the unit is known to see the lock.
- * @returns {{ok: boolean, code?: string, consumesKey?: boolean, rollsCheck?: boolean}}
+ * requires a pickable lock and a roll. Encounter attempts also require an available action. A Locktouch attempt in
+ * free exploration is an Energy-lane act (energyLaneBlock in game/downtime/rules.mjs), so a unit that took its
+ * Downtime Action or has no Energy left is refused with the reason in `blocked`.
+ * @param {object} facts Lock and unit facts. `visible` is true only when the unit is known to see the lock, and
+ *   `downtime` holds the unit's `commitment` and `energy` while exploring.
+ * @returns {{ok: boolean, code?: string, blocked?: string, consumesKey?: boolean, rollsCheck?: boolean,
+ *   energyCost?: number}}
  */
 export function planLockOpening(facts) {
   if (!LOCKABLE_OBJECT_TYPES.includes(String(facts.objectType ?? ''))) return refusal(RESULT_CODES.OBJECT_LOCK_UNAVAILABLE);
@@ -312,7 +320,10 @@ export function planLockOpening(facts) {
   }
   if (facts.method !== LOCK_METHODS.LOCKTOUCH || !facts.hasLocktouch) return refusal(RESULT_CODES.OBJECT_LOCK_UNPICKABLE);
   if (!objectLockIsPickable(facts.difficultyClass)) return refusal(RESULT_CODES.OBJECT_LOCK_UNPICKABLE);
-  return { ok: true, method: facts.method, consumesKey: false, rollsCheck: true };
+  const energyCost = facts.exploring === true ? LOCKPICK_ENERGY_COST : 0;
+  const blocked = energyCost ? energyLaneBlock(facts.downtime, energyCost) : '';
+  if (blocked) return { ok: false, code: RESULT_CODES.OBJECT_LOCKPICK_BLOCKED, blocked };
+  return { ok: true, method: facts.method, consumesKey: false, rollsCheck: true, energyCost };
 }
 
 /* -------------------------------------------- */
