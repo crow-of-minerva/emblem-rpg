@@ -269,7 +269,7 @@ export function buildMealPassive(recipe, outcome, specialFoodType = null) {
   const data = {
     name,
     type: 'Ability',
-    img: RECIPE_FALLBACK_IMAGE,
+    img: MEAL_PASSIVE_IMAGES[outcome] ?? MEAL_PASSIVE_IMAGES[MEAL_OUTCOMES.FAIL],
     system: {
       itemType: 'Passive',
       description: `${flavour} ${recipe?.name || 'A meal'}: ${summary}. Lasts until the GM resets Downtime.`,
