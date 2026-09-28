@@ -1,0 +1,79 @@
+<div class="trade-menu-container {{#if takeOnly}}take-only{{/if}}">
+  {{#unless (or isSteal takeOnly)}}
+  <div class="trade-left-side">
+    <div class="trade-actor-header">
+      <img src="{{sourceActor.img}}" alt="{{sourceActor.name}}" class="trade-actor-portrait {{#if sourceActor.pixelArt}}is-pixel-art{{/if}}" />
+      <div class="trade-header-main">
+        <h3 class="trade-actor-name">{{sourceActor.name}}</h3>
+        <nav class="trade-tabs">
+          {{#each sourceTabs}}
+          <button type="button" class="trade-tab-button {{#if @first}}active{{/if}}" data-tab="{{this.key}}"><img class="trade-tab-icon" src="{{this.icon}}" alt="" />{{this.label}}</button>
+          {{/each}}
+        </nav>
+      </div>
+    </div>
+    <div class="trade-items-list">
+      {{#each sourceItems}}
+      <div class="trade-item-row" data-side="source" data-item-id="{{this.id}}" data-tab="{{this.tab}}">
+        <img src="{{this.img}}" alt="{{this.name}}" class="trade-item-icon" />
+        <span class="trade-item-name">{{this.name}}</span>
+        <span class="trade-item-quantity">{{this.quantity}}</span>
+        {{#if ../sourceCanDrop}}
+        <button type="button" class="trade-item-drop" data-side="source" data-item-id="{{this.id}}" data-tooltip="{{../dropTooltip}}"><i class="fas fa-hand"></i></button>
+        {{/if}}
+        <input type="checkbox" class="trade-item-checkbox" data-side="source" data-item-id="{{this.id}}" {{#if this.isEquipped}}disabled{{/if}} />
+      </div>
+      {{/each}}
+    </div>
+  </div>
+
+  <div class="trade-center-divider">
+    <div class="trade-arrow">{{#if isSteal}}→{{else}}⇄{{/if}}</div>
+  </div>
+  {{/unless}}
+
+  <div class="trade-right-side {{#if isSteal}}steal-mode{{/if}} {{#if takeOnly}}take-only-mode{{/if}}">
+    <div class="trade-actor-header">
+      <img src="{{targetActor.img}}" alt="{{targetActor.name}}" class="trade-actor-portrait {{#if targetActor.pixelArt}}is-pixel-art{{/if}}" />
+      <div class="trade-header-main">
+        <h3 class="trade-actor-name">{{targetActor.name}}{{#if isSteal}}'s Items{{/if}}</h3>
+        <nav class="trade-tabs">
+          {{#each targetTabs}}
+          <button type="button" class="trade-tab-button {{#if @first}}active{{/if}}" data-tab="{{this.key}}"><img class="trade-tab-icon" src="{{this.icon}}" alt="" />{{this.label}}</button>
+          {{/each}}
+        </nav>
+      </div>
+    </div>
+    <div class="trade-items-list">
+      {{#each targetItems}}
+      <div class="trade-item-row" data-side="target" data-item-id="{{this.id}}" data-tab="{{this.tab}}" data-item-cost="{{this.cost}}" data-item-type="{{this.type}}" data-item-subtype="{{this.itemType}}" data-item-name="{{this.name}}" data-item-steal-dc="{{this.stealDc}}">
+        <img src="{{this.img}}" alt="{{this.name}}" class="trade-item-icon" />
+        <span class="trade-item-name">{{this.name}}</span>
+        {{#if ../isSteal}}
+        <span class="trade-item-value">Value: {{this.cost}}</span>
+        {{/if}}
+        <span class="trade-item-quantity">{{this.quantity}}</span>
+        {{#if ../targetCanDrop}}
+        <button type="button" class="trade-item-drop" data-side="target" data-item-id="{{this.id}}" data-tooltip="{{../dropTooltip}}"><i class="fas fa-hand"></i></button>
+        {{/if}}
+        <input type="checkbox" class="trade-item-checkbox" data-side="target" data-item-id="{{this.id}}" {{#if this.isEquipped}}disabled{{/if}} />
+      </div>
+      {{/each}}
+    </div>
+    {{#if isSteal}}
+    <div class="steal-dc-display">
+      <span class="steal-dc-label">Difficulty Class:</span>
+      <span class="steal-dc-value">0</span>
+    </div>
+    {{/if}}
+  </div>
+
+  <div class="trade-action-row">
+    <button type="button" class="trade-action-btn trade-confirm-btn">
+      <i class="fas fa-check"></i> {{confirmLabel}}
+    </button>
+    <button type="button" class="trade-action-btn trade-cancel-btn">
+      <i class="fas fa-times"></i> Cancel
+    </button>
+  </div>
+</div>

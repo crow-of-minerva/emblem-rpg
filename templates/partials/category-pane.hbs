@@ -1,0 +1,4 @@
+<div class="{{paneClass}} {{#if active}}active{{/if}}" data-tab="{{key}}">
+{{#if count}}<div class="{{gridClass}}">{{> @partial-block}}</div>{{else}}<div class="{{emptyClass}}">{{#if empty}}{{empty}}{{else}}No {{noun}} yet.{{/if}}</div>{{/if}}
+</div>
+

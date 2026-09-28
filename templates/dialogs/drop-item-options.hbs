@@ -1,0 +1,20 @@
+<div class="drop-item-options">
+  <div class="drop-item-title">Drop Item</div>
+  <div class="drop-item-detail">{{itemName}}</div>
+
+  {{#if convoys.length}}
+  <div class="drop-option-convoy">
+    {{#if (gt convoys.length 1)}}
+    <select class="drop-convoy-select">
+      {{#each convoys}}<option value="{{this.uuid}}">{{this.name}}</option>{{/each}}
+    </select>
+    {{/if}}
+    <button type="button" class="drop-opt-btn drop-convoy-btn" data-convoy-uuid="{{convoys.0.uuid}}">Move to Convoy</button>
+  </div>
+  {{/if}}
+
+  {{#if placed}}
+  <button type="button" class="drop-opt-btn drop-ground-btn">Drop on the Ground</button>
+  {{/if}}
+  <button type="button" class="drop-opt-btn drop-delete-btn">Delete Permanently</button>
+</div>

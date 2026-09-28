@@ -1,0 +1,149 @@
+{
+  "id": "emblem-rpg",
+  "title": "Emblem RPG",
+  "description": "Emblem RPG for Foundry VTT, with explicit rules, application, Foundry, and presentation boundaries.",
+  "version": "1.0.0",
+  "manifest": "https://github.com/crow-of-minerva/emblem-rpg/releases/latest/download/system.json",
+  "download": "https://github.com/crow-of-minerva/emblem-rpg/releases/download/v1.0.0/emblem-rpg.zip",
+  "background": "systems/emblem-rpg/assets/title.png",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "authors": [
+    {
+      "name": "Anathena"
+    }
+  ],
+  "relationships": {
+    "requires": [
+      {
+        "id": "socketlib",
+        "type": "module",
+        "manifest": "https://github.com/manuelVo/foundryvtt-socketlib/releases/latest/download/module.json"
+      },
+      {
+        "id": "sequencer",
+        "type": "module",
+        "manifest": "https://github.com/fantasycalendar/FoundryVTT-Sequencer/releases/latest/download/module.json"
+      },
+      {
+        "id": "lib-wrapper",
+        "type": "module",
+        "manifest": "https://github.com/ruipin/fvtt-lib-wrapper/releases/latest/download/module.json"
+      },
+      {
+        "id": "barbrawl",
+        "type": "module",
+        "manifest": "https://gitlab.com/woodentavern/foundryvtt-bar-brawl/-/raw/master/src/module.json"
+      },
+      {
+        "id": "tokenmagic",
+        "type": "module",
+        "manifest": "https://github.com/Feu-Secret/Tokenmagic/releases/latest/download/module.json"
+      },
+      {
+        "id": "bg3-hud-core",
+        "type": "module",
+        "manifest": "https://github.com/BragginRites/bg3-hud-core/releases/latest/download/module.json"
+      },
+      {
+        "id": "animated-spell-effects-cartoon",
+        "type": "module",
+        "manifest": "https://github.com/chrisk123999/animated-spell-effects-cartoon/releases/latest/download/module.json"
+      },
+      {
+        "id": "psfx",
+        "type": "module",
+        "manifest": "https://github.com/JimHPerry/psfx/releases/latest/download/module.json"
+      },
+      {
+        "id": "emblem-rpg-studio",
+        "type": "module",
+        "compatibility": {
+          "minimum": "1.0.0",
+          "verified": "1.0.0"
+        },
+        "manifest": "https://github.com/crow-of-minerva/emblem-rpg-studio/releases/latest/download/module.json"
+      },
+      {
+        "id": "emblem-rpg-content",
+        "type": "module",
+        "compatibility": {
+          "minimum": "1.0.0",
+          "verified": "1.0.0"
+        },
+        "manifest": "https://github.com/crow-of-minerva/emblem-rpg-content/releases/latest/download/module.json"
+      },
+      {
+        "id": "emblem-rpg-enemy-ai",
+        "type": "module",
+        "compatibility": {
+          "minimum": "1.0.0",
+          "verified": "1.0.0"
+        },
+        "manifest": "https://github.com/crow-of-minerva/emblem-rpg-enemy-ai/releases/latest/download/module.json"
+      }
+    ],
+    "recommends": [
+      {
+        "id": "dice-so-nice",
+        "type": "module",
+        "manifest": "https://gitlab.com/riccisi/foundryvtt-dice-so-nice/-/raw/master/module/module.json"
+      }
+    ]
+  },
+  "documentTypes": {
+    "Actor": {
+      "Character": {},
+      "Convoy": {},
+      "Object": {},
+      "Vendor": {}
+    },
+    "Item": {
+      "Class": {},
+      "Equipment": {},
+      "Consumable": {},
+      "Ability": {},
+      "Spell": {},
+      "Miscellaneous": {},
+      "Resource": {}
+    }
+  },
+  "esmodules": [
+    "emblem-rpg.mjs"
+  ],
+  "styles": [
+    "styles/emblem-rpg.css"
+  ],
+  "grid": {
+    "units": "sq",
+    "distance": 1
+  },
+  "packs": [
+    {
+      "name": "macros",
+      "label": "Emblem RPG | Macros",
+      "path": "packs/macros",
+      "type": "Macro",
+      "system": "emblem-rpg",
+      "ownership": {
+        "PLAYER": "NONE",
+        "TRUSTED": "NONE",
+        "ASSISTANT": "OWNER",
+        "GAMEMASTER": "OWNER"
+      }
+    }
+  ],
+  "packFolders": [
+    {
+      "name": "Emblem RPG",
+      "sorting": "m",
+      "color": "#4a1c1c",
+      "packs": [
+        "macros"
+      ]
+    }
+  ],
+  "socket": true
+}

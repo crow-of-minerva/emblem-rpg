@@ -1,0 +1,268 @@
+<div class="emblem-rpg actor-sheet emblem-character">
+  <header class="sheet-header">
+    <div class="sheet-profile">
+      <div>
+        <div class="masked-portrait {{portrait.maskClass}}">
+          <img class="profile-img" src="{{actor.img}}" alt="{{actor.name}}" {{#if canAuthor}}data-action="openControlPanel" data-tooltip="{{tooltips.editPortrait}}" {{/if}}style="background-color:{{system.faction.color}};{{avatarScale actor clip=true}}">
+        </div>
+        <img class="border-overlay" src="{{portrait.border}}" alt="">
+      </div>
+    </div>
+
+    <div class="header-section">
+      <div class="actor-name">
+        <input class="actor-name-input" name="name" type="text" value="{{actor.name}}" maxlength="21" {{#unless isEditable}}disabled{{/unless}}>
+      </div>
+      <div class="unit-class">
+        <div class="unit-class-display">
+          <span class="unit-class-display-name open-class-sheet" data-action="openClassSheet">{{#if classItem}}{{classItem.name}}{{else}}--{{/if}}</span>
+          <button type="button" class="select-class-button" data-action="selectClass"><i class="fas fa-search"></i></button>
+        </div>
+        <div class="unit-class-img">{{#if classItem}}<img src="{{classItem.img}}" alt="{{classItem.name}}">{{/if}}</div>
+      </div>
+      <div class="unit-types">
+        <div class="unit-types-display">
+          {{#each unitTypes}}
+            <img src="{{this.image}}" alt="{{this.label}}" class="unit-type-img" data-unit-type="{{this.key}}" data-tooltip="{{this.tooltip}}" style="opacity:{{#if this.active}}1{{else}}0.15{{/if}}">
+          {{/each}}
+        </div>
+      </div>
+      <div class="unit-xp">
+        <span class="level-label">Level</span>
+        <span class="lvl-number">{{system.progression.level}}</span>
+        <progress class="actor-xp-bar" value="{{system.progression.experience}}" max="100"></progress>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tab-buttons">
+    <button type="button" class="tab-button {{#if tabMain}}active{{/if}}" data-action="setTab" data-tab="main">Main</button>
+    <button type="button" class="tab-button {{#if tabFeatures}}active{{/if}}" data-action="setTab" data-tab="features">Features</button>
+    {{#if showSupports}}<button type="button" class="tab-button {{#if tabSupports}}active{{/if}}" data-action="setTab" data-tab="supports">Supports</button>{{/if}}
+    <button type="button" class="tab-button {{#if tabNotes}}active{{/if}}" data-action="setTab" data-tab="notes">Notes</button>
+  </nav>
+
+  <aside class="actor-stats-aside">
+    <span class="stats-label">Stats</span>
+    {{#each stats}}
+      <div class="stats" data-stat-editor="{{this.key}}">
+        <span class="stat-label-{{this.key}}">{{this.label}}</span>
+        {{#if this.penalty}}<span class="penaltyStat" data-tooltip="{{this.penaltyTooltip}}">({{this.penalty}})</span>{{/if}}
+        {{#if this.growth}}
+          <span class="corestat{{#if this.zenith}} zenith-stat{{/if}}">{{this.node.total}}</span>
+          <span class="growthfield" style="color:{{this.growthColor}};display:none">{{this.growthRate}}</span>
+        {{else}}
+          <span class="staticstat">{{this.node.total}}</span>
+        {{/if}}
+      </div>
+      {{#if this.dividerAfter}}<hr class="aside-hr">{{/if}}
+    {{/each}}
+    <button type="button" class="label-show-growths {{#if showGrowths}}is-active{{/if}}" data-action="toggleGrowths">Show Growths</button>
+  </aside>
+
+  <section class="sheet-body">
+    {{#if tabMain}}
+      <div class="tab-content" data-tab="main">
+        <div class="tab-top">
+          <nav class="navigator items-tables">
+            {{#each inventoryTabs}}
+              <button type="button" class="table-tab-button {{#if this.active}}active{{/if}}" data-action="setInventoryTab" data-inventory-tab="{{this.key}}" data-tooltip="{{this.tooltip}}">
+                <img src="{{@root.systemPath}}/assets/ui/table-tabs/{{this.icon}}" alt="{{this.title}}">
+                {{#if this.page}}<span class="tab-page-num">{{this.page}}</span>{{/if}}
+              </button>
+              {{#if this.dividerAfter}}<span class="table-tab-divider"></span>{{/if}}
+            {{/each}}
+          </nav>
+          <div class="item-sort-controls">
+            {{#if linkedConvoyUuid}}
+              <button type="button" class="open-linked-convoy" data-action="openLinkedConvoy" data-convoy-uuid="{{linkedConvoyUuid}}" data-tooltip="{{tooltips.openLinkedConvoy}}"><i class="fas fa-home"></i></button>
+            {{/if}}
+            <button type="button" class="sort-by-toggle" data-action="toggleInventorySort" data-tooltip="{{tooltips.toggleInventorySort}}">Sort by: {{inventorySort.label}}</button>
+            <button type="button" class="sort-dir-toggle" data-action="toggleInventorySortDirection" data-tooltip="{{inventorySort.directionTooltip}}"><i class="fas {{inventorySort.directionIcon}}"></i></button>
+          </div>
+          <span class="table-title">{{inventoryTable.title}}</span>
+          <span class="placeholder-row1"></span><span class="placeholder-row2"></span><span class="placeholder-row3"></span><span class="placeholder-row4"></span><span class="placeholder-row5"></span>
+          <table class="tab-top-table inventory"><tbody>
+            {{#each inventoryTable.items}}
+              <tr class="inventory-row" data-item-id="{{this.id}}" data-stealable-flag="{{this.stealableFlag}}">
+                <td class="inv-icon-cell"><img class="inv-item-img" src="{{this.img}}" alt="" {{#if this.draggable}}draggable="true"{{/if}}></td>
+                <td class="inv-name-cell"><span class="item-name fit-text" data-action="openItem" data-item-id="{{this.id}}" data-tooltip="{{@root.tooltips.openItem}}">{{this.name}}</span></td>
+                <td class="inv-equip-cell">
+                  {{#if this.toggle}}
+                    {{#if this.toggle.mount}}
+                      <img class="{{this.toggle.className}}" data-action="toggleMount" data-item-id="{{this.id}}" data-mounted="{{this.toggle.active}}" data-tooltip="{{this.toggle.label}}" src="{{@root.systemPath}}/assets/ui/{{this.toggle.image}}" alt="">
+                    {{else}}
+                      <img class="{{this.toggle.className}}" data-action="toggleCarriedItem" data-item-id="{{this.id}}" data-equipped="{{this.toggle.active}}" data-tooltip="{{this.toggle.label}}" src="{{@root.systemPath}}/assets/ui/{{this.toggle.image}}" alt="">
+                    {{/if}}
+                  {{/if}}
+                </td>
+                <td class="inv-detail-cell">
+                  {{#if this.weaponArt}}<span class="wep-art-label">Durability Cost:</span><strong class="wep-art-value">{{this.weaponArtCost}}</strong>{{/if}}
+                </td>
+                <td class="inv-uses-cell"><span class="{{#if this.usesLow}}uses-low{{else}}uses-text{{/if}}{{#if this.usesInfinite}} uses-infinite{{/if}}">{{this.uses}}</span></td>
+                <td class="inv-delete-cell">
+                  <button type="button" class="inventory-remove-button item-delete" data-action="removeCarriedItem" data-item-id="{{this.id}}" data-tooltip="{{this.removeTooltip}}" {{#if this.innate}}disabled{{/if}}><i class="fas {{this.removeIcon}}"></i></button>
+                </td>
+              </tr>
+            {{/each}}
+          </tbody></table>
+          <div class="combat-stats-row">
+            {{#each combatStats}}
+              <div class="combat-stat {{this.key}}{{#if this.overweight}} is-overweight{{/if}}"><span>{{this.label}}</span><strong>{{this.node.total}}</strong></div>
+              {{#unless @last}}<span class="combat-stat-divider"></span>{{/unless}}
+            {{/each}}
+          </div>
+        </div>
+
+        <div class="tab-bottom">
+          <div class="proficiencies-content">
+            <span class="proficiencies-label">Proficiencies</span>
+            <div class="proficiencies-grid">
+              {{#each proficiencies}}
+                <span class="label-wep-rank">
+                  <img class="prof-icon{{#if this.misc}} misc{{/if}}" src="{{this.icon}}" alt="{{this.label}}" data-proficiency-editor="{{this.key}}" data-tooltip="{{this.tooltip}}">
+                  {{#unless this.misc}}<img class="rank-label" src="{{this.rankIcon}}" alt="Rank {{this.rank}}">{{/unless}}
+                  {{#if this.xpMax}}<progress class="proficiency-xp-progress" value="{{this.xp}}" max="{{this.xpMax}}"></progress>{{/if}}
+                </span>
+              {{/each}}
+            </div>
+          </div>
+          <div class="skills-content">
+            <span class="skills-label">Skills</span>
+            <div class="div-skills-row1">
+              {{#each skills}}
+                <span class="skill-container">
+                  <img class="skill-toggle {{#if this.mastery}}is-mastery{{/if}}" src="{{this.image}}" alt="{{this.label}}" data-action="rollSkill" data-skill="{{this.key}}" data-skill-editor="{{this.key}}" data-tooltip="{{this.tooltip}}">
+                  {{#if this.rankLabel}}<span class="skill-rank-badge">{{this.rankLabel}}</span>{{/if}}
+                  {{#if this.xpMax}}<progress class="skill-xp-progress" value="{{this.xp}}" max="{{this.xpMax}}"></progress>{{/if}}
+                </span>
+              {{/each}}
+            </div>
+          </div>
+        </div>
+      </div>
+    {{/if}}
+
+    {{#if tabFeatures}}
+      <div class="tab-content" data-tab="features">
+        <div class="tab-top">
+          <div class="passive-items-container">
+            <div class="passive-items-list">
+              {{#each featureItems}}
+                <div class="passive-item-row" data-item-id="{{this.id}}">
+                  <div><img src="{{this.img}}" alt=""><span class="item-name" data-action="openItem" data-item-id="{{this.id}}">{{this.name}}</span></div>
+                  <button type="button" class="item-delete passive-item-delete" data-action="removeCarriedItem" data-item-id="{{this.id}}" data-tooltip="{{@root.tooltips.removePassive}}"><i class="fas fa-times"></i></button>
+                </div>
+              {{/each}}
+              {{#unless featureItems.length}}<span class="no-passive-features">No passive features</span>{{/unless}}
+            </div>
+          </div>
+        </div>
+        <div class="tab-bottom special-resources">
+          <div class="extra-lives-section">
+            <span class="extra-lives-label">Extra Lives</span>
+            <div class="extra-lives-display">
+              {{#if extraLives.max}}
+                {{#each extraLives.hearts}}
+                  <img class="extra-life-heart" data-action="setExtraLives" data-heart-index="{{this.index}}" data-tooltip="{{this.tooltip}}" src="{{@root.systemPath}}/assets/ui/{{#if this.active}}extra-life.png{{else}}extra-life-off.png{{/if}}" alt="">
+                {{/each}}
+              {{else}}
+                <span class="no-lives-text">NONE</span>
+              {{/if}}
+            </div>
+            <div class="extra-lives-controls">
+              <button type="button" class="extra-lives-minus" data-action="adjustSpecial" data-resource="extraLives" data-delta="-1" data-tooltip="{{extraLives.decreaseTooltip}}">-</button>
+              <button type="button" class="extra-lives-plus" data-action="adjustSpecial" data-resource="extraLives" data-delta="1" data-tooltip="{{extraLives.increaseTooltip}}">+</button>
+            </div>
+          </div>
+          {{#each specialResources}}
+            <div class="special-resource-section">
+              <span class="extra-lives-label">{{this.label}}</span>
+              <div class="special-resource-display">
+                <input type="number" class="special-resource-remaining" data-resource="{{this.key}}" min="0" value="{{this.node.value}}" {{#unless @root.isEditable}}disabled{{/unless}}>
+                <span class="special-resource-slash">/</span>
+                <span class="special-resource-max">{{this.node.max}}</span>
+              </div>
+              <div class="extra-lives-controls">
+                <button type="button" class="special-resource-minus" data-action="adjustSpecial" data-resource="{{this.key}}" data-delta="-1" data-tooltip="{{this.decreaseTooltip}}">-</button>
+                <button type="button" class="special-resource-plus" data-action="adjustSpecial" data-resource="{{this.key}}" data-delta="1" data-tooltip="{{this.increaseTooltip}}">+</button>
+              </div>
+            </div>
+          {{/each}}
+        </div>
+      </div>
+    {{/if}}
+
+    {{#if showSupports}}{{#if tabSupports}}
+      <div class="tab-content" data-tab="supports">
+        <div class="tab-full supports-panel">
+          <div class="support-affinity-row">
+            <label for="support-affinity">Affinity:</label>
+            <select id="support-affinity" name="system.support.affinity" data-dtype="String" {{#unless isEditable}}disabled{{/unless}}>
+              <option value="">--</option>
+              {{#each affinityOptions}}
+                <option value="{{this.name}}" data-stats="{{this.stats}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+              {{/each}}
+            </select>
+            <span class="support-affinity-stats">
+              {{#each supportAffinityChips}}<span class="affinity-stat {{#if this.penalty}}is-down{{else}}is-up{{/if}}">{{this.label}}</span>{{/each}}
+            </span>
+          </div>
+          <div class="support-card-grid">
+            {{#each supportCards}}
+              <div class="support-card" data-support-index="{{this.index}}" data-tooltip="{{this.tooltip}}">
+                <div class="support-card-name">{{this.name}}</div>
+                <div class="support-card-portrait" style="background-color: {{this.factionColor}};">
+                  <img class="support-card-img" src="{{this.img}}" data-sprite-src="{{this.rawImg}}" alt="{{this.name}}" style="--avatar-scale:{{this.avatarScale}};">
+                  {{#if this.rankImage}}<img class="support-card-rank" src="{{this.rankImage}}" alt="{{this.rankLetter}}">{{/if}}
+                  {{#if @root.isEditable}}
+                    <button type="button" class="support-card-remove" data-action="removeSupport" data-index="{{this.index}}" data-tooltip="{{@root.tooltips.removeSupport}}"><i class="fas fa-times"></i></button>
+                  {{/if}}
+                </div>
+                <progress class="support-xp-bar" value="{{this.xp}}" max="{{this.xpNeeded}}"></progress>
+                <div class="support-card-affinity" data-tooltip="{{this.affinityTooltip}}">{{this.affinity}}</div>
+              </div>
+            {{/each}}
+            {{#if isEditable}}
+              <div class="support-card support-card-add" data-action="addSupport" data-tooltip="{{tooltips.addSupport}}"><i class="fas fa-plus"></i></div>
+            {{/if}}
+          </div>
+        </div>
+      </div>
+    {{/if}}{{/if}}
+
+    {{#if tabNotes}}
+      <div class="tab-content" data-tab="notes">
+        <div class="tab-full notes-panel">
+          <section class="journal-section">
+            {{#each linkedJournals}}
+              <div class="journal-page-link journal-doc-link{{#unless this.visible}} journal-doc-hidden{{/unless}}" data-action="openJournal" data-uuid="{{this.uuid}}" data-tooltip="{{@root.tooltips.openJournal}}">
+                <i class="{{this.icon}}"></i>
+                <span class="journal-page-name">{{this.name}}</span>
+                <span class="journal-row-tag">Journal Entry</span>
+                {{#if @root.isEditable}}<a class="journal-doc-unlink" data-action="unlinkJournal" data-tooltip="{{@root.tooltips.unlinkJournal}}"><i class="fas fa-times"></i></a>{{/if}}
+              </div>
+            {{/each}}
+            {{#each knownRecipes}}
+              <div class="journal-page-link journal-recipe-link" data-action="openRecipe" data-recipe-id="{{this.id}}" data-tooltip="{{this.tooltip}}">
+                <img class="journal-recipe-img" src="{{this.img}}" alt="{{this.name}}" />
+                <span class="journal-page-name">{{this.name}}</span>
+                <span class="journal-row-tag">Recipe: DC {{this.dc}}</span>
+                {{#if @root.isGM}}<a class="journal-recipe-unlink" data-action="unlinkRecipe" data-tooltip="{{@root.tooltips.unlinkRecipe}}"><i class="fas fa-times"></i></a>{{/if}}
+              </div>
+            {{/each}}
+            {{#each knownSongs}}
+              <div class="journal-page-link journal-recipe-link journal-song-link" data-action="openSong" data-song-id="{{this.id}}" data-tooltip="{{this.tooltip}}">
+                <img class="journal-recipe-img" src="{{this.img}}" alt="{{this.name}}" />
+                <span class="journal-page-name">{{this.name}}</span>
+                <span class="journal-row-tag">Song: DC {{this.dc}}</span>
+                {{#if @root.isGM}}<a class="journal-recipe-unlink" data-action="unlinkSong" data-tooltip="{{@root.tooltips.unlinkSong}}"><i class="fas fa-times"></i></a>{{/if}}
+              </div>
+            {{/each}}
+            {{#unless hasNotesLinks}}<span class="journal-empty">Drop journal entries, personal recipes or personal songs here.</span>{{/unless}}
+          </section>
+        </div>
+      </div>
+    {{/if}}
+  </section>
+</div>

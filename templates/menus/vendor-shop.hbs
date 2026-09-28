@@ -1,0 +1,109 @@
+<div class="vendor-shop-container {{mode}}-mode">
+
+  {{#*inline "shopItem"}}
+  <div class="vendor-shop-item{{#if this.outOfStock}} out-of-stock{{/if}}{{#if this.notAccepted}} unaccepted{{/if}}"
+       data-item-id="{{this.id}}" data-side="{{this.side}}" data-cost="{{this.price}}" data-max="{{this.max}}"
+       data-tooltip="{{@root.tooltips.preview}}">
+    <img class="vendor-shop-item-img" src="{{this.img}}" alt="{{this.name}}" />
+    <div class="vendor-shop-item-details">
+      <div class="vendor-shop-item-name">{{this.name}}</div>
+      <div class="vendor-shop-item-stock">{{this.subLabel}}</div>
+    </div>
+    <div class="vendor-shop-item-cost"><i class="fas fa-coins"></i> {{this.price}}</div>
+    <div class="vendor-shop-item-actions">
+      {{#if this.isResource}}
+      <input type="number" class="vendor-shop-qty-input" value="" placeholder="0" min="0" max="{{this.max}}"
+             data-tooltip="{{this.quantityTooltip}}"
+             {{#if this.outOfStock}}disabled{{/if}}{{#if this.notAccepted}} disabled{{/if}} />
+      {{else}}
+      <button type="button" class="vendor-shop-add-btn" data-tooltip="{{this.addTooltip}}"><i class="fas fa-cart-plus"></i></button>
+      <div class="vendor-shop-qty">
+        <button type="button" class="vendor-shop-qty-btn vendor-shop-qty-dec" data-tooltip="{{@root.tooltips.removeOne}}"><i class="fas fa-minus"></i></button>
+        <span class="vendor-shop-qty-val">0</span>
+        <button type="button" class="vendor-shop-qty-btn vendor-shop-qty-inc" data-tooltip="{{@root.tooltips.addOne}}"><i class="fas fa-plus"></i></button>
+      </div>
+      {{/if}}
+    </div>
+  </div>
+  {{/inline}}
+
+  <div class="vendor-shop-body">
+    <aside class="vendor-shop-buyer">
+      <img class="vendor-shop-buyer-img" src="{{left.img}}" alt="{{left.name}}" />
+      <div class="vendor-shop-buyer-name">{{left.name}}</div>
+
+      {{#if showSend}}
+      <label class="vendor-shop-send-toggle">
+        <input type="checkbox" class="vendor-shop-send-check" />
+        <span>Send to Convoy</span>
+      </label>
+      {{/if}}
+
+      <button type="button" class="vendor-shop-mode-toggle">{{modeToggleLabel}}</button>
+
+      <div class="vendor-shop-disposition" data-tooltip="{{tooltips.disposition}}">
+        <span class="vendor-shop-disposition-label">Disposition</span>
+        <span class="vendor-shop-disposition-value" style="color: {{dispositionColor}};">{{disposition}}</span>
+      </div>
+
+      <div class="vendor-shop-buyer-gp">
+        <i class="fas fa-coins"></i>
+        <span class="vendor-shop-gp-value">{{leftGp}}</span>
+        <span class="vendor-shop-gp-label">GP</span>
+      </div>
+      <div class="vendor-shop-gp-breakdown">{{leftGpBreakdown}}</div>
+    </aside>
+
+    <section class="vendor-shop-panel">
+      <header class="vendor-shop-header">
+        {{#if showSourceSelector}}
+        <select class="vendor-shop-source-select">
+          {{#each sourceOptions}}
+          <option value="{{this.uuid}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>
+          {{/each}}
+        </select>
+        {{else}}
+        <img class="vendor-shop-vendor-img" src="{{right.img}}" alt="{{right.name}}" />
+        <div class="vendor-shop-vendor-name">{{right.name}}</div>
+        {{/if}}
+      </header>
+
+      <nav class="vendor-shop-tabs">
+        <div class="vendor-shop-tab-group">
+          {{> category-tabs categories=categoryList tabClass="vendor-shop-tab" iconClass="vendor-shop-tab-icon" tooltips=true}}
+        </div>
+        <div class="vendor-shop-sort-controls">
+          <button type="button" class="vendor-shop-sort-by" data-tooltip="{{tooltips.sortField}}">Sort: {{sortByLabel}}</button>
+          <button type="button" class="vendor-shop-sort-dir" data-tooltip="{{tooltips.sortDirection}}">
+            <i class="fas {{sortDirectionIcon}}"></i>
+          </button>
+        </div>
+      </nav>
+
+      <div class="vendor-shop-inventory">
+        {{#each categoryList}}
+        {{#> category-pane paneClass="vendor-shop-tab-content" gridClass="vendor-shop-grid" emptyClass="vendor-shop-empty" empty="Nothing here."}}{{#each items}}{{> shopItem}}{{/each}}{{/category-pane}}
+        {{/each}}
+      </div>
+    </section>
+  </div>
+
+  <div class="vendor-shop-cart-footer">
+    <div class="vendor-shop-cart-total">
+      <span class="vendor-shop-cart-label">{{cartTotalLabel}}</span>
+      <i class="fas fa-coins"></i>
+      <span class="vendor-shop-cart-value">0</span>
+      <span class="vendor-shop-cart-gp">GP</span>
+    </div>
+    <div class="vendor-shop-cart-actions">
+      {{#if haggle.offered}}
+      <button type="button" class="vendor-shop-haggle-btn"
+              {{#if haggle.tooltip}}data-tooltip="{{haggle.tooltip}}"{{/if}}
+              disabled><i class="fas fa-handshake"></i> Haggle</button>
+      {{/if}}
+      <button type="button" class="vendor-shop-clear-btn" disabled><i class="fas fa-trash"></i> Clear Cart</button>
+      <button type="button" class="vendor-shop-confirm-btn" disabled>{{confirmLabel}}</button>
+    </div>
+  </div>
+
+</div>

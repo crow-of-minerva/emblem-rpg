@@ -1,0 +1,294 @@
+/** @layer foundry/adapters/document-writes */
+import { USER_LOCK_SETTING } from '../../../config/settings.mjs';
+import { GUARD_BOND_EFFECT_NAME } from '../../../contracts/domains/combat.mjs';
+import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
+import { TELEPORT_SETTLEMENT_OUTCOMES } from '../../../contracts/domains/terrain.mjs';
+import {
+  GROUNDED_BY_STANCE_BREAK_FLAG, planMovementCancelEffects, planMovementSpend
+} from '../../../game/movement/input-policy.mjs';
+import { collectionValues, structurallyEqual } from '../../../lib/core/runtime.mjs';
+import { clone } from '../services/host.mjs';
+import { reportFoundryError } from '../services/diagnostics.mjs';
+
+/* -------------------------------------------- */
+/*  Movement state                              */
+/* -------------------------------------------- */
+
+/** The turn fields a movement plan owns, read from prepared data as the planner sees them. */
+function movementState(actor) {
+  const turn = actor.system?.turn ?? {};
+  return {
+    actionAvailable: turn.actionAvailable !== false,
+    bonusActionAvailable: turn.bonusActionAvailable !== false,
+    movementSpent: Number(turn.movementSpent) || 0,
+    movementAvailable: turn.movementAvailable !== false,
+    extraActionUsed: turn.extraActionUsed === true,
+    continuationPending: String(turn.continuationPending ?? ''),
+    continuationRequestId: String(turn.continuationRequestId ?? ''),
+    movementPlanning: turn.movementPlanning === true,
+    canterPathfinding: turn.canterPathfinding === true,
+    movementControllerId: String(turn.movementControllerId ?? ''),
+    movementAnchorX: Number(turn.movementAnchorX) || 0,
+    movementAnchorY: Number(turn.movementAnchorY) || 0,
+    movementPlanStartedAt: Number(turn.movementPlanStartedAt) || 0
+  };
+}
+
+/** Whether the movement facts still match the state the command planned against. */
+export function snapshotStillCurrent(token, actor, snapshot) {
+  const turn = actor.system?.turn ?? {};
+  return (Number(turn.movementSpent) || 0) === snapshot.movementSpent
+    && (turn.movementAvailable !== false) === snapshot.movementAvailable
+    && (turn.actionAvailable !== false) === snapshot.standardAvailable
+    && turn.movementPlanning === true
+    && (turn.canterPathfinding === true) === snapshot.canterPathfinding
+    && String(turn.movementControllerId ?? '') === snapshot.movementControllerId
+    && (Number(turn.movementAnchorX) || 0) === snapshot.anchorPosition.x
+    && (Number(turn.movementAnchorY) || 0) === snapshot.anchorPosition.y
+    && token._source.x === snapshot.sourcePosition.x
+    && token._source.y === snapshot.sourcePosition.y;
+}
+
+const TURN_PATH = 'system.turn.';
+
+/**
+ * The Actor fields a movement settlement writes: the unit's turn block and, when a flier lands or takes off, its
+ * Grounded status and the flag a stance break sets (taking off clears it). Every writer here and in
+ * document-writes/movement.mjs records the Actor through movementActorCapture, so the operation keeps just these
+ * fields rather than the whole Character source.
+ */
+const TURN_PATHS = Object.freeze(['system.turn']);
+const TURN_AND_GROUNDED_PATHS = Object.freeze([
+  'system.turn', 'system.statuses.grounded', `flags.${SYSTEM_ID}.${GROUNDED_BY_STANCE_BREAK_FLAG}`
+]);
+
+export function movementActorCapture(actor, { grounds = false } = {}) {
+  return { document: actor, paths: grounds ? TURN_AND_GROUNDED_PATHS : TURN_PATHS };
+}
+
+/**
+ * Whether a turn write actually took effect. A preUpdate hook can veto an update without an error, so every
+ * movement settlement reads the saved turn back before it releases the board lock or reports success.
+ *
+ * Only the turn paths are compared, because a settlement may write other fields alongside the turn and Foundry adds
+ * `_id` to the changes object it is given. Callers still hand Foundry a copy, not the object they check afterwards.
+ */
+export function turnChangesLanded(actor, changes) {
+  const turn = actor.system?.turn ?? {};
+  return Object.entries(changes ?? {})
+    .filter(([path]) => path.startsWith(TURN_PATH))
+    .every(([path, value]) => structurallyEqual(turn[path.slice(TURN_PATH.length)], value));
+}
+
+/** Whether both positions identify the same board square. */
+export function samePosition(left, right) {
+  const a = left?._source ?? left;
+  const b = right?._source ?? right;
+  return Number(a?.x) === Number(b?.x) && Number(a?.y) === Number(b?.y);
+}
+
+/** Fresh options for a placement that puts a unit where the rules say it stands, rather than walking it there. */
+export function movementRestoreOptions() {
+  return { animate: false, emblemMovementRestore: true };
+}
+
+/** The ids of the effects authored to lapse when a move is cancelled. */
+function movementCancelEffectIds(actor) {
+  return planMovementCancelEffects(collectionValues(actor?.effects).map(effect => Object.freeze({
+    id: String(effect?.id ?? ''),
+    removeWhenPathfindingEnds: effect?.flags?.[SYSTEM_ID]?.removeWhenPathfindingEnds === true
+  })));
+}
+
+/* -------------------------------------------- */
+/*  Board lock                                  */
+/* -------------------------------------------- */
+
+/** A copy of the board-lock setting, safe to compare or record. */
+export function movementLockNow() {
+  return clone(game.settings.get(SYSTEM_ID, USER_LOCK_SETTING)) ?? null;
+}
+
+/** Normalize the stored board lock into the plain shape engine/movement reads. */
+export function normalizeLock(lock) {
+  if (!lock?.holderId || !lock?.tokenUuid) return null;
+  return Object.freeze({
+    holderId: String(lock.holderId),
+    holderName: String(lock.holderName ?? 'Someone'),
+    tokenUuid: String(lock.tokenUuid),
+    actorUuid: String(lock.actorUuid ?? ''),
+    tokenName: String(lock.tokenName ?? 'a Token'),
+    tokenImg: String(lock.tokenImg ?? ''),
+    acquiredAt: Number(lock.acquiredAt) || 0
+  });
+}
+
+export function sameLock(left, right) {
+  return Boolean(left && right)
+    && left.holderId === right.holderId
+    && left.tokenUuid === right.tokenUuid
+    && left.acquiredAt === right.acquiredAt;
+}
+
+/** Locks this user acquired before this page loaded are abandoned, whatever their age. */
+const PAGE_STARTED_AT = Date.now();
+
+/**
+ * Whether a planning lock is stale: its holder has disconnected, or this user took it before the page last loaded.
+ * A plan has no timeout while its holder stays connected, but staff can restore and release a live plan.
+ */
+export function lockIsStale(lock) {
+  const user = game.users.get(lock.holderId);
+  if (!user?.active) return true;
+  return user.isSelf === true && Number(lock.acquiredAt) < PAGE_STARTED_AT;
+}
+
+/* -------------------------------------------- */
+/*  Plan settlements                            */
+/* -------------------------------------------- */
+
+/**
+ * The documents closing a plan may change besides the unit's own Actor and Token: the Guard-bond partners a recheck
+ * may write, the bond effects it deletes, and the effects a cancelled move removes. FoundryMovementRepository adds
+ * them to its single capture, so everything is recorded before the first write.
+ */
+export function planEndCaptures(actor, token, { guardBonds = null, cancelled = false } = {}) {
+  const deleting = cancelled ? movementCancelEffects(actor) : [];
+  const documents = [];
+  const bond = token ? guardBonds?.bondOf?.(token) ?? null : null;
+  for (const partner of [bond?.guarded, bond?.guarder].filter(Boolean)) {
+    documents.push(partner);
+    deleting.push(...guardBondEffects(partner.actor));
+  }
+  return { documents, deleting };
+}
+
+/**
+ * Finish a plan that has just closed: remove the effects that lapse when a move is cancelled, then break a Guard
+ * bond the unit no longer stands in (FoundryGuardBondRepository in document-writes/tokens.mjs). A failed write
+ * throws.
+ */
+export async function settlePlanEnd(actor, token, { cancelled = false, guardBonds = null, operation = null } = {}) {
+  if (cancelled) await removeMovementCancelEffects(actor, operation);
+  await guardBonds?.recheck([token.uuid], { operation });
+}
+
+/**
+ * Close a movement plan: write the turn the caller planned, release the board lock, then settle the plan's end.
+ * Everything is recorded on the caller's operation first, so CommandDispatcher can roll back a later failure.
+ * @returns {Promise<boolean>} false if the token, turn or lock changed while closing, or the turn write didn't take.
+ */
+export async function closeMovementPlan({
+  token, actor, changes, guardBonds = null, cancelled = false, operation = null
+}) {
+  const before = movementState(actor);
+  const lock = movementLockNow();
+  const position = { x: token._source.x, y: token._source.y };
+  const cleanup = planEndCaptures(actor, token, { guardBonds, cancelled });
+  await operation?.capture({
+    documents: [movementActorCapture(actor), token, ...cleanup.documents],
+    deleting: cleanup.deleting,
+    settings: [USER_LOCK_SETTING]
+  });
+  if (!samePosition(token, position) || !structurallyEqual(movementState(actor), before)
+    || !structurallyEqual(movementLockNow(), lock)) return false;
+  await actor.update(clone(changes), {});
+  if (!turnChangesLanded(actor, changes)) return false;
+  await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
+  await settlePlanEnd(actor, token, { cancelled, guardBonds, operation });
+  return true;
+}
+
+/* -------------------------------------------- */
+/*  Teleport hops                               */
+/* -------------------------------------------- */
+
+export function teleportOutcome(code, reasonCode) {
+  return Object.freeze({ ok: code === TELEPORT_SETTLEMENT_OUTCOMES.SETTLED, code, reasonCode });
+}
+
+/**
+ * Settle one teleport hop for FoundryMovementRepository.teleport, in this order: move the token pad to pad, write
+ * the movement charge the rules worked out, and release the board lock if the hop ends the plan. A refused write
+ * returns REVERTED, which engine/movement/commands.mjs refuses as TELEPORT_SETTLEMENT_FAILED.
+ */
+export async function settleTeleportHop(snapshot, resolution, charge, token, actor, operation = null) {
+  const destination = Object.freeze({
+    x: resolution.destination.x * snapshot.gridSize,
+    y: resolution.destination.y * snapshot.gridSize
+  });
+  const before = movementState(actor);
+  const lock = movementLockNow();
+  const changes = teleportTurnChanges(snapshot, resolution, charge, destination);
+  await operation?.capture({ documents: [movementActorCapture(actor), token], settings: [USER_LOCK_SETTING] });
+  if (!snapshotStillCurrent(token, actor, snapshot) || !structurallyEqual(movementState(actor), before)
+    || !structurallyEqual(movementLockNow(), lock)) {
+    return teleportOutcome(TELEPORT_SETTLEMENT_OUTCOMES.STALE, 'movement.teleport-facts-stale');
+  }
+  try {
+    const landed = await token.move({ ...destination, teleport: true, action: 'displace' }, movementRestoreOptions());
+    if (landed === false || !samePosition(token, destination)) throw new Error('movement.teleport-hop-refused');
+    await actor.update(clone(changes), {});
+    if (!turnChangesLanded(actor, changes)) throw new Error('movement.teleport-write-refused');
+    if (charge.resume !== true) await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
+  } catch (error) {
+    reportFoundryError(import.meta.url, error, 'settleTeleportHop');
+    return teleportOutcome(TELEPORT_SETTLEMENT_OUTCOMES.REVERTED,
+      String(error?.message ?? 'movement.teleport-write-failed'));
+  }
+  return teleportOutcome(TELEPORT_SETTLEMENT_OUTCOMES.SETTLED, '');
+}
+
+/** The turn a hop leaves behind: its movement charge, the action or bonus it spends, and its new anchor. */
+function teleportTurnChanges(snapshot, resolution, charge, destination) {
+  const changes = {
+    'system.turn.movementSpent': planMovementSpend({
+      priorSpent: snapshot.movementSpent,
+      legCost: resolution.cost + Math.max(0, Number(charge.movementSpent) || 0),
+      charges: snapshot.exploring !== true
+    }),
+    'system.turn.movementAvailable': snapshot.exploring === true
+      ? snapshot.movementAvailable
+      : charge.resume === true && charge.anchors !== true,
+    'system.turn.movementPlanning': charge.resume === true,
+    'system.turn.canterPathfinding': charge.resume === true && snapshot.canterPathfinding === true,
+    'system.turn.movementControllerId': charge.resume === true ? snapshot.movementControllerId : '',
+    'system.turn.movementAnchorX': destination.x,
+    'system.turn.movementAnchorY': destination.y,
+    'system.turn.movementPlanStartedAt': charge.resume === true ? snapshot.movementPlanStartedAt : 0
+  };
+  if (charge.spendsBonus) changes['system.turn.bonusActionAvailable'] = false;
+  if (charge.spendsAction) changes['system.turn.actionAvailable'] = false;
+  if (charge.endTurn === true) {
+    changes['system.turn.actionAvailable'] = false;
+    changes['system.turn.bonusActionAvailable'] = false;
+  }
+  return changes;
+}
+
+/* -------------------------------------------- */
+/*  Cancellation cleanup                        */
+/* -------------------------------------------- */
+
+/** Delete the effects authored to lapse with a cancelled move, recording them on the operation first. */
+async function removeMovementCancelEffects(actor, operation = null) {
+  const effects = movementCancelEffects(actor);
+  if (!effects.length) return Object.freeze([]);
+  const ids = effects.map(effect => String(effect.id));
+  await operation?.capture({ deleting: effects });
+  await actor.deleteEmbeddedDocuments('ActiveEffect', ids, {});
+  if (ids.some(id => actor.effects.get(id))) throw new Error('movement.cancel-effects-refused');
+  return Object.freeze(ids);
+}
+
+function movementCancelEffects(actor) {
+  const ids = new Set(movementCancelEffectIds(actor).map(String));
+  return collectionValues(actor?.effects).filter(effect => ids.has(String(effect?.id ?? '')));
+}
+
+/** The bond halves FoundryGuardBondRepository deletes when a bond breaks, captured before the recheck runs. */
+function guardBondEffects(actor) {
+  return collectionValues(actor?.effects).filter(effect => (
+    effect?.name === GUARD_BOND_EFFECT_NAME && Boolean(effect?.flags?.[SYSTEM_ID]?.guardRole)
+  ));
+}

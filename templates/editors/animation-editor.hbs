@@ -1,0 +1,15 @@
+<div class="ed-container ed-anim-container">
+  <div class="ed-anim-tab-row ed-tabs">
+    {{#each tabs}}
+      <button type="button" class="anim-tab-btn ed-tab {{#if @first}}is-active{{/if}}" data-anim-tab="{{this.key}}">
+        <i class="{{this.icon}}"></i> {{this.label}}
+      </button>
+    {{/each}}
+  </div>
+
+  {{#each tabs}}
+    <div class="anim-tab-pane {{#unless @first}}is-hidden{{/unless}}" data-anim-pane="{{this.key}}">
+      {{{this.paneHtml}}}
+    </div>
+  {{/each}}
+</div>

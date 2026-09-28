@@ -1,0 +1,68 @@
+{
+  "recipes": [
+    {
+      "id": "hearty-stew",
+      "name": "Hearty Stew",
+      "dc": 10,
+      "description": "Meat, potato and onion left to simmer until the broth goes thick. The first pot anyone learns, and the one they keep coming back to.",
+      "ingredients": { "Red Meat": 1, "Potato": 1, "Onion": 1 },
+      "growths": { "mgt": 10, "hp": 10 }
+    },
+    {
+      "id": "spiced-skewers",
+      "name": "Spiced Skewers",
+      "dc": 12,
+      "description": "Fowl cut small, rolled in spice and cooked over the fire on a stick. No pot, no fuss, no leftovers.",
+      "ingredients": { "Poultry": 1, "Common Spice": 1 },
+      "growths": { "mgt": 10, "agi": 5 }
+    },
+    {
+      "id": "fish-chowder",
+      "name": "Fish Chowder",
+      "dc": 10,
+      "description": "Fish and potato simmered in cream until everything softens. Every river town cooks it, and every river town cooks it the same.",
+      "ingredients": { "Fish": 1, "Cream": 1, "Potato": 1 },
+      "growths": { "tqn": 10, "agi": 5 }
+    },
+    {
+      "id": "berry-tart",
+      "name": "Berry Tart",
+      "dc": 10,
+      "description": "Oats and butter pressed into a crust, filled with berries and baked on a hot stone. Sweet enough that nobody minds how plain it is.",
+      "ingredients": { "Berries": 1, "Butter": 1, "Oats": 1 },
+      "growths": { "cha": 10, "wit": 5 }
+    },
+    {
+      "id": "lentil-pottage",
+      "name": "Lentil Pottage",
+      "dc": 10,
+      "description": "Lentils and barley boiled down with carrot until the spoon stands up in it. Cheap, filling, and hard to get wrong.",
+      "ingredients": { "Lentils": 1, "Barley": 1, "Carrot": 1 },
+      "growths": { "def": 10, "res": 5 }
+    },
+    {
+      "id": "mushroom-soup",
+      "name": "Mushroom Soup",
+      "dc": 10,
+      "description": "Mushrooms and onion softened in the pot, then loosened with cream. The only trick is knowing which mushrooms.",
+      "ingredients": { "Mushrooms": 1, "Onion": 1, "Cream": 1 },
+      "growths": { "wit": 10, "tqn": 5 }
+    },
+    {
+      "id": "garden-broth",
+      "name": "Garden Broth",
+      "dc": 10,
+      "description": "Tomato, greens and carrot cut small and boiled in clear broth. Ready before the fire has burned down.",
+      "ingredients": { "Tomato": 1, "Leafy Greens": 1, "Carrot": 1 },
+      "growths": { "agi": 10, "wit": 5 }
+    },
+    {
+      "id": "cheese-flatbread",
+      "name": "Cheese Flatbread",
+      "dc": 10,
+      "description": "Flatbread laid by the fire with cheese and sliced tomato on top until it blisters. Torn and shared, never cut.",
+      "ingredients": { "Bread": 1, "Cheese": 1, "Tomato": 1 },
+      "growths": { "mgt": 10, "wit": 5 }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+<div class="emblem-resource-amount-dialog">
+  <p>{{{prompt}}}</p>
+  <div class="emblem-resource-amount-controls">
+    {{#each decrements}}
+    <button type="button" class="resource-amt-btn" data-delta="-{{this}}">-{{this}}</button>
+    {{/each}}
+    <input type="number" class="resource-amt-input" value="{{initial}}" min="0" {{#if max}}max="{{max}}"{{/if}} />
+    {{#each increments}}
+    <button type="button" class="resource-amt-btn" data-delta="{{this}}">+{{this}}</button>
+    {{/each}}
+  </div>
+</div>

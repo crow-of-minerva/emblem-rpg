@@ -1,0 +1,7 @@
+<div class="feature-selector-prompt"><strong>Confirm {{#if (eq count 1)}}this feature{{else}}these {{count}} features{{/if}} as your selection?</strong></div>
+<div class="feature-selector-form">
+  {{#each items}}
+    <div class="feature-option is-confirming"><img src="{{this.img}}" class="feature-option-img"><div class="feature-option-info"><span class="feature-option-name">{{this.name}}</span>{{#if this.replaceName}}<span class="feature-option-replaces"><i class="fas fa-right-left"></i> Replaces {{this.replaceName}}</span>{{/if}}</div><span class="feature-option-check"><i class="fas fa-check"></i></span></div>
+  {{/each}}
+</div>
+

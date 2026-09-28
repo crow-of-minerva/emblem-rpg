@@ -1,0 +1,41 @@
+<div class="effect-preview-dialog destructible-preview-dialog">
+  <div class="effect-header">
+    <div class="effect-confirmation-prompt">
+      <img src="{{atkWepImg}}" alt="{{atkWepName}}" class="item-icon" />
+      <span class="confirmation-text">Attack "{{defName}}" with {{atkWepName}}?</span>
+    </div>
+    {{#if weaponArt}}
+    <div class="item-uses">
+      <span class="uses-text">{{weaponArt.name}}</span>
+    </div>
+    {{/if}}
+    {{#unless atkWepInfinite}}
+    <div class="item-uses">
+      <span class="uses-text">Uses: {{atkWepUses}}/{{atkWepMaxUses}}</span>
+    </div>
+    {{/unless}}
+  </div>
+
+  <hr class="effect-preview-divider" />
+
+  <div class="target-grid-container">
+    <div class="target-grid single-target">
+      <div class="target-token-container centered">
+        <div class="target-token-frame">
+          <img src="{{defImage}}" alt="{{defName}}" class="target-token-image" />
+        </div>
+        <label class="target-name">{{defName}}</label>
+        <div class="destructible-integrity">Integrity: {{integrity}}</div>
+        <div class="destructible-brk{{#if brkVulnerable}} is-vulnerable{{/if}}{{#if brkResisted}} is-resisted{{/if}}{{#if brkImmune}} is-immune{{/if}}">
+          <img class="destructible-brk-type" src="systems/emblem-rpg/assets/ui/dmg-types/{{dmgType}}.png" alt="{{dmgType}}" data-tooltip="{{dmgType}}" />
+          {{#if brkImmune}}
+          <span class="destructible-brk-value">Immune</span>
+          {{else}}
+          <span class="destructible-brk-value">-{{brk}} Brk</span>
+          {{#if multiHit}}<span class="destructible-brk-mult">&times;{{numAttacks}}</span>{{/if}}
+          {{/if}}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

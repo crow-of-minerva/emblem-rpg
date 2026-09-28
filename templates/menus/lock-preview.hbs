@@ -1,0 +1,23 @@
+<div class="effect-preview-dialog lock-preview">
+  <div class="effect-header">
+    <div class="effect-confirmation-prompt">
+      <i class="fas fa-key item-icon lock-icon"></i>
+      <span class="confirmation-text">Pick the lock on "{{lockName}}"?</span>
+    </div>
+  </div>
+  <hr class="effect-preview-divider" />
+  <div class="target-grid-container">
+    <div class="target-grid single-target" data-target-count="1">
+      <div class="target-token-container centered" data-target-index="0">
+        <div class="target-token-frame">
+          <img src="{{lockImage}}" alt="{{lockName}}" class="target-token-image" />
+        </div>
+        <label class="target-name">{{lockName}}</label>
+        <div class="skill-check-dc">
+          <div class="skill-info">{{skillLabel}} vs DC {{difficultyClass}}</div>
+          <div class="failure-chance {{chanceBand}}">Success Rate: {{successPercent}}%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

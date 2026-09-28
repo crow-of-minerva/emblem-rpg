@@ -1,0 +1,99 @@
+<form class="emblem-rpg resource-sheet" autocomplete="off">
+
+
+  <section class="item-header">
+
+
+    <div class="item-image">
+      <img src="{{item.img}}" data-action="editImage" data-edit="img" data-tooltip="{{item.name}}" />
+    </div>
+
+
+    <div class="item-details">
+      <input class="item-name" name="name" type="text" value="{{item.name}}" placeholder="Resource Name" />
+      <div class="item-type-row">
+        <label class="item-type">Resource</label>
+
+
+        <label class="proficiency-label" for="resource-type-select">Type:</label>
+        <select class="proficiency-select" name="system.resourceType" id="resource-type-select">
+          {{#each resourceTypes}}
+          <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.value}}</option>
+          {{/each}}
+        </select>
+
+        {{#if (eq item.system.resourceType "Ingredient")}}
+        <select class="proficiency-select" name="system.foodType" id="food-type-select">
+          {{#each foodTypes}}
+          <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+          {{/each}}
+        </select>
+        {{/if}}
+      </div>
+    </div>
+
+  </section>
+
+
+  <section class="item-left-divider">
+
+    <div class="usage-tracker">
+      <label>Amount</label>
+      <div class="uses-row">
+        <input class="uses-input" type="number" name="system.amount" value="{{item.system.amount}}" min="0" />
+      </div>
+    </div>
+
+
+    <div class="per-unit-cost">
+      <label>Per Unit</label>
+      <div class="per-unit-row">
+        <input type="number" name="system.cost.perUnit" value="{{item.system.cost.perUnit}}" min="0" />
+        <span>GP</span>
+      </div>
+    </div>
+  </section>
+
+
+  <section class="item-right-divider">
+
+    <div class="tab-content">
+      <div class="tab-pane active">
+
+        <textarea class="item-description" name="system.description" placeholder="Resource description" style="height: 176px;">{{item.system.description}}</textarea>
+      </div>
+    </div>
+  </section>
+
+
+  <div class="cost-tracker">
+    <label>Total</label>
+    <div class="cost-input-row">
+      <span class="cost-total-value">{{item.system.cost.total}}</span>
+      <span>GP</span>
+    </div>
+  </div>
+
+  {{#if owner}}
+  <div class="item-owner-badge {{#if owner.isNpc}}is-npc-owner{{/if}}" data-tooltip="{{owner.tooltip}}">
+    {{#if owner.isNpc}}
+      <label class="item-owner-flag-label">Flag:</label>
+      <select class="item-owner-flag" name="system.stealable.flag">
+        <option value="None"      {{#if (eq owner.stealableFlag "None")}}selected{{/if}}>None</option>
+        <option value="Drops"     {{#if (eq owner.stealableFlag "Drops")}}selected{{/if}}>Drops</option>
+        <option value="Stealable" {{#if (eq owner.stealableFlag "Stealable")}}selected{{/if}}>Stealable</option>
+      </select>
+      {{#unless (eq owner.stealableFlag "None")}}
+        <label class="item-owner-dc-label">DC:</label>
+        <input class="item-owner-dc" type="number" name="system.stealable.dc" value="{{owner.stealableDC}}" min="0" />
+      {{/unless}}
+      <span class="item-owner-label">Owner:</span>
+    {{else}}
+      <span class="item-owner-label">Owner:</span>
+      <span class="item-owner-name">{{owner.name}}</span>
+    {{/if}}
+    <img class="item-owner-img" src="{{owner.img}}" alt="{{owner.name}}" style="{{avatarScale owner clip=true}}" />
+  </div>
+  {{/if}}
+
+</form>

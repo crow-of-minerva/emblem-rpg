@@ -1,0 +1,31 @@
+{
+  "items": {
+    "Absolve, Dire Prayer, Grace, Restore, Salve, Staff of Grace, Staff of Healing, Staff of Mending": { "exp-mode": "damage-based", "target-mode": "single", "value": 6, "min": 2, "max": 15 },
+    "Aegis": { "exp-mode": "pass-fail", "target-mode": "single", "value": 2 },
+    "Bane": { "exp-mode": "pass-fail", "target-mode": "multiple", "value": 1.5, "leveled": true, "max": 20 },
+    "Bless": { "exp-mode": "pass-fail", "target-mode": "multiple", "value": 1, "max": 20 },
+    "Drakefire": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 5, "leveled": true, "max": 12, "kill-bonus": true },
+    "Dust Devil": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 3, "leveled": true, "max": 10 },
+    "Empower": { "exp-mode": "pass-fail", "target-mode": "single", "value": 5, "limit": 5 },
+    "Enfeeble": { "exp-mode": "pass-fail", "target-mode": "single", "value": 1.5, "leveled": true, "min": 1, "max": 10 },
+    "Fear": { "exp-mode": "pass-fail", "target-mode": "multiple", "value": 2, "leveled": true, "min": 2, "max": 20 },
+    "Fireball": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 4, "leveled": true, "max": 50, "kill-bonus": true },
+    "Flasked Fire": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 3, "leveled": true, "max": 10 },
+    "Guardian": { "exp-mode": "flat", "value": 3 },
+    "Illusion": { "exp-mode": "flat", "value": 1 },
+    "Inspire": { "exp-mode": "pass-fail", "target-mode": "single", "value": 2, "limit": 3 },
+    "Lightning Bolt": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 3, "leveled": true, "max": 50 },
+    "Poison Bomb": { "exp-mode": "pass-fail", "target-mode": "multiple", "value": 1, "leveled": true, "max": 4 },
+    "Rescue": { "exp-mode": "pass-fail", "target-mode": "single", "value": 5 },
+    "Sanctuary": { "exp-mode": "flat", "value": 10 },
+    "Silence": { "exp-mode": "pass-fail", "target-mode": "single", "value": 2, "leveled": true, "max": 5 },
+    "Staff of Warping": { "exp-mode": "pass-fail", "target-mode": "single", "value": 2 },
+    "Stasis": { "exp-mode": "pass-fail", "target-mode": "single", "value": 3, "leveled": true, "max": 20 },
+    "Steal": { "exp-mode": "flat", "value": 5, "limit": 5 },
+    "Sunbeam": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 3, "leveled": true, "max": 50, "kill-bonus":true },
+    "Threaten": { "exp-mode": "pass-fail", "target-mode": "single", "value": 2, "leveled": true, "max": 5, "limit": 3 },
+    "Thunderball": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 3, "leveled": true, "max": 20 },
+    "Warp": { "exp-mode": "flat", "target-mode": "single", "value": 5 },
+    "Wither": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 3, "leveled": true, "max": 20 }
+  }
+}

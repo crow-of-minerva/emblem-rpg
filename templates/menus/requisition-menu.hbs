@@ -1,0 +1,138 @@
+<div class="gm-menu requisition-menu">
+
+  <header class="gm-topbar">
+    <div class="gm-actor rq-actor-station">
+      <img class="gm-actor-img" src="{{station.image}}" alt="{{station.name}}" />
+      <div class="gm-actor-meta">
+        <div class="gm-actor-name">{{station.name}}</div>
+        <div class="gm-actor-sub">Stationary</div>
+      </div>
+    </div>
+    <div class="gm-topbar-spacer"></div>
+    <span class="rq-mode-desc">{{modeDesc}}</span>
+  </header>
+
+  <div class="gm-bottom rq-body">
+
+    <section class="gm-panel rq-performer-panel">
+      <div class="gm-panel-head"><span class="gm-panel-title">Requisitioner</span></div>
+      <div class="gm-panel-scroll">
+        {{#if hasPerformers}}
+        <div class="gm-pick-list">
+          {{#each performers}}
+          <div class="gm-pick{{#if this.selected}} is-chosen{{/if}}{{#unless this.eligible}} is-blocked{{/unless}}"
+               data-action="selectPerformer" data-uuid="{{this.actorUuid}}" data-eligible="{{this.eligible}}"
+               {{#unless this.eligible}}data-tooltip="{{this.blocked}}"{{/unless}}>
+            <img class="gm-pick-img" src="{{this.image}}" alt="{{this.name}}" style="{{this.avatarStyle}}" />
+            <span class="gm-pick-body">
+              <span class="gm-pick-name">{{this.name}}</span>
+              {{#if this.eligible}}
+              <span class="gm-pick-sub">{{this.skillLabel}} {{#if this.skillDie}}<strong>{{this.skillDie}}</strong> {{/if}}+ {{this.skillBonus}}</span>
+              {{else}}
+              <span class="gm-pick-sub is-bad">{{this.blocked}}</span>
+              {{/if}}
+            </span>
+            <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+          </div>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="gm-empty">No party member is on this map.</div>
+        {{/if}}
+      </div>
+    </section>
+
+    <div class="rq-stack">
+
+      <section class="gm-panel rq-kind-panel">
+        <div class="gm-panel-head"><span class="gm-panel-title">Request</span></div>
+        <div class="rq-kind-grid">
+          {{#each kinds}}
+          <div class="gm-pick rq-kind{{#if this.selected}} is-chosen{{/if}}{{#unless this.available}} is-blocked{{/unless}}"
+               data-action="selectKind" data-kind="{{this.key}}" data-available="{{this.available}}"
+               {{#unless this.available}}aria-disabled="true" data-tooltip="{{this.note}}"{{/unless}}>
+            <span class="gm-pick-body">
+              <span class="rq-kind-name">{{this.label}}</span>
+              <span class="gm-pick-sub{{#unless this.available}} is-bad{{/unless}}">{{this.note}}</span>
+            </span>
+            <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+          </div>
+          {{/each}}
+        </div>
+      </section>
+
+      <section class="gm-panel rq-faction-panel">
+        <div class="gm-panel-head">
+          <span class="gm-panel-title">Factions</span>
+          <span class="gm-panel-meta">{{availableCount}} available</span>
+        </div>
+        <div class="gm-panel-scroll">
+          {{#if hasFactions}}
+          <div class="gm-pick-list">
+            {{#each factions}}
+            <div class="gm-pick rq-faction{{#if this.selected}} is-chosen{{/if}}{{#if this.locked}} is-blocked{{/if}}"
+                 data-action="selectFaction" data-id="{{this.id}}" data-locked="{{this.locked}}"
+                 {{#if this.locked}}aria-disabled="true" data-tooltip="{{this.blocked}}"{{/if}}>
+              <span class="rq-faction-icon"><i class="fas {{#if this.locked}}fa-lock{{else}}fa-flag{{/if}}"></i></span>
+              <span class="gm-pick-body">
+                <span class="rq-faction-name">{{this.name}}</span>
+                {{#if this.locked}}
+                <span class="gm-pick-sub is-bad">{{this.blocked}}</span>
+                {{else}}
+                <span class="gm-pick-sub">{{this.summary}}</span>
+                {{/if}}
+              </span>
+              <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+            </div>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="gm-empty">This Stationary lists no factions.</div>
+          {{/if}}
+        </div>
+      </section>
+
+    </div>
+
+    <section class="gm-panel rq-details-panel">
+      {{#if hasSelection}}
+      <div class="rq-detail-head">
+        <span class="rq-faction-title">{{faction.name}}</span>
+      </div>
+      <div class="rq-badges">
+        <span class="rq-badge">Relation <strong>{{faction.relation}}</strong></span>
+        <span class="rq-badge">Base DC <strong>{{faction.baseDc}}</strong></span>
+        <span class="rq-badge">Wealth <strong>{{faction.wealth}}</strong></span>
+      </div>
+      <div class="rq-demand-row">
+        <label class="rq-demand-field{{#unless demand.valid}} is-bad{{/unless}}" data-tooltip="{{demandTooltip}}">
+          <span class="gm-col-label">Demand</span>
+          <span class="rq-demand-entry">
+            <input type="number" class="rq-demand-input" value="{{demand.value}}" min="{{demand.min}}"
+                   max="{{demand.max}}" step="{{demand.step}}" />
+            <span class="rq-demand-unit">GP</span>
+          </span>
+          <span class="rq-demand-cap">{{demand.capLabel}}</span>
+        </label>
+        <div class="rq-dc" data-tooltip="{{dcTooltip}}">
+          <span class="gm-col-label">Civics DC</span>
+          <strong class="rq-dc-value">{{dcLabel}}</strong>
+        </div>
+      </div>
+      <div class="rq-demand-note{{#unless demand.valid}} is-bad{{/unless}}">{{demand.note}}</div>
+      <div class="rq-convoy-line" data-tooltip="{{convoyTooltip}}"><i class="fas fa-coins"></i> {{convoyLine}}</div>
+      {{else}}
+      <div class="gm-empty">{{emptyDetail}}</div>
+      {{/if}}
+    </section>
+
+  </div>
+
+  <footer class="gm-footer"{{#if buttonTitle}} data-tooltip="{{buttonTitle}}"{{/if}}>
+    <span class="rq-ticket{{#if ticket.bad}} is-bad{{/if}}">{{{ticketHtml}}}</span>
+    <button type="button" class="gm-action-btn" data-action="requisition" {{#unless canRequisition}}disabled{{/unless}}>
+      Begin Requisition
+    </button>
+  </footer>
+
+</div>

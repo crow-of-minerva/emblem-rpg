@@ -1,0 +1,56 @@
+<div class="ed-container target-params-container">
+  <div class="ed-section">
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.target.type'}}">target type</span>
+      <select class="tp-target-type">
+        <option value="Any">Any</option>
+        <option value="Self">Self</option>
+        <option value="Friendly">Friendly</option>
+        <option value="Hostile">Hostile</option>
+        <option value="Ground">Ground</option>
+      </select>
+    </label>
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.target.shape'}}">shape</span>
+      <select class="tp-rng-type">
+        <option value="Single">Single</option>
+        <option value="Multiple">Multiple</option>
+        <option value="Line">Line</option>
+        <option value="Area">Area</option>
+        <option value="Cone">Cone</option>
+        <option value="Location">Location</option>
+      </select>
+    </label>
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.target.grid-colour'}}">grid colour</span>
+      <select class="tp-grid-color">
+        <option value="Red">Red</option>
+        <option value="Green">Green</option>
+        <option value="Purple">Purple</option>
+        <option value="Blue">Blue</option>
+        <option value="Orange">Orange</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="ed-section tp-ground-section">
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'target.valid-squares'}}">valid squares</span>
+      <select class="tp-valid-squares">
+        <option value="All">All</option>
+        <option value="Walkable">Walkable only</option>
+        <option value="Flyable">Flyable only</option>
+      </select>
+    </label>
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'target.max-elevation-difference'}}">
+        max elevation difference
+      </span>
+      <input type="number" class="tp-max-elev" min="0" step="1" value="0" style="max-width:80px">
+    </label>
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'target.unoccupied-only'}}">unoccupied only</span>
+      <span class="ed-check-slot"><input type="checkbox" class="tp-unoccupied-only" checked></span>
+    </label>
+  </div>
+</div>

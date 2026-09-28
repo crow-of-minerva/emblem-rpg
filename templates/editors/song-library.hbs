@@ -1,0 +1,135 @@
+<div class="rl-root sl-root{{#if readOnly}} is-readonly{{/if}}">
+  <nav class="rl-rail">
+    {{#each tabs}}
+    <button type="button" class="rl-rail-tab{{#if this.active}} is-active{{/if}}" data-action="setTab" data-tab="{{this.key}}" data-tooltip="{{this.title}}">
+      <i class="{{this.icon}}"></i><span>{{this.label}}</span>
+    </button>
+    {{/each}}
+  </nav>
+
+  <aside class="rl-list-pane">
+    <div class="rl-list-head">
+      <span class="craft-section-title">{{tab.label}}</span>
+      {{#unless readOnly}}
+      <span class="rl-list-tools">
+        {{#if canRestore}}
+        <button type="button" class="rl-tool-btn" data-action="restoreBuiltins" data-tooltip="{{tooltip 'song.restore-builtins'}}"><i class="fas fa-rotate-left"></i></button>
+        {{/if}}
+        <button type="button" class="rl-tool-btn" data-action="addSong" data-tooltip="{{addTooltip}}"><i class="fas fa-plus"></i></button>
+      </span>
+      {{/unless}}
+    </div>
+    <div class="rl-list">
+      {{#if hasSongs}}
+      {{#each songs}}
+      <div class="rl-recipe sl-song{{#if this.selected}} is-selected{{/if}}" data-action="selectSong" data-id="{{this.id}}"
+           {{#if this.draggable}}draggable="true" data-tooltip="{{tooltip 'song.link'}}"{{/if}}>
+        <img class="rl-recipe-img" src="{{this.img}}" alt="{{this.name}}" />
+        <span class="rl-recipe-body">
+          <span class="rl-recipe-name sl-song-name">{{this.name}}</span>
+          <span class="rl-recipe-meta">
+            <span class="rl-recipe-dc sl-song-dc">DC {{this.dc}}</span>
+            <span class="sl-song-tags">
+              <span class="sl-song-performers"{{#unless this.group}} hidden{{/unless}}><i class="fas fa-users"></i> <span class="sl-song-performers-count">{{this.performers}}</span></span>
+              <i class="fas fa-music sl-song-track"{{#unless this.hasTrack}} hidden{{/unless}}></i>
+            </span>
+          </span>
+        </span>
+        {{#if this.draggable}}<i class="fas fa-grip-vertical rl-recipe-grip"></i>{{/if}}
+      </div>
+      {{/each}}
+      {{else}}
+      <div class="rl-empty">{{#if isPersonalTab}}No Personal songs yet.{{else}}No Default songs yet.{{/if}}</div>
+      {{/if}}
+    </div>
+    {{#if isPersonalTab}}
+    <div class="rl-list-foot">Drag a Personal song onto a unit's sheet to link it.</div>
+    {{/if}}
+  </aside>
+
+  <section class="rl-editor-pane">
+    {{#if selected}}
+    <div class="rl-editor-scroll">
+      <div class="ed-section craft-head-section">
+        <div class="rl-head-row">
+          <img class="rl-editor-img" src="{{selected.img}}" alt="{{selected.name}}" {{#unless readOnly}}data-action="pickImage" data-tooltip="{{tooltip 'song.change-image'}}"{{/unless}} />
+          <div class="craft-field-row rl-head-fields">
+            <label class="craft-field rl-field-name">
+              <span>Name</span>
+              <input type="text" name="name" value="{{selected.name}}" placeholder="Song name" {{#if readOnly}}disabled{{/if}} />
+            </label>
+            <label class="craft-field rl-field-dc" data-tooltip="{{tooltip 'song.difficulty'}}">
+              <span>DC</span>
+              <input type="number" name="dc" value="{{selected.dc}}" min="{{limits.dc.min}}" max="{{limits.dc.max}}" step="1" {{#if readOnly}}disabled{{/if}} />
+            </label>
+            <label class="craft-field rl-field-dc sl-field-performers" data-tooltip="{{tooltip 'song.performers'}}">
+              <span>Performers</span>
+              <input type="number" name="performers" value="{{selected.performers}}" min="{{limits.performers.min}}" max="{{limits.performers.max}}" step="1" {{#if readOnly}}disabled{{/if}} />
+            </label>
+          </div>
+        </div>
+        <label class="craft-field rl-field-desc">
+          <span>Description</span>
+          <textarea name="description" rows="5" placeholder="Description" {{#if readOnly}}disabled{{/if}}>{{selected.description}}</textarea>
+        </label>
+      </div>
+
+      <div class="ed-section">
+        <div class="craft-section-header">
+          <span class="craft-section-title">Bonuses</span>
+        </div>
+        <div class="craft-stat-row sl-bonus-row">
+          {{#each bonuses}}
+          <label class="craft-stat" data-tooltip="{{this.tooltip}}">
+            <span>{{this.label}}</span>
+            <input type="number" name="bonus_{{this.key}}" value="{{this.value}}" placeholder="--"
+              min="{{@root.limits.bonus.min}}" max="{{@root.limits.bonus.max}}" step="1"
+              {{#if @root.readOnly}}disabled{{/if}} />
+          </label>
+          {{/each}}
+        </div>
+      </div>
+
+      <div class="ed-section">
+        <div class="craft-section-header">
+          <span class="craft-section-title">Track</span>
+        </div>
+        <label class="craft-field sl-field-track" data-tooltip="{{tooltip 'song.track'}}">
+          <select name="track" {{#if readOnly}}disabled{{/if}}>
+            <option value="" {{#if track.noneSelected}}selected{{/if}}>None</option>
+            {{#if track.stale}}<option value="{{track.value}}" selected>Unresolved Track</option>{{/if}}
+            {{#if track.playlists.length}}
+            <optgroup label="Playlists">
+              {{#each track.playlists}}<option value="{{this.uuid}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>{{/each}}
+            </optgroup>
+            {{/if}}
+            {{#each track.groups}}
+            <optgroup label="{{this.name}}">
+              {{#each this.sounds}}<option value="{{this.uuid}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>{{/each}}
+            </optgroup>
+            {{/each}}
+          </select>
+        </label>
+      </div>
+
+      {{#unless readOnly}}
+      <div class="rl-danger-row">
+        <button type="button" class="rl-move-btn" data-action="moveSong">
+          <i class="fas fa-right-left"></i> {{#if selected.isDefault}}Make Personal{{else}}Make Default{{/if}}
+        </button>
+        <button type="button" class="rl-delete-btn" data-action="deleteSong"><i class="fas fa-trash"></i> Delete Song</button>
+      </div>
+      {{/unless}}
+    </div>
+    {{else}}
+    <div class="rl-empty rl-empty-editor">{{#if readOnly}}Select a song.{{else}}Select a song, or add one with <i class="fas fa-plus"></i>.{{/if}}</div>
+    {{/if}}
+  </section>
+
+  <footer class="rl-footer">
+    {{#unless readOnly}}
+    <button type="button" class="rl-footer-btn rl-save-btn" data-action="save"><i class="fas fa-save"></i> Save</button>
+    {{/unless}}
+    <button type="button" class="rl-footer-btn" data-action="cancel">Close</button>
+  </footer>
+</div>

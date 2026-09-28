@@ -1,0 +1,17 @@
+<div class="merchandise-settings">
+  <section class="merchandise-accepted">
+    <div class="merchandise-heading">
+      <h3>Goods {{vendorName}} will buy</h3>
+      <button type="button" class="merchandise-bulk" data-checked="true">Select All</button>
+      <button type="button" class="merchandise-bulk" data-checked="false">Select None</button>
+    </div>
+    <div class="merchandise-grid">
+      {{#each accepted}}
+      <label class="merchandise-check">
+        <input type="checkbox" data-path="system.acceptedMerchandise.{{this.key}}" {{#if this.on}}checked{{/if}} />
+        <span>{{this.label}}</span>
+      </label>
+      {{/each}}
+    </div>
+  </section>
+</div>

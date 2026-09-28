@@ -1,0 +1,988 @@
+/** @layer engine/items */
+import { COMMAND_IDS } from '../../contracts/commands.mjs';
+import { EVENT_IDS } from '../../contracts/events.mjs';
+import {
+  ITEM_ACTIVATION_PRESENTATION_BEATS,
+  ITEM_ACTIVATION_TIMING,
+  ITEM_USE_PROFICIENCY_HIT_RATIO,
+  UNLOCKED_ACTIVATION_ITEM_NAME,
+  itemActivationPresentationMessage,
+  normalizeItemActivationIntent
+} from '../../contracts/domains/items.mjs';
+import { COMBAT_CONTINUATIONS, KARMA_LEDGER_RESOURCE_KEY } from '../../contracts/domains/combat.mjs';
+import { CombatPersistenceError } from '../recovery/errors.mjs';
+import { collectEffectDefeats, settleEffectDefeats } from '../combat/defeat.mjs';
+import { effectContext, effectRuntime } from '../effects/request.mjs';
+import { unitImpact } from '../effects/execution.mjs';
+import { grantSkillExperience } from '../character/skill-experience.mjs';
+import { cardRequester, presentSafely, recordAbsorbed, requesterAudience } from '../feedback.mjs';
+import { createCommandAuthorization } from '../authorization.mjs';
+import { SKILL_BY_KEY, areFactionsFriendly, areFactionsOpposed } from '../../game/character/rules.mjs';
+import { resolveSettledStanding, resolveStandingDestination } from '../../game/movement/pathfinding.mjs';
+import {
+  activationAllowsCanter,
+  activationCastCondition,
+  activationHoldsCastArt,
+  activationTriggers,
+  boosterGainLine,
+  planBoosterGains,
+  resolveActivationContinuation,
+  resolveActivationActionSpend,
+  resolveActivationConsumption,
+  resolveActivationDelivery,
+  resolveActivationLanded,
+  resolveSaveAdvantage,
+  activationRequiredProficiency,
+  activationRequirements,
+  explorationAllowsItem,
+  isMountActivation,
+  validateActivationLegality,
+  validateActivationRequirements,
+  validateActivationParams,
+  validateActivationReach,
+  validateActivationTargets,
+  validateForcedMovementSquare,
+  validateGroundPlacement,
+  validateMountActivation
+} from '../../game/items/activation.mjs';
+import {
+  buildSavingThrow,
+  buildSkillCheck,
+  calculateSavingThrowDifficulty,
+  calculateSkillCheckDifficulty
+} from '../../game/rolls/checks.mjs';
+import { earnsCharacterExperience, resolveWeaponExperience } from '../../game/progression/rules.mjs';
+import { resolveActivationExperience } from '../../game/progression/activation-experience.mjs';
+import { isStealAbility } from '../../game/economy/trade.mjs';
+import { groundsOnInteraction, planForcedLanding } from '../../game/movement/input-policy.mjs';
+import {
+  canRallyTarget, planRallyEffect, rallyCasterFacts, ralliesOn, rallyRankFor
+} from '../../game/support/rules.mjs';
+import { RALLY_SUPPORT_XP } from '../../contracts/domains/progression.mjs';
+import { resolveGuardBond } from '../../game/effects/planning.mjs';
+import { RESULT_CODES, accept, refuse } from '../../contracts/results.mjs';
+import { recordDiagnostic, requirePorts, DIAGNOSTIC_SEVERITIES } from '../../contracts/protocol.mjs';
+
+/* -------------------------------------------- */
+/*  Activation commands                         */
+/* -------------------------------------------- */
+
+/**
+ * The ITEMS.ACTIVATE command, registered with CommandDispatcher from init/system.mjs. It arrives through the public
+ * API's `items.activate` (api/facade.mjs), from the targeting controls (ui/controls/targeting.mjs) and the Enemy AI.
+ */
+export function createItemActivationCommandContribution({
+  diagnostics, activations, settlement, effects, checks, continuations, presentation, checkPresentation, skills,
+  support, events, progression, movements, inventory, defeats, objects, authority, wait
+}) {
+  requirePorts('createItemActivationCommandContribution', { diagnostics, activations, settlement, effects, checks,
+    continuations, presentation, checkPresentation, skills, support, events, progression, movements, inventory,
+    defeats, objects, wait });
+  const services = { diagnostics,
+    activations, settlement, effects, checks, continuations, presentation, checkPresentation, skills, support,
+    events, progression, movements, inventory, defeats, objects, wait
+  };
+  const authorize = createCommandAuthorization(authority);
+  return [
+    {
+      id: COMMAND_IDS.ITEMS.ACTIVATE,
+      authorize: authorize.tokenController(payload => payload.sourceTokenUuid),
+      concurrencyKeys: async context => [...await activations.resourceKeys(context.payload), KARMA_LEDGER_RESOURCE_KEY],
+      handler: context => activateItem(context, services)
+    },
+
+  ];
+}
+
+/* -------------------------------------------- */
+/*  Activation orchestration                    */
+/* -------------------------------------------- */
+
+async function activateItem(context, services) {
+  const intent = normalizeItemActivationIntent(context.payload);
+  if (!intent) return refuse(RESULT_CODES.ITEM_ACTIVATION_INPUT_INVALID);
+  const snapshot = await services.activations.getSnapshot(intent);
+  if (!snapshot) return refuse(RESULT_CODES.ITEM_ACTIVATION_INPUT_INVALID);
+  if (snapshot.unsupported === true) return refuse(RESULT_CODES.ITEM_ACTIVATION_UNSUPPORTED);
+  if (snapshot.explorationActive === true && !explorationAllowsItem(snapshot.item)) {
+    return refuse(RESULT_CODES.ITEM_ACTIVATION_EXPLORATION_FORBIDDEN);
+  }
+  const refusal = validateActivationRequest(snapshot, intent, services.activations.geometryResolver(snapshot));
+  if (refusal) return refusal;
+
+  const owned = { ...snapshot, operation: context.operation ?? null };
+  return deliverActivatedItem(context, services, owned, intent, isUnlockedActivation(snapshot));
+}
+
+/**
+ * Carry out one item use: lead-in, passives, effects on each target, costs, experience and continuation. Once the
+ * use has settled, finish the defeats it claimed, pause for the presentation, and apply the deferred turn end.
+ *
+ * Every write of the use belongs to `context.operation`, the dispatcher operation CommandDispatcher opened for this
+ * command: FoundryItemActivationSettlement and the effect writers capture through it, the dispatcher commits it once
+ * this handler accepts, and it restores the whole use when this handler refuses or throws.
+ */
+async function deliverActivatedItem(context, services, snapshot, intent, unlocked) {
+  const cinematic = intent.cinematic === true && !unlocked;
+  const deliveries = [];
+  const claims = [];
+  const impacts = [];
+  let experience = null;
+  let continuation = null;
+  let cinematicStarted = false;
+  try {
+    if (!await services.activations.stillCurrent(snapshot)) {
+      throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_STALE);
+    }
+    const walked = unlocked ? null : await resolveWalkedLeg(services, snapshot);
+    cinematicStarted = cinematic;
+    await presentSafely(services, leadInMessage(snapshot, intent, cinematic));
+    await services.settlement.captureUse(snapshot);
+    await settleSanctuary(services.settlement, snapshot);
+    await runUseItemPassives(services, snapshot, intent, context, claims);
+    await presentSafely(services, castMessage(snapshot, intent));
+    await settleMountToggle(services, snapshot);
+
+    const shared = await rollSharedSkillCheck(services, snapshot, context);
+    deliveries.push(...await deliverActivation(services, snapshot, intent, context, shared, { claims, impacts }));
+    const landed = deliveries.some(delivery => delivery.landed === true);
+    if (await settleActivationCosts(services, snapshot, landed, context) !== true) {
+      throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+    }
+    await settleRallySupport(services, snapshot, deliveries, context);
+    await settleAdjacentGrounding(services, snapshot);
+    if (unlocked) {
+      continuation = resolveActivationContinuation({ unlocked: true });
+    } else {
+      experience = await settleActivationExperience(services, snapshot, impacts);
+      await settleItemProficiency(services, snapshot, context);
+      continuation = await settleActivationContinuation(services, snapshot, context, walked);
+    }
+  } catch (error) {
+    recordDiagnostic(services?.diagnostics, { sourcePath: import.meta.url, error: error, detail: 'deliverActivatedItem',
+      severity: error instanceof CombatPersistenceError && error.code === RESULT_CODES.ITEM_ACTIVATION_STALE
+        ? DIAGNOSTIC_SEVERITIES.DEBUG : DIAGNOSTIC_SEVERITIES.ERROR });
+    if (cinematicStarted) await presentSafely(services, endMessage(snapshot, true));
+    return refuse(error instanceof CombatPersistenceError ? error.code : RESULT_CODES.COMMAND_FAILED);
+  }
+
+  const outcome = activationOutcome(snapshot, deliveries, continuation, context);
+  services.events.publish(EVENT_IDS.ITEM_ACTIVATION_COMMITTED, outcome, { operation: context.operation ?? null });
+  await settleActivationDefeats(services, claims, context);
+  if (!unlocked) await services.wait(ITEM_ACTIVATION_TIMING.settleTail);
+  await publishActivationExperience(services, experience, context);
+  await presentSafely(services, endMessage(snapshot, cinematic));
+  if (!unlocked) await settleDeferredEndTurn(services, outcome, context.operation ?? null);
+  return accept(RESULT_CODES.ITEM_ACTIVATED, outcome);
+}
+
+/**
+ * Dash leaves the unit's movement plan open: it gets no cinematic, no closing pause, no experience and no turn end.
+ * It still spends its authored action through settleActivationCosts, like any other use.
+ */
+function isUnlockedActivation(snapshot) {
+  return snapshot.item.name.trim() === UNLOCKED_ACTIVATION_ITEM_NAME;
+}
+
+function validateActivationRequest(snapshot, intent, resolveTerrainGeometry) {
+  const envelope = snapshot.envelope;
+  const legality = validateActivationLegality({
+    envelope,
+    controlled: true,
+    turnOver: snapshot.source.turnOver,
+    standardAvailable: snapshot.source.standardAvailable,
+    bonusAvailable: snapshot.source.bonusAvailable,
+    magicBlocked: snapshot.source.magicBlocked,
+    magical: snapshot.item.magical,
+    stanceAvailable: snapshot.source.stanceAvailable,
+    item: snapshot.source.conditionItem,
+    proficiencyTotal: snapshot.source.proficiency?.total
+  });
+  if (!legality.ok) return refuse(legality.code, legality.data);
+  const landing = planForcedLanding({
+    grounds: touchGrounds(snapshot), landingBlocked: snapshot.source.landingBlocked
+  });
+  if (!landing.ok) return refuse(landing.code);
+  const saddle = validateMountActivation({ envelope, source: snapshot.source });
+  if (!saddle.ok) return refuse(saddle.code);
+  const targets = validateActivationTargets(
+    envelope, snapshot.source.actorUuid, snapshot.aimTargets, snapshot.source
+  );
+  if (!targets.ok) return refuse(targets.code, targets.data);
+  const params = validateActivationParams(snapshot.source.conditionItem, intent.params);
+  if (!params.ok) return refuse(params.code);
+  const authored = validateActivationRequirements({
+    requirements: activationRequirements(snapshot.source.conditionItem),
+    itemType: snapshot.source.conditionItem?.type,
+    requiredProficiency: activationRequiredProficiency(snapshot.source.conditionItem),
+    source: snapshot.source,
+    targets: snapshot.targets,
+    targetLocation: intent.aim ?? null,
+    resolveTerrainGeometry
+  });
+  if (!authored.ok) return refuse(authored.code, authored.data);
+  const reach = validateActivationReach({
+    envelope,
+    source: snapshot.source,
+    footprint: snapshot.source.footprint,
+    columns: snapshot.columns,
+    rows: snapshot.rows,
+    sight: snapshot.sight,
+    aim: intent.aim,
+    targets: snapshot.aimTargets
+  });
+  if (!reach.ok) return refuse(reach.code);
+  const forced = validateForcedMovementSquare({
+    envelope,
+    source: snapshot.source,
+    target: snapshot.aimTargets[0] ?? null,
+    boards: snapshot.forcedMovementBoards,
+    classicFlyers: snapshot.classicFlyers,
+    flightForbidden: snapshot.flightForbidden
+  });
+  if (!forced.ok) return refuse(forced.code, { ability: forced.ability });
+  for (const bond of snapshot.guardBonds) {
+    const guard = resolveGuardBond(bond);
+    if (!guard.ok) return refuse(guard.code, { actorName: guard.actorName });
+  }
+  const placement = validateGroundPlacement(
+    envelope, intent.aim, snapshot.units, snapshot.source.tokenUuid
+  );
+  return placement.ok ? null : refuse(placement.code);
+}
+
+/* -------------------------------------------- */
+/*  Delivery                                    */
+/* -------------------------------------------- */
+
+/**
+ * Deliver the use to each target in turn, or once with no target. `reach` collects what the deliveries did: the
+ * defeats their effect steps claimed, and the unit impacts EffectExecutionService and Rally report, which
+ * settleActivationExperience grades.
+ */
+async function deliverActivation(services, snapshot, intent, context, shared, reach) {
+  const deliveries = [];
+  if (snapshot.targets.length === 0) {
+    deliveries.push(await deliverToTarget(services, snapshot, intent, context, null, shared, reach));
+    return deliveries;
+  }
+  for (const target of snapshot.targets) {
+    deliveries.push(await deliverToTarget(services, snapshot, intent, context, target, shared, reach));
+  }
+  return deliveries;
+}
+
+async function deliverToTarget(services, snapshot, intent, context, target, shared, { claims, impacts }) {
+  const envelope = snapshot.envelope;
+  if (envelope.rally) return deliverRally(services, snapshot, target, impacts);
+  if (envelope.booster) return deliverBooster(services, snapshot, context);
+  const delivery = resolveActivationDelivery({
+    envelope,
+    sourceFaction: snapshot.source.actorType,
+    targetFaction: target?.actorType,
+    targetDestructible: target?.objectTarget === true,
+    hasTarget: Boolean(target)
+  });
+  const savingThrow = delivery.kind === 'save'
+    ? await rollActivationSave(services, snapshot, context, target, delivery)
+    : null;
+  const skillCheck = delivery.kind === 'check'
+    ? await resolveActivationCheck(services, snapshot, context, target, delivery, shared)
+    : null;
+  const landed = resolveActivationLanded({ kind: delivery.kind, savingThrow, skillCheck });
+
+  const result = await services.effects.run(activationEffectRequest({
+    snapshot,
+    intent,
+    target,
+    savingThrow,
+    skillCheck,
+    audience: requesterAudience(context)
+  }));
+  if (result.outcomes.some(outcome => outcome?.ok === false)) {
+    throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  }
+  claims.push(...collectEffectDefeats(result.outcomes, activationFactionOf(snapshot)));
+  impacts.push(...collectImpacts(result.outcomes));
+  await presentEffectDamage(services, snapshot, result.outcomes, context);
+  return Object.freeze({
+    targetActorUuid: target?.actorUuid ?? '',
+    targetTokenUuid: target?.tokenUuid ?? '',
+    delivery: delivery.kind,
+    savingThrow,
+    skillCheck,
+    landed
+  });
+}
+
+/**
+ * Rally one ally. The caster's affinity and the rank rallyRankFor gives the ally set the bonus (planRallyEffect),
+ * and FoundryItemActivationSettlement.applyRally writes it. Rally runs no effect steps, so an ally it newly rallies
+ * is reported here as a helpful status.
+ */
+async function deliverRally(services, snapshot, target, impacts) {
+  const landed = target ? await settleRally(services, snapshot, target) : false;
+  if (landed) impacts.push(unitImpact(target.actorUuid, { helpful: { status: true } }));
+  return Object.freeze({
+    targetActorUuid: target?.actorUuid ?? '',
+    targetTokenUuid: target?.tokenUuid ?? '',
+    delivery: 'rally',
+    savingThrow: null,
+    skillCheck: null,
+    landed
+  });
+}
+
+/**
+ * Write one Rally, then count it on the caster's record of this map's Rallies through
+ * FoundryItemActivationSettlement.recordRally, which is what rallyTargetBlocker's per-unit limit reads next time.
+ */
+async function settleRally(services, snapshot, target) {
+  const caster = rallyCasterFacts(snapshot.source);
+  const identity = {
+    uuid: target.actorUuid, actorId: target.baseActorId, partyId: target.partyId, rallied: target.rallied === true
+  };
+  if (!canRallyTarget(caster, identity)) return false;
+  const rank = rallyRankFor(caster, identity);
+  const intent = planRallyEffect({ table: snapshot.affinities, caster, target: { actorUuid: target.actorUuid }, rank });
+  if (!intent) return false;
+  if (await services.settlement.applyRally(target.actorUuid, intent, snapshot) !== true
+    || await services.settlement.recordRally(snapshot, target.actorUuid) !== true) {
+    throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  }
+  return true;
+}
+
+/**
+ * Pay RALLY_SUPPORT_XP between the caster and each unit this use Rallied for the first time this map, read from the
+ * caster's record as the snapshot found it. The SUPPORT.GRANT_XP child command (engine/support/commands.mjs,
+ * reached through the `support` port in init/system.mjs) writes both sides of each bond under this command's
+ * operation, creating the bond for a party member who had none. A refused or failed award is recorded and leaves
+ * the Rally standing. A support rank it crosses is told to the requester.
+ */
+async function settleRallySupport(services, snapshot, deliveries, context) {
+  if (!snapshot.envelope.rally) return;
+  const partnerActorUuids = [...new Set(deliveries
+    .filter(delivery => delivery.delivery === 'rally' && delivery.landed === true
+      && ralliesOn(snapshot.source.support.rallies, delivery.targetActorUuid) === 0)
+    .map(delivery => delivery.targetActorUuid))];
+  if (!partnerActorUuids.length) return;
+  try {
+    const result = await services.support.grant({
+      sourceActorUuid: snapshot.source.actorUuid, partnerActorUuids, amount: RALLY_SUPPORT_XP, autoCreate: true
+    }, context);
+    for (const rankUp of result?.ok === true ? result.data?.rankUps ?? [] : []) {
+      await presentNotice(services, itemActivationPresentationMessage(ITEM_ACTIVATION_PRESENTATION_BEATS.NOTICE, {
+        notice: 'support',
+        actorUuid: snapshot.source.actorUuid,
+        message: `${rankUp.a} & ${rankUp.b}: Support ${rankUp.from} → ${rankUp.to}!`
+      }), requesterAudience(context));
+    }
+  } catch (error) {
+    recordAbsorbed(services, error, 'settleRallySupport');
+  }
+}
+
+/**
+ * Write a Booster's permanent stat gains (planBoosterGains) and send the user a notice of what rose. When caps
+ * block every increase, nothing is written and the notice says so.
+ */
+async function deliverBooster(services, snapshot, context) {
+  const source = snapshot.source;
+  const plan = planBoosterGains({ item: source.conditionItem, source });
+  if (plan.landed && await services.settlement.applyBooster(source.actorUuid, plan, snapshot) !== true) {
+    throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  }
+  await presentNotice(services, itemActivationPresentationMessage(ITEM_ACTIVATION_PRESENTATION_BEATS.NOTICE, {
+    notice: 'booster', actorUuid: source.actorUuid, message: boosterGainLine(source.actorName, plan)
+  }), requesterAudience(context));
+  return Object.freeze({
+    targetActorUuid: source.actorUuid,
+    targetTokenUuid: source.tokenUuid,
+    delivery: 'booster',
+    savingThrow: null,
+    skillCheck: null,
+    landed: plan.landed
+  });
+}
+
+/**
+ * Roll one target's saving throw against the caster's DC and show its roll card. A Destructible fails and an exempt
+ * friendly target passes automatically (resolveActivationDelivery), with no roll, Willpower spend or card.
+ */
+async function rollActivationSave(services, snapshot, context, target, delivery) {
+  if (!target) return null;
+  if (delivery.autoFail) return Object.freeze({ success: false, total: 0, autoFailed: true });
+  if (delivery.autoSucceed) return Object.freeze({ success: true, total: 999, autoSucceeded: true });
+  const envelope = snapshot.envelope;
+  const dc = calculateSavingThrowDifficulty(snapshot.source.attributes, {
+    base: envelope.savingThrow.base,
+    attribute: envelope.savingThrow.attribute
+  });
+  const advantage = resolveSaveAdvantage({
+    magicSaveAdvantage: target.magicSaveAdvantage,
+    magical: snapshot.item.magical,
+    willpowerRemaining: target.willpowerRemaining
+  });
+  if (advantage.spendsWillpower && !await services.settlement.spendWillpower(target.actorUuid, snapshot)) {
+    throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  }
+  const check = buildSavingThrow({
+    targetAttribute: envelope.savingThrow.targetAttribute,
+    dc,
+    attributes: target.attributes,
+    saveModifiers: target.saveModifiers,
+    actorType: target.actorType,
+    blessed: target.blessed,
+    hasAdvantage: advantage.hasAdvantage
+  });
+  const roll = await services.checks.roll(target.actorUuid, check,
+    { requestId: context.requestId, operation: context.operation });
+  await presentCheck(services, snapshot, target, check, roll, 'save', context);
+  await services.wait(ITEM_ACTIVATION_TIMING.diceSettleHold);
+  if (!await services.settlement
+    .consumeSavingThrowEffects(target.actorUuid, envelope.savingThrow.targetAttribute, snapshot)) {
+    throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  }
+  return Object.freeze({ success: roll.success === true, total: roll.total, natural: roll.natural, dc });
+}
+
+async function resolveActivationCheck(services, snapshot, context, target, delivery, shared) {
+  if (delivery.autoSucceed) return Object.freeze({ success: true, total: 999, autoSucceeded: true });
+  const envelope = snapshot.envelope;
+  const dc = target
+    ? calculateSkillCheckDifficulty(target.attributes, envelope.skillCheck.base, envelope.skillCheck.targetAttribute)
+    : envelope.skillCheck.base;
+  if (shared) {
+    return Object.freeze({
+      success: Number(shared.total) > dc,
+      total: shared.total,
+      natural: shared.natural,
+      dc,
+      shared: true
+    });
+  }
+  const check = activationSkillCheck(snapshot, envelope, dc);
+  if (!check) return null;
+  const roll = await services.checks.roll(snapshot.source.actorUuid, check,
+    { requestId: context.requestId, operation: context.operation });
+  await presentCheck(services, snapshot, target, check, roll, 'skill', context);
+  await services.wait(ITEM_ACTIVATION_TIMING.diceSettleHold);
+  await grantSkillExperience(services, snapshot.source.actorUuid, check.skillKey);
+  return Object.freeze({ success: roll.success === true, total: roll.total, natural: roll.natural, dc });
+}
+
+async function rollSharedSkillCheck(services, snapshot, context) {
+  const envelope = snapshot.envelope;
+  if (!envelope.skillCheck?.required || snapshot.targets.length < 2) return null;
+  const everyTargetExempt = envelope.skillCheck.ignoreForFriendly
+    && snapshot.targets.every(target => areFactionsFriendly(snapshot.source.actorType, target.actorType));
+  if (everyTargetExempt) return null;
+  const check = activationSkillCheck(snapshot, envelope, null);
+  if (!check) return null;
+  const roll = await services.checks.roll(snapshot.source.actorUuid, check,
+    { requestId: context.requestId, operation: context.operation });
+  await presentCheck(services, snapshot, null, check, roll, 'skill', context);
+  await services.wait(ITEM_ACTIVATION_TIMING.diceSettleHold);
+  await grantSkillExperience(services, snapshot.source.actorUuid, check.skillKey);
+  return { total: roll.total, natural: roll.natural };
+}
+
+function activationSkillCheck(snapshot, envelope, dc) {
+  const skillKey = String(envelope.skillCheck.skill ?? '').toLowerCase();
+  const skill = SKILL_BY_KEY[skillKey];
+  if (!skill) return null;
+  return buildSkillCheck({
+    skillKey,
+    mode: 'standard',
+    dc,
+    rank: snapshot.source.skills?.[skillKey],
+    statValue: snapshot.source.attributes?.[skill.stat],
+    actorType: snapshot.source.actorType,
+    blessed: snapshot.source.blessed
+  });
+}
+
+/* -------------------------------------------- */
+/*  Effect requests                             */
+/* -------------------------------------------- */
+
+function activationEffectRequest({ snapshot, intent, target, savingThrow, skillCheck, audience }) {
+  const selfActor = snapshot.source.conditionSelf;
+  const targetActor = target?.conditionSelf ?? null;
+  return {
+    entries: snapshot.entries,
+    triggers: activationTriggers(),
+    runtime: activationRuntime(snapshot, intent, target),
+    context: effectContext(selfActor, targetActor, snapshot.source.conditionItem, {
+      selectedParams: intent.params,
+      targetLocation: intent.aim,
+      savingThrowResult: savingThrow,
+      skillCheckResult: skillCheck,
+      savingThrowRequired: Boolean(snapshot.envelope.savingThrow?.required),
+      skillCheckRequired: Boolean(snapshot.envelope.skillCheck?.required)
+    }),
+    activatedItem: snapshot.source.conditionItem,
+    audience
+  };
+}
+
+function activationRuntime(snapshot, intent, target) {
+  return effectRuntime({
+    sceneUuid: snapshot.sceneUuid,
+    operation: snapshot.operation,
+    self: snapshot.source,
+    target,
+    targetLocation: intent.aim,
+    effectTiles: snapshot.effectCells,
+    prePickedPlacement: intent.placement,
+    effectRange: snapshot.envelope.range.maxRange,
+    healEchoes: snapshot.healEchoes,
+    activatedItemUuid: snapshot.envelope.itemUuid
+  });
+}
+
+async function runUseItemPassives(services, snapshot, intent, context, claims) {
+  if (!snapshot.passiveEntries.length) return;
+  const result = await services.effects.run({
+    entries: snapshot.passiveEntries,
+    triggers: ['onUseItem'],
+    runtime: activationRuntime(snapshot, intent, null),
+    context: effectContext(snapshot.source.conditionSelf, null, snapshot.source.conditionItem),
+    activatedItem: snapshot.source.conditionItem,
+    audience: requesterAudience(context)
+  });
+  if (result.outcomes.some(outcome => outcome?.ok === false)) {
+    throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  }
+  claims.push(...collectEffectDefeats(result.outcomes, activationFactionOf(snapshot)));
+}
+
+/** The faction of a unit the activation reached, for the defeat event that outlives its Token. */
+function activationFactionOf(snapshot) {
+  return actorUuid => {
+    if (actorUuid === snapshot.source.actorUuid) return snapshot.source.actorType ?? '';
+    return snapshot.targets.find(target => target.actorUuid === actorUuid)?.actorType ?? '';
+  };
+}
+
+/**
+ * Finish the defeats the item's effect steps claimed, once the use itself has settled, the same way an attack
+ * finishes its own. A unit reached twice keeps one claim. A failure here is reported rather than refused, so the
+ * writes the use already made still stand. The removals themselves belong to this command's operation.
+ */
+async function settleActivationDefeats(services, claims, context) {
+  if (!claims.length) return;
+  const latest = new Map(claims.map(claim => [claim.actorUuid, claim]));
+  try {
+    await settleEffectDefeats({
+      defeats: services.defeats,
+      objects: services.objects,
+      presentation: services.presentation,
+      events: services.events,
+      wait: services.wait,
+      diagnostics: services.diagnostics
+    }, [...latest.values()], {
+      requestId: context.requestId, userId: context.userId, operation: context.operation ?? null
+    });
+  } catch (error) {
+    recordAbsorbed(services, error, 'settleActivationDefeats');
+  }
+}
+
+/* -------------------------------------------- */
+/*  Settlement                                  */
+/* -------------------------------------------- */
+
+async function settleSanctuary(settlement, snapshot) {
+  if (!snapshot.source.sanctuary || !snapshot.source.sanctuaryEffectId) return;
+  if (snapshot.envelope.targetType === 'Friendly') return;
+  if (!await settlement.removeSanctuary(snapshot.source.actorUuid, snapshot.source.sanctuaryEffectId, snapshot)) {
+    throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  }
+}
+
+/**
+ * Mount or dismount when the used item is a Mount, through the TOGGLE_EQUIPMENT command. It runs as this command's
+ * child through `dispatcher.invokeWithin` (the `inventory` port in init/system.mjs), which hands it this operation,
+ * so its writes are captured with the use.
+ */
+async function settleMountToggle(services, snapshot) {
+  if (!isMountActivation(snapshot.item)) return;
+  const toggled = await services.inventory.toggleEquipment({
+    actorUuid: snapshot.source.actorUuid,
+    itemId: snapshot.item.id
+  });
+  if (toggled?.ok !== true) throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+}
+
+async function settleActivationCosts(services, snapshot, landed, context) {
+  const consumption = resolveActivationConsumption({ envelope: snapshot.envelope, landed });
+  return services.settlement.settleActivation(snapshot, {
+    consumption,
+    actionSpend: resolveActivationActionSpend(snapshot.envelope.actionType),
+    requestId: context.requestId
+  });
+}
+
+/**
+ * Read where the unit's movement plan has it standing, before any effect step can move it.
+ * settleActivationContinuation measures the walked leg from here. No plan means the use is stale.
+ */
+async function resolveWalkedLeg(services, snapshot) {
+  const state = await services.continuations.getSnapshot(snapshot.source.tokenUuid);
+  const walked = state ? resolveStandingDestination(state.movement) : null;
+  if (!walked) throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_STALE);
+  return walked;
+}
+
+/**
+ * Decide and stage the caster's continuation from the fresh continuation snapshot. A Spell or staff hands a Canter
+ * unit the movement its walked leg left, as resolveExchange in engine/combat/exchanges/resolution.mjs does after an
+ * attack. FoundryItemActivationSettlement.settleContinuation passes it to
+ * FoundryCombatSettlementRepository.settleSourceContinuation, which writes it under the use's operation.
+ */
+async function settleActivationContinuation(services, snapshot, context, walked) {
+  const state = await services.continuations.getSnapshot(snapshot.source.tokenUuid);
+  if (!state) throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_STALE);
+  const resolution = resolveSettledStanding(walked, state.movement);
+  if (!resolution) throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_STALE);
+  const cantersAfter = activationAllowsCanter(snapshot.item);
+  const continuation = resolveActivationContinuation({
+    actionType: snapshot.envelope.actionType,
+    sourceDefeated: state.sourceDefeated,
+    explorationActive: state.explorationActive,
+    extraActionsRemaining: state.extraActionsRemaining,
+    extraActionUsed: state.extraActionUsed,
+    cantersAfter,
+    hasCanter: state.hasCanter,
+    movementRemaining: Math.max(0, (Number(state.movement?.allowance) || 0) - resolution.cost)
+  });
+  if (!await services.settlement.settleContinuation(state, resolution, continuation, context.requestId,
+    snapshot.operation, { cantersAfter })) {
+    throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  }
+  return continuation;
+}
+
+async function settleDeferredEndTurn(services, outcome, operation = null) {
+  if (outcome.continuation?.kind !== COMBAT_CONTINUATIONS.END_TURN) return false;
+  const state = await services.continuations.getSnapshot(outcome.sourceTokenUuid);
+  if (!state
+    || state.sourceDefeated === true
+    || state.continuationPending !== COMBAT_CONTINUATIONS.END_TURN
+    || state.continuationRequestId !== outcome.requestId) return false;
+  return await services.settlement.settlePendingContinuation(state, outcome.continuation, operation) === true;
+}
+
+/**
+ * Grade the use against its Item's entry in the activation XP table and award what it earned. The snapshot's
+ * `experience` (projectActivationExperience in projections/items.mjs) supplies the entry, the running encounter and
+ * the caster's uses of the entry in it. `impacts` says what the use actually did to each unit, so a resisted or
+ * saved target scores nothing whatever the delivery reported. A counted use advances the caster's counter through
+ * FoundryItemActivationSettlement.recordExperienceUse. The award goes through the combat progression service as an
+ * attack's does, which applies the unit and world multipliers, the per-award cap and the level-up. Both writes
+ * belong to this command's operation, so a refused use takes them back. The Steal Ability earns its table XP only
+ * through the steal command in engine/economy/trade.mjs, which rolls and takes; activating it as an Item earns none.
+ */
+async function settleActivationExperience(services, snapshot, impacts) {
+  if (isMountActivation(snapshot.item) || isStealAbility(snapshot.item)) return null;
+  if (!earnsCharacterExperience(snapshot.source.actorType)) return null;
+  const table = snapshot.experience;
+  if (!table?.entry) return null;
+  return settleTableExperience({
+    progression: services.progression,
+    recordUse: use => services.settlement.recordExperienceUse(snapshot, use)
+  }, {
+    table,
+    source: snapshot.source,
+    targets: await activationExperienceTargets(services, snapshot, impacts),
+    operation: snapshot.operation,
+    failureCode: RESULT_CODES.ITEM_ACTIVATION_FAILED
+  });
+}
+
+/**
+ * Grade one use against its activation XP entry with resolveActivationExperience, count it when it pays, and award
+ * it. `table` is the projected entry, encounter and use count (projectActivationExperience in projections/items.mjs).
+ * `recordUse` advances the caster's per-encounter counter under the command's operation, before the award goes
+ * through the combat progression service as an attack's does. Item activation and Steal (engine/economy/trade.mjs)
+ * both settle here, so both share one counter and one set of rules.
+ * @param {{progression: object, recordUse: function(object): Promise<boolean>}} ports
+ * @param {{table: object, source: object, targets: object[], operation: *, failureCode: string}} use
+ * @returns {Promise<object|null>} The progression settlement, or null when the use earned nothing.
+ */
+export async function settleTableExperience({ progression, recordUse }, { table, source, targets, operation,
+  failureCode }) {
+  const verdict = resolveActivationExperience({
+    entry: table.entry,
+    casterLevel: source.level,
+    targets,
+    encounterRunning: table.encounterRunning,
+    usesThisEncounter: table.usesThisEncounter
+  });
+  if (verdict.countsTowardLimit && await recordUse({ encounterId: table.encounterId, key: table.key }) !== true) {
+    throw new CombatPersistenceError(failureCode);
+  }
+  if (verdict.experience <= 0) return null;
+  return progression.settleCombatExperience({
+    operation,
+    awards: [
+      { actorUuid: source.actorUuid, experience: verdict.experience, side: 'source' }
+    ]
+  });
+}
+
+/**
+ * One outcome-facts record per unit the use reached, for resolveActivationExperience: every aimed target, and every
+ * unit an impact names, its impacts summed across steps. The caster counts as friendly to itself for what it heals
+ * or gains, but its own displacement never counts it: a Swap or a Retrieve that moves the caster is graded on the
+ * other unit alone. An Object is on neither side, and so is a Neutral. A unit outside the snapshot, such as an ally
+ * an area around the caster caught, is read through the activation projection's getReachedUnits.
+ */
+async function activationExperienceTargets(services, snapshot, impacts) {
+  const units = new Map([snapshot.source, ...snapshot.targets].map(unit => [unit.actorUuid, unit]));
+  const reached = [...new Set([...snapshot.targets, ...impacts].map(entry => entry.actorUuid))];
+  const unknown = reached.filter(actorUuid => !units.has(actorUuid));
+  if (unknown.length) {
+    for (const unit of await services.activations.getReachedUnits(unknown)) units.set(unit.actorUuid, unit);
+  }
+  return reached.filter(actorUuid => units.has(actorUuid)).map(actorUuid => experienceTarget(
+    snapshot.source, units.get(actorUuid), impacts.filter(impact => impact.actorUuid === actorUuid)
+  ));
+}
+
+/**
+ * One unit's outcome facts from its summed impacts; see activationExperienceTargets. Steal grades its mark here too.
+ * @param {{actorUuid: string, actorType: string}} source The caster.
+ * @param {object} unit The unit's side, level and pools, with `objectTarget` or `scenery` set for an Object.
+ * @param {object[]} impacts Its unit impacts (unitImpact in effects/execution.mjs).
+ * @returns {object}
+ */
+export function experienceTarget(source, unit, impacts) {
+  const character = unit.objectTarget !== true && unit.scenery !== true;
+  const self = unit.actorUuid === source.actorUuid;
+  return {
+    friendly: character && (self || areFactionsFriendly(source.actorType, unit.actorType)),
+    hostile: character && !self && areFactionsOpposed(source.actorType, unit.actorType),
+    level: unit.level,
+    isBoss: unit.actorType === 'Boss',
+    hpMax: unit.hpMax,
+    stnMax: unit.stnMax,
+    harmful: summedImpact(impacts, 'harmful'),
+    helpful: summedImpact(impacts, 'helpful'),
+    moved: !self && impacts.some(impact => impact.moved === true),
+    slain: impacts.some(impact => impact.slain === true)
+  };
+}
+
+function summedImpact(impacts, half) {
+  return {
+    hp: impacts.reduce((total, impact) => total + impact[half].hp, 0),
+    stn: impacts.reduce((total, impact) => total + impact[half].stn, 0),
+    status: impacts.some(impact => impact[half].status === true)
+  };
+}
+
+/** Every unit impact an effect run reported, nested health outcomes included (unitImpact in effects/execution.mjs). */
+function collectImpacts(outcomes, impacts = []) {
+  for (const outcome of outcomes) {
+    if (Array.isArray(outcome?.outcomes)) collectImpacts(outcome.outcomes, impacts);
+    if (Array.isArray(outcome?.impacts)) impacts.push(...outcome.impacts);
+  }
+  return impacts;
+}
+
+/**
+ * Award weapon proficiency XP for the use, counted as a landed strike scaled by ITEM_USE_PROFICIENCY_HIT_RATIO, and
+ * show the rank-up card on a rank-up. FoundryItemActivationSettlement.commitProgression writes it.
+ */
+async function settleItemProficiency(services, snapshot, context) {
+  const proficiency = snapshot.source.proficiency;
+  if (!proficiency?.key || isMountActivation(snapshot.item) || !earnsCharacterExperience(snapshot.source.actorType)) {
+    return false;
+  }
+  const award = resolveWeaponExperience({
+    proficiency,
+    hit: true,
+    multiplier: Math.max(1, Number(proficiency.multiplier) || 1) * ITEM_USE_PROFICIENCY_HIT_RATIO
+  });
+  if (!award) return false;
+  const base = award.base ?? Math.max(0, Math.floor(Number(proficiency.base) || 0));
+  const written = await services.settlement.commitProgression({
+    [snapshot.source.actorUuid]: {
+      [`system.prof.${award.key}.base`]: base,
+      [`system.prof.${award.key}.xp`]: award.xp
+    }
+  }, snapshot);
+  if (written !== true) throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
+  if (award.rankedUp) await presentSafely(services, rankUpMessage(snapshot, award, cardRequester(context)));
+  return true;
+}
+
+async function publishActivationExperience(services, settled, context) {
+  const progression = services.progression;
+  if (!settled?.settlements.length) return;
+  await progression.publishCombatExperience({ settlements: settled.settlements, context });
+}
+
+/* -------------------------------------------- */
+/*  Presentation and outcomes                   */
+/* -------------------------------------------- */
+
+function leadInMessage(snapshot, intent, cinematic) {
+  return itemActivationPresentationMessage(ITEM_ACTIVATION_PRESENTATION_BEATS.LEAD_IN, {
+    sourceTokenUuid: snapshot.source.tokenUuid,
+    sourceActorUuid: snapshot.source.actorUuid,
+    targetTokenUuids: snapshot.targets.map(target => target.tokenUuid),
+    targetLocation: intent.aim,
+    cinematic
+  });
+}
+
+function rankUpMessage(snapshot, award, requester = null) {
+  return itemActivationPresentationMessage(ITEM_ACTIVATION_PRESENTATION_BEATS.RANK_UP, {
+    actorUuid: snapshot.source.actorUuid,
+    actorName: snapshot.source.actorName,
+    actorImage: snapshot.source.actorImage,
+    avatarScale: snapshot.source.avatarScale,
+    proficiencyKey: award.key,
+    rankLetter: award.rankLetter,
+    rank: award.rank,
+    ...(requester ? { requester } : {})
+  });
+}
+
+function endMessage(snapshot, cinematic) {
+  return itemActivationPresentationMessage(ITEM_ACTIVATION_PRESENTATION_BEATS.END, {
+    sourceTokenUuid: snapshot.source.tokenUuid,
+    sourceActorUuid: snapshot.source.actorUuid,
+    cinematic
+  });
+}
+
+function castMessage(snapshot, intent) {
+  return itemActivationPresentationMessage(ITEM_ACTIVATION_PRESENTATION_BEATS.CAST, {
+    sourceTokenUuid: snapshot.source.tokenUuid,
+    sourceActorUuid: snapshot.source.actorUuid,
+    targetTokenUuids: snapshot.targets.map(target => target.tokenUuid),
+    targetLocation: intent.aim,
+    item: Object.freeze({
+      uuid: snapshot.item.uuid,
+      name: snapshot.item.name,
+      img: snapshot.item.img,
+      type: snapshot.item.type,
+      subtype: snapshot.item.subtype
+    }),
+    castCondition: activationCastCondition(snapshot.item),
+    castHeld: activationHoldsCastArt({ item: snapshot.item, entries: snapshot.entries }),
+    activationAnimation: snapshot.item.activationAnimation,
+    attackAnimation: snapshot.item.attackAnimation,
+    distance: snapshot.distance
+  });
+}
+
+/** Send one notice to the named users. A presentation failure is recorded and never reaches the mechanics. */
+async function presentNotice(services, message, audience) {
+  if (!audience.length) return false;
+  try {
+    return await services.presentation.broadcast(message, { audience: [...audience] }) !== false;
+  } catch (error) {
+    recordAbsorbed(services, error, String(message?.beat ?? message?.kind ?? ''));
+    return false;
+  }
+}
+
+async function presentEffectDamage(services, snapshot, outcomes, context) {
+  const rows = collectDamageRows(outcomes);
+  if (!rows.length) return;
+  const requester = cardRequester(context);
+  await presentSafely(services, itemActivationPresentationMessage(
+    ITEM_ACTIVATION_PRESENTATION_BEATS.DAMAGE_CARD,
+    {
+      sourceActorUuid: snapshot.source.actorUuid,
+      item: Object.freeze({ name: snapshot.item.name, img: snapshot.item.img }),
+      rows: Object.freeze(rows),
+      ...(requester ? { requester } : {})
+    }
+  ));
+}
+
+function collectDamageRows(outcomes, rows = []) {
+  for (const outcome of outcomes) {
+    if (Array.isArray(outcome?.outcomes)) collectDamageRows(outcome.outcomes, rows);
+    if (outcome?.health?.change !== 'damage') continue;
+    rows.push(Object.freeze({
+      tokenUuid: String(outcome.tokenUuid ?? ''),
+      formula: String(outcome.formula ?? ''),
+      rolled: outcome.rolled === true,
+      total: Number(outcome.amount) || 0,
+      dealt: Math.max(0, Number(outcome.hpDealt) || 0),
+      stanceDealt: Math.max(0, Number(outcome.stanceDealt) || 0),
+      damageType: String(outcome.damageType ?? 'none'),
+      critical: outcome.critical === true
+    }));
+  }
+  return rows;
+}
+
+async function presentCheck(services, snapshot, target, check, roll, kind, context) {
+  const presenter = services.checkPresentation;
+  const roller = kind === 'save' ? target : snapshot.source;
+  const card = {
+    requester: context.requester ?? { userId: context.userId, messageMode: context.messageMode },
+    actorUuid: roller.actorUuid ?? '',
+    actorName: roller.actorName ?? '',
+    actorImage: roller.actorImage ?? '',
+    avatarScale: roller.avatarScale ?? 1.25,
+    dc: check.dc,
+    natural: roll.natural,
+    total: roll.total,
+    success: roll.success,
+    effectName: snapshot.item.name,
+    check,
+    roll
+  };
+  try {
+    if (kind === 'save') await presenter.presentSave({ ...card, sourceImg: snapshot.item.img });
+    else await presenter.presentSkill({ ...card, skillKey: check.skillKey, targetName: target?.actorName ?? '' });
+  } catch (diagnosticError) {
+    recordDiagnostic(services?.diagnostics, { sourcePath: import.meta.url, error: diagnosticError, detail: 'presentCheck' });
+    if ((card.requester.messageMode ?? 'public') === 'public') {
+      await presentSafely(services, itemActivationPresentationMessage(
+        ITEM_ACTIVATION_PRESENTATION_BEATS.NOTICE,
+        { notice: kind, actorUuid: card.actorUuid, total: card.total, success: card.success }
+      ));
+    }
+  }
+}
+
+/** Reaching down from the air to touch something on the ground puts the caster on the ground with it. */
+async function settleAdjacentGrounding(services, snapshot) {
+  if (!touchGrounds(snapshot)) return;
+  await services.movements.setActorGrounded(snapshot.source.actorUuid, true, snapshot.operation ?? null);
+}
+
+/** Whether a use is a touch from the air on a unit on the ground: one target, Single range type, range 1. */
+function touchGrounds(snapshot) {
+  const envelope = snapshot.envelope;
+  const target = snapshot.targets.length === 1 ? snapshot.targets[0] : null;
+  if (!target || envelope.rngType !== 'Single' || Number(envelope.range?.maxRange) !== 1) return false;
+  return groundsOnInteraction({ sourceAirborne: snapshot.source.airborne, targetAirborne: target.airborne });
+}
+
+function activationOutcome(snapshot, deliveries, continuation, context) {
+  return {
+    sourceActorUuid: snapshot.source.actorUuid,
+    sourceTokenUuid: snapshot.source.tokenUuid,
+    sceneUuid: snapshot.sceneUuid,
+    itemUuid: snapshot.envelope.itemUuid,
+    itemName: snapshot.item.name,
+    actionType: snapshot.envelope.actionType,
+    landed: deliveries.some(delivery => delivery.landed === true),
+    deliveries: Object.freeze(deliveries),
+    continuation: Object.freeze({ ...continuation, exchangeRequestId: context.requestId }),
+    requestId: context.requestId,
+    userId: context.userId
+  };
+}

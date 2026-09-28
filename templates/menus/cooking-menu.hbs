@@ -1,0 +1,195 @@
+<div class="gm-menu cooking-menu">
+
+  <header class="gm-topbar">
+    <div class="gm-actor ck-actor-station">
+      <img class="gm-actor-img" src="{{station.image}}" alt="{{station.name}}" />
+      <div class="gm-actor-meta">
+        <div class="gm-actor-name">{{station.name}}</div>
+        <div class="gm-actor-sub">Cooking Pot</div>
+      </div>
+    </div>
+    <div class="gm-topbar-spacer"></div>
+    <span class="ck-mode-desc">{{modeDesc}}</span>
+  </header>
+
+  <div class="gm-bottom ck-body">
+
+    <div class="ck-stack">
+
+      <section class="gm-panel ck-chef-panel">
+        <div class="gm-panel-head"><span class="gm-panel-title">Chef</span></div>
+        <div class="gm-panel-scroll">
+          {{#if hasPerformers}}
+          <div class="gm-pick-list">
+            {{#each performers}}
+            <div class="gm-pick{{#if this.selected}} is-chosen{{/if}}{{#unless this.eligible}} is-blocked{{/unless}}"
+                 data-action="selectPerformer" data-uuid="{{this.actorUuid}}" data-eligible="{{this.eligible}}"
+                 {{#unless this.eligible}}data-tooltip="{{this.blocked}}"{{/unless}}>
+              <img class="gm-pick-img" src="{{this.image}}" alt="{{this.name}}" style="{{this.avatarStyle}}" />
+              <span class="gm-pick-body">
+                <span class="gm-pick-name">{{this.name}}</span>
+                {{#if this.eligible}}
+                <span class="gm-pick-sub">{{this.skillLabel}} {{#if this.skillDie}}<strong>{{this.skillDie}}</strong> {{/if}}+ {{this.skillBonus}}</span>
+                {{else}}
+                <span class="gm-pick-sub is-bad">{{this.blocked}}</span>
+                {{/if}}
+              </span>
+              <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+            </div>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="gm-empty">No party member is on this map.</div>
+          {{/if}}
+        </div>
+      </section>
+
+      <section class="gm-panel ck-diners-panel">
+        <div class="gm-panel-head">
+          <span class="gm-panel-title">Diners</span>
+          <span class="gm-panel-meta">{{dinerCount}} eating</span>
+        </div>
+        <div class="gm-panel-scroll">
+          {{#if chefName}}
+          <div class="gm-pick-list">
+            <div class="gm-pick is-chosen is-locked" data-tooltip="{{chefTooltip}}">
+              <img class="gm-pick-img" src="{{chefImage}}" alt="{{chefName}}" style="{{chefAvatarStyle}}" />
+              <span class="gm-pick-body">
+                <span class="gm-pick-name">{{chefName}}</span>
+                <span class="gm-pick-sub">Chef, always eats</span>
+              </span>
+              <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+            </div>
+            {{#each diners}}
+            <div class="gm-pick{{#if this.chosen}} is-chosen{{/if}}{{#if this.blocked}} is-blocked{{/if}}"
+                 data-action="toggleDiner" data-uuid="{{this.actorUuid}}" data-blocked="{{#if this.blocked}}true{{else}}false{{/if}}"
+                 {{#if this.blocked}}data-tooltip="{{this.blocked}}"{{/if}}>
+              <img class="gm-pick-img" src="{{this.image}}" alt="{{this.name}}" style="{{this.avatarStyle}}" />
+              <span class="gm-pick-body">
+                <span class="gm-pick-name">{{this.name}}</span>
+                {{#if this.blocked}}<span class="gm-pick-sub is-bad">{{this.blocked}}</span>{{/if}}
+              </span>
+              <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+            </div>
+            {{/each}}
+          </div>
+          {{#unless hasDiners}}
+          <div class="gm-empty">No other party member is on this map.</div>
+          {{/unless}}
+          {{else}}
+          <div class="gm-empty">No chef selected.</div>
+          {{/if}}
+        </div>
+      </section>
+
+    </div>
+
+    <section class="gm-panel ck-recipes-panel">
+      <div class="gm-panel-head">
+        <span class="gm-panel-title">Recipes</span>
+        <span class="gm-panel-meta">{{recipes.length}} known</span>
+      </div>
+      <div class="gm-panel-scroll">
+        {{#if hasRecipes}}
+        <div class="gm-pick-list">
+          {{#each recipes}}
+          <div class="gm-pick ck-recipe{{#if this.selected}} is-chosen{{/if}}{{#if this.short}} is-short{{/if}}" data-action="selectRecipe" data-id="{{this.id}}"
+               {{#if this.short}}data-tooltip="Not enough ingredients for this many diners"{{/if}}>
+            <img class="gm-pick-img ck-recipe-img" src="{{this.image}}" alt="{{this.name}}" />
+            <span class="gm-pick-body">
+              <span class="ck-recipe-name">{{this.name}}</span>
+              <span class="gm-pick-sub">DC {{this.dc}}{{#if this.personal}} | Personal{{/if}}</span>
+            </span>
+            <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+          </div>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="gm-empty">{{#if chefName}}{{chefName}} knows no recipes.{{else}}No chef selected.{{/if}}</div>
+        {{/if}}
+      </div>
+    </section>
+
+    <section class="gm-panel ck-details-panel">
+      {{#if hasSelection}}
+      <div class="ck-detail-head">
+        <span class="ck-recipe-title">{{detail.name}}</span>
+        <span class="ck-badge">Skill <strong>{{detail.skill}}</strong></span>
+        <span class="ck-badge">DC <strong>{{detail.dc}}</strong></span>
+      </div>
+      <div class="ck-recipe-desc"{{#if detail.description}} data-tooltip="{{detail.description}}"{{/if}}>{{detail.description}}</div>
+      <span class="gm-col-label"><span class="ck-label-name">Ingredients</span> |
+        {{dinerCount}} diner{{#unless (eq dinerCount 1)}}s{{/unless}}</span>
+      {{#if detail.hasIngredients}}
+      <div class="ck-mat-row">
+        {{#each detail.ingredients}}
+        <span class="ck-mat{{#unless this.ok}} is-bad{{/unless}}" data-tooltip="{{this.name}}">
+          <img class="ck-mat-img" src="{{this.image}}" alt="{{this.name}}" />
+          <span class="ck-mat-name">{{this.name}}</span>
+          <span class="ck-mat-qty">{{this.have}}/{{this.need}}</span>
+        </span>
+        {{/each}}
+      </div>
+      {{else}}
+      <div class="gm-col-none">None</div>
+      {{/if}}
+      <div class="ck-special">
+        <div class="ck-special-bar">
+          <div class="ck-special-title">
+            <span class="gm-col-label ck-label-name">Special Ingredient</span>
+            <span class="ck-special-note">{{detail.specialNote}}</span>
+          </div>
+          <div class="ck-filters">
+            {{#each detail.filters}}
+            {{#unless @first}}<span class="ck-filter-bar">|</span>{{/unless}}
+            <span class="ck-filter{{#if this.selected}} is-chosen{{/if}}" data-action="filterSpecials" data-stat="{{this.stat}}">{{this.stat}}</span>
+            {{/each}}
+          </div>
+        </div>
+        <div class="gm-panel-scroll ck-special-scroll">
+          {{#if detail.hasSpecials}}
+          <div class="ck-tile-grid">
+            {{#each detail.specials}}
+            <span class="ck-tile{{#if this.selected}} is-chosen{{/if}}{{#unless this.ok}} is-bad{{/unless}}"
+                  data-action="selectSpecial" data-name="{{this.name}}" data-tooltip="{{this.foodType}} → {{this.stat}} +1">
+              <img class="ck-mat-img" src="{{this.image}}" alt="{{this.name}}" />
+              <span class="ck-mat-name">{{this.name}}</span>
+              <span class="ck-mat-stat">{{this.stat}} +1</span>
+              <span class="ck-mat-qty">{{this.have}}/{{this.need}}</span>
+            </span>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="gm-col-none">{{detail.specialsEmpty}}</div>
+          {{/if}}
+        </div>
+      </div>
+      <div class="ck-bonus-head">
+        <span class="gm-col-label ck-label-name">Growth Bonuses</span>
+        <span class="ck-bonus-note">A failed cook still grants half, rounded down.</span>
+      </div>
+      <div class="ck-bonus-grid">
+        {{#each detail.growths}}
+        <span class="ck-bonus{{#if this.delta}} has-delta{{/if}}{{#if this.special}} has-special{{/if}}">{{this.label}} <strong>{{#if this.delta}}{{this.delta}}{{else}}--{{/if}}</strong></span>
+        {{/each}}
+      </div>
+      {{else}}
+      <div class="gm-empty">{{#if hasRecipes}}Select a recipe to cook.{{else if chefName}}{{chefName}} knows no recipes.{{else}}Select a chef.{{/if}}</div>
+      {{/if}}
+    </section>
+
+  </div>
+
+  <footer class="gm-footer"{{#if buttonTitle}} data-tooltip="{{buttonTitle}}"{{/if}}>
+    <span class="ck-ticket{{#if ticket.bad}} is-bad{{/if}}">
+      {{#if ticket.blocked}}{{ticket.blocked}}{{else if ticket.chef}}<strong>{{ticket.chef}}</strong> cooks
+      <strong>{{ticket.recipe}}</strong> for <strong>{{dinerCount}}</strong>{{#if ticket.special}} with
+      <strong>{{ticket.special}}</strong>{{/if}} ({{ticket.roll}} against DC {{detail.dc}}){{/if}}
+    </span>
+    <button type="button" class="gm-action-btn{{#if buttonInsufficient}} is-insufficient{{/if}}" data-action="cook"
+            {{#unless canCook}}disabled{{/unless}}>
+      {{#if buttonInsufficient}}<i class="fas fa-triangle-exclamation"></i> {{/if}}{{buttonLabel}}
+    </button>
+  </footer>
+
+</div>

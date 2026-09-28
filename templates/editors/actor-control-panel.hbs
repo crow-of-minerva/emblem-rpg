@@ -1,0 +1,412 @@
+<div class="acp-root">
+  <aside class="acp-left">
+    <nav class="acp-tray-rail">
+      <button type="button" class="acp-tray-tab {{#if isTrayFaction}}is-active{{/if}}" data-action="setTray"
+        data-tray="faction" data-tooltip="{{tooltips.factionTray}}" {{#if isTrayFaction}}aria-current="page"{{/if}}>
+        <i class="fas fa-flag"></i><span>Faction</span>
+      </button>
+      <button type="button" class="acp-tray-tab {{#if isTrayAudio}}is-active{{/if}}" data-action="setTray"
+        data-tray="audio" data-tooltip="{{tooltips.audioTray}}" {{#if isTrayAudio}}aria-current="page"{{/if}}>
+        <i class="fas fa-volume-high"></i><span>Audio</span>
+      </button>
+    </nav>
+
+    <div class="acp-tray-drawer">
+      <section class="acp-pane acp-faction-pane {{#if isTrayFaction}}is-active{{/if}}" data-tray-pane="faction">
+        <header class="acp-pane-header"><i class="fas fa-flag"></i><span>Faction</span></header>
+        <div class="acp-pane-body">
+          <div class="acp-field">
+            <label class="ed-label">Actor Type</label>
+            <select name="actorType" class="ed-select">
+              {{#each actorTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </div>
+          <div class="acp-field">
+            <label class="ed-label">Faction Name</label>
+            <input type="text" name="factionName" value="{{factionName}}" class="ed-input" placeholder="e.g. Order of Heroes">
+          </div>
+          <div class="acp-field">
+            <label class="ed-label">Faction Icon</label>
+            <div class="acp-row acp-row-tight">
+              <img class="acp-icon-preview" data-preview-for="factionIcon" src="{{factionIconPreview}}" alt="">
+              <input type="text" name="factionIcon" value="{{factionIcon}}" class="ed-input acp-flex" placeholder="Image path">
+              <button type="button" class="acp-btn acp-btn-icon" data-action="pickFieldImage" data-target="factionIcon" data-tooltip="{{tooltips.browseFactionIcon}}"><i class="fas fa-image"></i></button>
+            </div>
+          </div>
+          <div class="acp-field">
+            <label class="ed-label">Faction Color</label>
+            <div class="acp-row acp-row-tight">
+              <span class="acp-color-swatch"></span>
+              <input type="text" name="factionColor" value="{{factionColor}}" class="ed-input acp-flex" placeholder="#ffffff" pattern="^#[0-9A-Fa-f]{6}$">
+              <input type="color" data-native-color="1" class="acp-color-native" tabindex="-1" aria-hidden="true">
+              <button type="button" class="acp-btn acp-btn-icon" data-action="openColor" data-tooltip="{{tooltips.pickColor}}"><i class="fas fa-palette"></i></button>
+            </div>
+          </div>
+          <div class="acp-field">
+            <label class="ed-label">Owners</label>
+            {{#if owners.length}}
+              <div class="acp-owners-list">
+                {{#each owners}}
+                  <label class="acp-owner-chip">
+                    <input type="checkbox" name="owner_{{id}}" {{#if checked}}checked{{/if}}>
+                    <span class="acp-owner-dot" style="background:{{color}};"></span><span class="acp-owner-name">{{name}}</span>
+                  </label>
+                {{/each}}
+              </div>
+            {{else}}<p class="acp-empty-note">No non-GM users exist in this world.</p>{{/if}}
+          </div>
+        </div>
+      </section>
+
+      <section class="acp-pane acp-audio-pane {{#if isTrayAudio}}is-active{{/if}}" data-tray-pane="audio">
+        <header class="acp-pane-header"><i class="fas fa-volume-high"></i><span>Audio</span></header>
+        <div class="acp-pane-body">
+          <div class="acp-field">
+            <label class="ed-label">Voice Path</label>
+            <div class="acp-row acp-row-tight">
+              <input type="text" name="voicePath" value="{{voicePath}}" class="ed-input acp-flex"
+                placeholder="Folder path">
+              <button type="button" class="acp-btn acp-btn-icon" data-action="pickFolder" data-target="voicePath"
+                data-tooltip="{{tooltips.browseAudioFolder}}"><i class="fas fa-folder-open"></i></button>
+              {{#if isGM}}
+                <button type="button" class="acp-btn acp-btn-icon{{#if voicePathApproved}} is-approved{{/if}}"
+                  data-action="approveVoicePath"
+                  data-tooltip="{{#if voicePathApproved}}{{tooltips.approvedVoicePath}}{{else}}{{tooltips.approveVoicePath}}{{/if}}"><i
+                    class="fas fa-shield-check"></i></button>
+              {{/if}}
+            </div>
+            <p class="acp-help-text">Subfolders scanned: <code>Select</code>, <code>Crit</code>,
+              <code>Gratitude</code>, <code>Rally</code>, <code>Injured</code>, <code>Defeat</code>,
+              <code>Level/Good</code>, and <code>Level/Bad</code>.</p>
+          </div>
+
+          <div class="acp-field">
+            <label class="ed-label">Footsteps</label>
+            <div class="acp-footstep-grid">
+              {{#each footsteps}}
+                <div class="acp-footstep-row">
+                  <span class="acp-footstep-label">{{label}}</span>
+                  <select name="fs_{{key}}_preset" data-fs-preset="{{key}}"
+                    class="ed-select ed-input--compact">
+                    {{#each presetOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+                <div class="acp-footstep-custom" data-fs-custom-row="{{key}}"
+                  style="{{#unless showCustom}}display:none;{{/unless}}">
+                  <input type="text" name="fs_{{key}}_custom" value="{{customPath}}"
+                    class="ed-input ed-input--compact" placeholder="Custom folder path">
+                  <button type="button" class="acp-btn acp-btn-icon" data-action="pickFolder"
+                    data-target="fs_{{key}}_custom" data-tooltip="{{@root.tooltips.browseAudioFolder}}">
+                    <i class="fas fa-folder-open"></i>
+                  </button>
+                </div>
+              {{/each}}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <main class="acp-right">
+    <section class="acp-pane acp-token-pane">
+      <header class="acp-pane-header"><i class="fas fa-chess-knight"></i><span>Token Customization</span></header>
+      <div class="acp-pane-body">
+        <div class="acp-tab-strip">
+          <div class="acp-tabs">
+            {{#each tabs}}
+              <div class="acp-tab {{#if active}}is-active{{/if}}" data-tab-id="{{id}}">
+                <button type="button" class="acp-tab-btn" data-action="selectTab" data-tab="{{id}}">{{name}}</button>
+                {{#if deletable}}
+                  <button type="button" class="acp-tab-rename" data-action="renameTab" data-tab="{{id}}" data-tooltip="{{@root.tooltips.renameTab}}"><i class="fas fa-pen"></i></button>
+                  <button type="button" class="acp-tab-close" data-action="deleteTab" data-tab="{{id}}" data-tooltip="{{@root.tooltips.deleteTab}}">×</button>
+                {{/if}}
+              </div>
+            {{/each}}
+          </div>
+          <div class="acp-tab-actions">
+            <button type="button" class="acp-btn acp-btn-sm acp-tab-add" data-action="addTab" data-tooltip="{{tooltips.addTab}}" {{#if atTabLimit}}disabled{{/if}}><i class="fas fa-plus"></i></button>
+            <button type="button" class="acp-btn acp-btn-sm" data-action="fillFromClass" data-tooltip="{{tooltips.fillTabs}}" {{#if atTabLimit}}disabled{{/if}}><i class="fas fa-list-check"></i> Fill From Class</button>
+          </div>
+        </div>
+
+        {{#if activeTabIsDefault}}
+          <div class="acp-token-section acp-default-layout">
+            <div class="acp-default-tokens">
+              <div class="acp-token-row">
+                {{#each tokens}}
+                  <div class="acp-token-cell">
+                    <div class="acp-token-label">{{label}}</div>
+                    <div class="acp-token-frame {{#unless hasImage}}{{#unless isFallback}}is-empty{{/unless}}{{/unless}} {{#if isFallback}}is-fallback{{/if}} {{#if canDrag}}acp-draggable{{/if}}"
+                      data-acp-frame data-acp-kind="default" data-acp-slot="{{key}}" data-acp-path="{{dragPath}}"
+                      data-acp-has="{{#if hasImage}}1{{else}}0{{/if}}" data-acp-drag="{{#if canDrag}}1{{else}}0{{/if}}">
+                      <img class="acp-token-img" src="{{preview}}" alt="{{label}}" draggable="false">
+                    </div>
+                    <div class="acp-token-actions">
+                      <button type="button" class="acp-btn acp-btn-sm" data-action="editTokenSlot" data-slot="{{key}}"
+                        data-tooltip="{{#if @root.isUnlinkedToken}}{{@root.tooltips.unlinkedToken}}{{else}}{{editTooltip}}{{/if}}" {{#if @root.isUnlinkedToken}}disabled{{/if}}><i class="fas fa-pen"></i> Edit</button>
+                      <button type="button" class="acp-btn acp-btn-sm acp-btn-danger" data-action="clearTokenSlot" data-slot="{{key}}"
+                        data-tooltip="{{@root.tooltips.clearTokenImage}}" {{#unless hasImage}}disabled{{/unless}}><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="acp-token-scale" data-tooltip="{{@root.tooltips.tokenScale}}">
+                      <input type="range" name="scale_{{key}}" data-scale-id="top_{{key}}" min="{{scaleMin}}" max="{{scaleMax}}" step="{{scaleStep}}" value="{{scale}}">
+                      <span class="acp-token-scale-value" data-scale-label="top_{{key}}">{{scaleLabel}}</span>
+                    </div>
+                    {{#if showOffsetY}}
+                      <div class="acp-token-offsety" data-tooltip="{{@root.tooltips.tokenOffsetY}}">
+                        <span class="acp-token-offsety-label">Offset Y</span>
+                        <input type="number" name="offsety_{{key}}" min="{{offsetYMin}}" max="{{offsetYMax}}" step="{{offsetYStep}}" value="{{offsetY}}">
+                      </div>
+                    {{/if}}
+                  </div>
+                {{/each}}
+              </div>
+            </div>
+            <div class="acp-prototype-section">
+              <h4 class="acp-token-section-title">Prototype Token</h4>
+              <div class="acp-prototype-grid">
+                <div class="acp-field"><label class="ed-label">Token Name</label><input type="text" name="prototypeTokenName" value="{{prototypeToken.name}}" class="ed-input" placeholder="Defaults to actor name"></div>
+                <div class="acp-field"><label class="ed-label">Token Size</label><select name="prototypeTokenSize" class="ed-select"><option value="1" {{#if prototypeToken.isRegular}}selected{{/if}}>Regular (1×1)</option><option value="2" {{#if prototypeToken.isLarge}}selected{{/if}}>Large (2×2)</option></select></div>
+                <div class="acp-field acp-field-checkbox">
+                  <label class="ed-label"><input type="checkbox" name="prototypeTokenLink" {{#if prototypeToken.actorLink}}checked{{/if}} {{#if prototypeToken.linkForcedOn}}disabled{{/if}}><span>Link Actor Data</span></label>
+                  {{#if prototypeToken.linkForcedOn}}<p class="acp-help-text">Forced on for {{prototypeToken.actorTypeLabel}} actors.</p>{{/if}}
+                </div>
+                <div class="acp-field acp-field-checkbox">
+                  <label class="ed-label"><input type="checkbox" name="prototypeTokenSight" {{#if prototypeToken.sightEnabled}}checked{{/if}}><span>Vision Enabled</span></label>
+                </div>
+                <div class="acp-field"><label class="ed-label">Sight Range (sq)</label><input type="number" name="prototypeTokenSightRange" value="{{prototypeToken.sightRange}}" min="0" step="1" class="ed-input"></div>
+                <div class="acp-field"><label class="ed-label">Sight Angle (°)</label><input type="number" name="prototypeTokenSightAngle" value="{{prototypeToken.sightAngle}}" min="0" max="360" step="1" class="ed-input"></div>
+              </div>
+            </div>
+          </div>
+
+          <hr class="acp-token-divider">
+
+          <section class="acp-token-section acp-fx-section" data-acp-fx>
+            <h4 class="acp-token-section-title">Token Effects</h4>
+
+            <div class="acp-fx-block" data-fx-section="adjust">
+              <label class="acp-fx-head"><input type="checkbox" name="fx_adjustEnabled" {{#if tokenFx.adjustEnabled}}checked{{/if}}><span>Adjustments</span></label>
+              <div class="acp-fx-basic">
+                <label class="acp-fx-mini">Brightness<input type="range" name="fx_brightness" min="0" max="2" step="0.05" value="{{tokenFx.brightness}}" data-fx-label="brightness"><span class="acp-fx-value" data-fx-value="brightness">{{tokenFx.brightness}}</span></label>
+                <label class="acp-fx-mini">Saturation<input type="range" name="fx_saturation" min="0" max="2" step="0.05" value="{{tokenFx.saturation}}" data-fx-label="saturation"><span class="acp-fx-value" data-fx-value="saturation">{{tokenFx.saturation}}</span></label>
+                <label class="acp-fx-mini">Contrast<input type="range" name="fx_contrast" min="0" max="2" step="0.05" value="{{tokenFx.contrast}}" data-fx-label="contrast"><span class="acp-fx-value" data-fx-value="contrast">{{tokenFx.contrast}}</span></label>
+              </div>
+              <details class="acp-fx-adv" data-fx-adv="adjust" {{#if tokenFx.open.adjust}}open{{/if}}>
+                <summary>Advanced options</summary>
+                <div class="acp-fx-basic">
+                  <label class="acp-fx-mini">Gamma<input type="range" name="fx_gamma" min="0.1" max="3" step="0.05" value="{{tokenFx.gamma}}" data-fx-label="gamma"><span class="acp-fx-value" data-fx-value="gamma">{{tokenFx.gamma}}</span></label>
+                  <label class="acp-fx-mini">Red<input type="range" name="fx_red" min="0" max="2" step="0.05" value="{{tokenFx.red}}" data-fx-label="red"><span class="acp-fx-value" data-fx-value="red">{{tokenFx.red}}</span></label>
+                  <label class="acp-fx-mini">Green<input type="range" name="fx_green" min="0" max="2" step="0.05" value="{{tokenFx.green}}" data-fx-label="green"><span class="acp-fx-value" data-fx-value="green">{{tokenFx.green}}</span></label>
+                  <label class="acp-fx-mini">Blue<input type="range" name="fx_blue" min="0" max="2" step="0.05" value="{{tokenFx.blue}}" data-fx-label="blue"><span class="acp-fx-value" data-fx-value="blue">{{tokenFx.blue}}</span></label>
+                </div>
+              </details>
+            </div>
+
+            <div class="acp-fx-block" data-fx-section="glow">
+              <label class="acp-fx-head"><input type="checkbox" name="fx_glowEnabled" {{#if tokenFx.glowEnabled}}checked{{/if}}><span>Glow</span></label>
+              <div class="acp-fx-basic">
+                <label class="acp-fx-mini acp-fx-mini-color">Color<input type="color" name="fx_glowColor" value="{{tokenFx.glowColor}}"></label>
+                <label class="acp-fx-mini">Outer Strength<input type="range" name="fx_glowStrength" min="0" max="20" step="0.5" value="{{tokenFx.glowStrength}}" data-fx-label="glowStrength"><span class="acp-fx-value" data-fx-value="glowStrength">{{tokenFx.glowStrength}}</span></label>
+                <label class="acp-fx-mini">Inner Strength<input type="range" name="fx_glowInner" min="0" max="20" step="0.5" value="{{tokenFx.glowInner}}" data-fx-label="glowInner"><span class="acp-fx-value" data-fx-value="glowInner">{{tokenFx.glowInner}}</span></label>
+              </div>
+              <details class="acp-fx-adv" data-fx-adv="glow" {{#if tokenFx.open.glow}}open{{/if}}>
+                <summary>Advanced options</summary>
+                <div class="acp-fx-basic">
+                  <label class="acp-fx-toggle acp-fx-mini"><input type="checkbox" name="fx_glowAnimEnabled" {{#if tokenFx.glowAnimEnabled}}checked{{/if}}><span>Animate</span></label>
+                  <label class="acp-fx-mini">Style<select name="fx_glowAnimType" class="acp-fx-select" data-fx-anim-select>{{#each tokenFx.animTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                  <label class="acp-fx-mini">Loop (ms)<input type="range" name="fx_glowAnimDuration" min="200" max="10000" step="100" value="{{tokenFx.glowAnimDuration}}" data-fx-label="glowAnimDuration"><span class="acp-fx-value" data-fx-value="glowAnimDuration">{{tokenFx.glowAnimDuration}}</span></label>
+                </div>
+                <div class="acp-fx-basic" data-fx-anim-mode="color">
+                  <label class="acp-fx-mini acp-fx-mini-color">Color 2<input type="color" name="fx_glowColor2" value="{{tokenFx.glowColor2}}"></label>
+                </div>
+                <div class="acp-fx-basic" data-fx-anim-mode="pulse">
+                  <label class="acp-fx-mini">Pulse From<input type="range" name="fx_glowPulseMin" min="0" max="20" step="0.5" value="{{tokenFx.glowPulseMin}}" data-fx-label="glowPulseMin"><span class="acp-fx-value" data-fx-value="glowPulseMin">{{tokenFx.glowPulseMin}}</span></label>
+                  <label class="acp-fx-mini">Pulse To<input type="range" name="fx_glowPulseMax" min="0" max="20" step="0.5" value="{{tokenFx.glowPulseMax}}" data-fx-label="glowPulseMax"><span class="acp-fx-value" data-fx-value="glowPulseMax">{{tokenFx.glowPulseMax}}</span></label>
+                </div>
+              </details>
+            </div>
+
+            <div class="acp-fx-block" data-fx-section="bloom">
+              <label class="acp-fx-head"><input type="checkbox" name="fx_bloomEnabled" {{#if tokenFx.bloomEnabled}}checked{{/if}}><span>Bloom</span></label>
+              <div class="acp-fx-basic">
+                <label class="acp-fx-mini">Threshold<input type="range" name="fx_bloomThreshold" min="0" max="1" step="0.05" value="{{tokenFx.bloomThreshold}}" data-fx-label="bloomThreshold"><span class="acp-fx-value" data-fx-value="bloomThreshold">{{tokenFx.bloomThreshold}}</span></label>
+                <label class="acp-fx-mini">Intensity<input type="range" name="fx_bloomScale" min="0" max="3" step="0.05" value="{{tokenFx.bloomScale}}" data-fx-label="bloomScale"><span class="acp-fx-value" data-fx-value="bloomScale">{{tokenFx.bloomScale}}</span></label>
+              </div>
+              <details class="acp-fx-adv" data-fx-adv="bloom" {{#if tokenFx.open.bloom}}open{{/if}}>
+                <summary>Advanced options</summary>
+                <div class="acp-fx-basic">
+                  <label class="acp-fx-mini">Blur<input type="range" name="fx_bloomBlur" min="0" max="20" step="0.5" value="{{tokenFx.bloomBlur}}" data-fx-label="bloomBlur"><span class="acp-fx-value" data-fx-value="bloomBlur">{{tokenFx.bloomBlur}}</span></label>
+                  <label class="acp-fx-mini">Brightness<input type="range" name="fx_bloomBrightness" min="0" max="2" step="0.05" value="{{tokenFx.bloomBrightness}}" data-fx-label="bloomBrightness"><span class="acp-fx-value" data-fx-value="bloomBrightness">{{tokenFx.bloomBrightness}}</span></label>
+                </div>
+              </details>
+            </div>
+
+            <div class="acp-fx-block" data-fx-section="bevel">
+              <label class="acp-fx-head"><input type="checkbox" name="fx_bevelEnabled" {{#if tokenFx.bevelEnabled}}checked{{/if}}><span>Bevel</span></label>
+              <div class="acp-fx-basic">
+                <label class="acp-fx-mini">Thickness<input type="range" name="fx_bevelThickness" min="0" max="15" step="0.5" value="{{tokenFx.bevelThickness}}" data-fx-label="bevelThickness"><span class="acp-fx-value" data-fx-value="bevelThickness">{{tokenFx.bevelThickness}}</span></label>
+                <label class="acp-fx-mini">Light Angle<input type="range" name="fx_bevelRotation" min="0" max="360" step="1" value="{{tokenFx.bevelRotation}}" data-fx-label="bevelRotation"><span class="acp-fx-value" data-fx-value="bevelRotation">{{tokenFx.bevelRotation}}</span></label>
+                <label class="acp-fx-mini acp-fx-mini-color">Light<input type="color" name="fx_bevelLightColor" value="{{tokenFx.bevelLightColor}}"></label>
+              </div>
+              <details class="acp-fx-adv" data-fx-adv="bevel" {{#if tokenFx.open.bevel}}open{{/if}}>
+                <summary>Advanced options</summary>
+                <div class="acp-fx-basic">
+                  <label class="acp-fx-mini">Light Alpha<input type="range" name="fx_bevelLightAlpha" min="0" max="1" step="0.05" value="{{tokenFx.bevelLightAlpha}}" data-fx-label="bevelLightAlpha"><span class="acp-fx-value" data-fx-value="bevelLightAlpha">{{tokenFx.bevelLightAlpha}}</span></label>
+                  <label class="acp-fx-mini acp-fx-mini-color">Shadow<input type="color" name="fx_bevelShadowColor" value="{{tokenFx.bevelShadowColor}}"></label>
+                  <label class="acp-fx-mini">Shadow Alpha<input type="range" name="fx_bevelShadowAlpha" min="0" max="1" step="0.05" value="{{tokenFx.bevelShadowAlpha}}" data-fx-label="bevelShadowAlpha"><span class="acp-fx-value" data-fx-value="bevelShadowAlpha">{{tokenFx.bevelShadowAlpha}}</span></label>
+                </div>
+              </details>
+            </div>
+
+            <div class="acp-fx-block" data-fx-section="distort">
+              <label class="acp-fx-head"><input type="checkbox" name="fx_distortEnabled" {{#if tokenFx.distortEnabled}}checked{{/if}}><span>Distortion</span></label>
+              <div class="acp-fx-basic">
+                <label class="acp-fx-mini">Strength<input type="range" name="fx_distortStrength" min="0" max="20" step="0.5" value="{{tokenFx.distortStrength}}" data-fx-label="distortStrength"><span class="acp-fx-value" data-fx-value="distortStrength">{{tokenFx.distortStrength}}</span></label>
+                <label class="acp-fx-mini">Speed<input type="range" name="fx_distortSpeed" min="0" max="0.3" step="0.005" value="{{tokenFx.distortSpeed}}" data-fx-label="distortSpeed"><span class="acp-fx-value" data-fx-value="distortSpeed">{{tokenFx.distortSpeed}}</span></label>
+              </div>
+              <details class="acp-fx-adv" data-fx-adv="distort" {{#if tokenFx.open.distort}}open{{/if}}>
+                <summary>Advanced options</summary>
+                <div class="acp-fx-basic">
+                  <label class="acp-fx-mini">Vertical Stretch<input type="range" name="fx_distortStretch" min="0.1" max="4" step="0.1" value="{{tokenFx.distortStretch}}" data-fx-label="distortStretch"><span class="acp-fx-value" data-fx-value="distortStretch">{{tokenFx.distortStretch}}</span></label>
+                </div>
+              </details>
+            </div>
+
+            <div class="acp-fx-block" data-fx-section="smoke">
+              <label class="acp-fx-head"><input type="checkbox" name="fx_smokeEnabled" {{#if tokenFx.smokeEnabled}}checked{{/if}}><span>Smoke</span></label>
+              <div class="acp-fx-basic">
+                <label class="acp-fx-mini acp-fx-mini-color">Color<input type="color" name="fx_smokeColor" value="{{tokenFx.smokeColor}}"></label>
+                <label class="acp-fx-mini">Density<input type="range" name="fx_smokeScale" min="0.1" max="4" step="0.1" value="{{tokenFx.smokeScale}}" data-fx-label="smokeScale"><span class="acp-fx-value" data-fx-value="smokeScale">{{tokenFx.smokeScale}}</span></label>
+                <label class="acp-fx-mini">Drift<input type="range" name="fx_smokeSpeed" min="-0.05" max="0.05" step="0.001" value="{{tokenFx.smokeSpeed}}" data-fx-label="smokeSpeed"><span class="acp-fx-value" data-fx-value="smokeSpeed">{{tokenFx.smokeSpeed}}</span></label>
+              </div>
+              <details class="acp-fx-adv" data-fx-adv="smoke" {{#if tokenFx.open.smoke}}open{{/if}}>
+                <summary>Advanced options</summary>
+                <div class="acp-fx-basic">
+                  <label class="acp-fx-mini">Blend Mode<input type="range" name="fx_smokeBlend" min="0" max="15" step="1" value="{{tokenFx.smokeBlend}}" data-fx-label="smokeBlend"><span class="acp-fx-value" data-fx-value="smokeBlend">{{tokenFx.smokeBlend}}</span></label>
+                  <label class="acp-fx-mini">Vertical Stretch<input type="range" name="fx_smokeStretch" min="0.1" max="4" step="0.1" value="{{tokenFx.smokeStretch}}" data-fx-label="smokeStretch"><span class="acp-fx-value" data-fx-value="smokeStretch">{{tokenFx.smokeStretch}}</span></label>
+                </div>
+              </details>
+            </div>
+
+            <div class="acp-fx-block" data-fx-section="transform">
+              <label class="acp-fx-head"><input type="checkbox" name="fx_transformEnabled" {{#if tokenFx.transformEnabled}}checked{{/if}}><span>Transform</span></label>
+              <div class="acp-fx-basic">
+                <label class="acp-fx-mini">Scale<input type="range" name="fx_transformScale" min="0" max="3" step="0.05" value="{{tokenFx.transformScale}}" data-fx-label="transformScale"><span class="acp-fx-value" data-fx-value="transformScale">{{tokenFx.transformScale}}</span></label>
+                <label class="acp-fx-mini">Rotation<input type="range" name="fx_transformRotation" min="0" max="360" step="1" value="{{tokenFx.transformRotation}}" data-fx-label="transformRotation"><span class="acp-fx-value" data-fx-value="transformRotation">{{tokenFx.transformRotation}}</span></label>
+              </div>
+              <details class="acp-fx-adv" data-fx-adv="transform" {{#if tokenFx.open.transform}}open{{/if}}>
+                <summary>Advanced options</summary>
+                <div class="acp-fx-basic">
+                  <label class="acp-fx-mini">Translate X<input type="range" name="fx_transformTranslateX" min="-1" max="1" step="0.05" value="{{tokenFx.transformTranslateX}}" data-fx-label="transformTranslateX"><span class="acp-fx-value" data-fx-value="transformTranslateX">{{tokenFx.transformTranslateX}}</span></label>
+                  <label class="acp-fx-mini">Translate Y<input type="range" name="fx_transformTranslateY" min="-1" max="1" step="0.05" value="{{tokenFx.transformTranslateY}}" data-fx-label="transformTranslateY"><span class="acp-fx-value" data-fx-value="transformTranslateY">{{tokenFx.transformTranslateY}}</span></label>
+                  <label class="acp-fx-mini">Twist<input type="range" name="fx_transformTwist" min="-360" max="360" step="1" value="{{tokenFx.transformTwist}}" data-fx-label="transformTwist"><span class="acp-fx-value" data-fx-value="transformTwist">{{tokenFx.transformTwist}}</span></label>
+                  <label class="acp-fx-mini">Bulge<input type="range" name="fx_transformBulge" min="-1" max="1" step="0.05" value="{{tokenFx.transformBulge}}" data-fx-label="transformBulge"><span class="acp-fx-value" data-fx-value="transformBulge">{{tokenFx.transformBulge}}</span></label>
+                </div>
+              </details>
+            </div>
+          </section>
+        {{else}}
+          <div class="acp-token-section">
+            <div class="acp-token-row">
+              {{#each activeTab.tokens}}
+                <div class="acp-token-cell">
+                  <div class="acp-token-label">{{label}}</div>
+                  <div class="acp-token-frame {{#unless hasImage}}is-empty{{/unless}} {{#if canDrag}}acp-draggable{{/if}}"
+                    data-acp-frame data-acp-kind="tab" data-acp-slot="{{key}}" data-acp-tab="{{../activeTab.id}}"
+                    data-acp-path="{{dragPath}}" data-acp-has="{{#if hasImage}}1{{else}}0{{/if}}" data-acp-drag="{{#if canDrag}}1{{else}}0{{/if}}">
+                    <img class="acp-token-img" src="{{preview}}" alt="{{label}}" draggable="false">
+                  </div>
+                  <div class="acp-token-actions">
+                    <button type="button" class="acp-btn acp-btn-sm" data-action="editTabTokenSlot" data-slot="{{key}}" data-tab="{{../activeTab.id}}" data-tooltip="{{#if @root.isUnlinkedToken}}{{@root.tooltips.unlinkedToken}}{{else}}{{editTooltip}}{{/if}}" {{#if @root.isUnlinkedToken}}disabled{{/if}}><i class="fas fa-pen"></i> Edit</button>
+                    <button type="button" class="acp-btn acp-btn-sm acp-btn-danger" data-action="clearTabTokenSlot" data-slot="{{key}}" data-tab="{{../activeTab.id}}" data-tooltip="{{@root.tooltips.clearTokenImage}}" {{#unless hasImage}}disabled{{/unless}}><i class="fas fa-times"></i></button>
+                  </div>
+                  <div class="acp-token-scale" data-tooltip="{{@root.tooltips.tokenScale}}">
+                    <input type="range" name="tabscale_{{../activeTab.id}}_{{key}}" data-scale-id="tab_{{../activeTab.id}}_{{key}}" min="{{scaleMin}}" max="{{scaleMax}}" step="{{scaleStep}}" value="{{scale}}">
+                    <span class="acp-token-scale-value" data-scale-label="tab_{{../activeTab.id}}_{{key}}">{{scaleLabel}}</span>
+                  </div>
+                  <div class="acp-token-offsety" data-tooltip="{{@root.tooltips.tokenOffsetY}}"><span class="acp-token-offsety-label">Offset Y</span><input type="number" name="taboffsety_{{../activeTab.id}}_{{key}}" min="{{offsetYMin}}" max="{{offsetYMax}}" step="{{offsetYStep}}" value="{{offsetY}}"></div>
+                </div>
+              {{/each}}
+            </div>
+          </div>
+
+          <hr class="acp-token-divider">
+          <div class="acp-token-section">
+            <header class="acp-promo-header">
+              <h4 class="acp-token-section-title acp-token-section-title-left">Conditional Tokens</h4>
+              <div class="acp-promo-toolbar">
+                {{#if activeTab.hasEntries}}<button type="button" class="acp-btn acp-btn-sm" data-action="toggleAllConditionalEntries" data-tab="{{activeTab.id}}">{{#if activeTab.anyOpen}}<i class="fas fa-compress"></i> Collapse All{{else}}<i class="fas fa-expand"></i> Expand All{{/if}}</button>{{/if}}
+                <button type="button" class="acp-btn acp-btn-sm" data-action="mapConditionalEntries" data-tab="{{activeTab.id}}" data-tooltip="{{tooltips.mapConditionalEntries}}"><i class="fas fa-diagram-project"></i> Map Entries</button>
+                <button type="button" class="acp-btn acp-btn-sm" data-action="addConditionalEntry" data-tab="{{activeTab.id}}" data-tooltip="{{tooltips.addConditionalEntry}}"><i class="fas fa-plus"></i> Add Entry</button>
+              </div>
+            </header>
+            {{#if activeTab.hasEntries}}
+              {{#each activeTab.groups}}
+                <section class="acp-promo-group" data-group="{{key}}">
+                  <header class="acp-promo-group-head"><span class="acp-promo-group-label">{{label}}</span><span class="acp-promo-group-hint">{{hint}}</span><span class="acp-promo-group-line"></span><span class="acp-promo-group-count">{{count}}</span></header>
+                  <div class="acp-promo-list">
+                    {{#each entries}}
+                      <details class="acp-promo-entry" data-entry-index="{{index}}" data-tab="{{tabId}}" data-group="{{groupKey}}" {{#if open}}open{{/if}}>
+                        <summary class="acp-promo-entry-summary">
+                          <span class="acp-promo-grip" draggable="true" data-tooltip="{{@root.tooltips.dragEntry}}"><i class="fas fa-grip-vertical"></i></span>
+                          <i class="fas fa-chevron-right acp-promo-chevron"></i>
+                          <div class="acp-promo-entry-line">{{#each triggers}}<span class="acp-promo-chip acp-promo-chip-mini">{{name}}</span>{{/each}}{{#each guards}}<span class="acp-promo-chip acp-promo-chip-guard acp-promo-chip-mini">{{name}}</span>{{/each}}{{#unless hasTriggers}}{{#unless hasGuards}}<span class="acp-promo-line-empty">No trigger yet</span>{{/unless}}{{/unless}}</div>
+                          <div class="acp-promo-entry-conds">
+                            <div class="acp-promo-cond-row">
+                              <span class="acp-promo-cond-label">Fires when</span>
+                              <div class="acp-promo-cond-chips">{{#each triggers}}<span class="acp-promo-chip"><span class="acp-promo-chip-name">{{name}}</span><button type="button" class="acp-promo-chip-x" data-action="removeEntryTrigger" data-tab="{{../tabId}}" data-entry="{{../index}}" data-cond="{{name}}" data-tooltip="{{@root.tooltips.removeTrigger}}"><i class="fas fa-times"></i></button></span>{{/each}}<button type="button" class="acp-promo-chip-add" data-action="addEntryTrigger" data-tab="{{tabId}}" data-entry="{{index}}" data-tooltip="{{@root.tooltips.addTrigger}}"><i class="fas fa-plus"></i> Trigger</button></div>
+                            </div>
+                            <div class="acp-promo-cond-row">
+                              <span class="acp-promo-cond-label">Also requires</span>
+                              <div class="acp-promo-cond-chips">{{#each guards}}<span class="acp-promo-chip acp-promo-chip-guard"><span class="acp-promo-chip-name">{{name}}</span><button type="button" class="acp-promo-chip-x" data-action="removeEntryGuard" data-tab="{{../tabId}}" data-entry="{{../index}}" data-cond="{{name}}" data-tooltip="{{@root.tooltips.removeRequirement}}"><i class="fas fa-times"></i></button></span>{{/each}}<button type="button" class="acp-promo-chip-add" data-action="addEntryGuard" data-tab="{{tabId}}" data-entry="{{index}}" data-tooltip="{{@root.tooltips.addRequirement}}"><i class="fas fa-plus"></i> Requirement</button></div>
+                            </div>
+                            {{#if hasSpecificItem}}
+                              <div class="acp-promo-cond-row"><span class="acp-promo-cond-label" data-tooltip="{{@root.tooltips.specificItem}}">Specific item</span><input type="text" name="centry_{{tabId}}_{{index}}_uuid" class="ed-input acp-promo-uuid" value="{{specificItemUuid}}" placeholder="Item name(s), comma-separated" data-acp-item-input="1" data-acp-field="specificItemUuid" data-acp-tab="{{tabId}}" data-acp-entry="{{index}}" data-tooltip="{{@root.tooltips.dropItem}}"></div>
+                            {{/if}}
+                            {{#if hasSpecificAbility}}
+                              <div class="acp-promo-cond-row"><span class="acp-promo-cond-label"
+                                data-tooltip="{{@root.tooltips.specificAbility}}">Specific ability</span><input
+                                type="text" name="centry_{{tabId}}_{{index}}_abilityIds" class="ed-input acp-promo-uuid"
+                                value="{{specificAbilityIds}}"
+                                placeholder="Ability name(s), comma-separated (blank = any Active ability)"
+                                data-acp-item-input="1" data-acp-field="specificAbilityIds" data-acp-tab="{{tabId}}"
+                                data-acp-entry="{{index}}" data-tooltip="{{@root.tooltips.dropItem}}"></div>
+                            {{/if}}
+                            {{#if hasSpecificSpell}}
+                              <div class="acp-promo-cond-row"><span class="acp-promo-cond-label"
+                                data-tooltip="{{@root.tooltips.specificSpell}}">Specific spell</span><input
+                                type="text" name="centry_{{tabId}}_{{index}}_spellNames" class="ed-input acp-promo-uuid"
+                                value="{{specificSpellNames}}"
+                                placeholder="Spell name(s), comma-separated (blank = any cast)"
+                                data-acp-item-input="1" data-acp-field="specificSpellNames" data-acp-tab="{{tabId}}"
+                                data-acp-entry="{{index}}" data-tooltip="{{@root.tooltips.dropItem}}"></div>
+                            {{/if}}
+                          </div>
+                          {{#if shadowed}}<span class="acp-promo-shadow-badge" data-tooltip="{{shadowTooltip}}"><i class="fas fa-triangle-exclamation"></i></span>{{/if}}
+                          <button type="button" class="acp-btn acp-btn-sm acp-promo-dup" data-action="duplicateConditionalEntry" data-tab="{{tabId}}" data-entry="{{index}}" data-tooltip="{{@root.tooltips.duplicateEntry}}"><i class="fas fa-clone"></i></button>
+                          <button type="button" class="acp-btn acp-btn-sm acp-btn-danger acp-promo-delete" data-action="deleteConditionalEntry" data-tab="{{tabId}}" data-entry="{{index}}" data-tooltip="{{@root.tooltips.deleteEntry}}"><i class="fas fa-times"></i></button>
+                        </summary>
+                        <div class="acp-promo-entry-body"><div class="acp-token-row">
+                          {{#each slots}}
+                            <div class="acp-token-cell">
+                              <div class="acp-token-label">{{label}}</div>
+                              <div class="acp-token-frame {{#unless hasImage}}{{#unless isFallback}}is-empty{{/unless}}{{/unless}} {{#if isFallback}}is-fallback{{/if}} {{#if canDrag}}acp-draggable{{/if}}" data-acp-frame data-acp-kind="entry" data-acp-slot="{{key}}" data-acp-tab="{{../tabId}}" data-acp-entry="{{../index}}" data-acp-path="{{dragPath}}" data-acp-has="{{#if hasImage}}1{{else}}0{{/if}}" data-acp-drag="{{#if canDrag}}1{{else}}0{{/if}}"><img class="acp-token-img" src="{{preview}}" alt="{{label}}" draggable="false"></div>
+                              <div class="acp-token-actions"><button type="button" class="acp-btn acp-btn-sm" data-action="editConditionalSlot" data-tab="{{../tabId}}" data-entry="{{../index}}" data-slot="{{key}}" data-tooltip="{{#if @root.isUnlinkedToken}}{{@root.tooltips.unlinkedToken}}{{else}}{{editTooltip}}{{/if}}" {{#if @root.isUnlinkedToken}}disabled{{/if}}><i class="fas fa-pen"></i> Edit</button><button type="button" class="acp-btn acp-btn-sm acp-btn-danger" data-action="clearConditionalSlot" data-tab="{{../tabId}}" data-entry="{{../index}}" data-slot="{{key}}" data-tooltip="{{@root.tooltips.clearTokenImage}}" {{#unless hasImage}}disabled{{/unless}}><i class="fas fa-times"></i></button></div>
+                            </div>
+                          {{/each}}
+                        </div></div>
+                      </details>
+                    {{/each}}
+                  </div>
+                </section>
+              {{/each}}
+            {{else}}<p class="acp-promo-empty">No conditional entries yet. Use <strong>Add Entry</strong>.</p>{{/if}}
+          </div>
+        {{/if}}
+      </div>
+    </section>
+  </main>
+</div>

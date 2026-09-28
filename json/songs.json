@@ -1,0 +1,54 @@
+{
+  "songs": [
+    {
+      "id": "march-of-the-iron-vanguard",
+      "name": "Together We Ride",
+      "img": "systems/emblem-rpg/assets/object/sound.png",
+      "dc": 10,
+      "performers": 1,
+      "description": "A soldiers' march that sets the pace of a column on the move. Steels the arm and sharpens the mind for the road ahead.",
+      "bonuses": { "mgt": 1, "wit": 1 },
+      "track": ""
+    },
+    {
+      "id": "swallowtail-reel",
+      "name": "Fodlan Winds",
+      "img": "systems/emblem-rpg/assets/object/sound.png",
+      "dc": 10,
+      "performers": 1,
+      "description": "A quick country reel that has every foot tapping before the second verse. Loosens the joints and steadies the hands.",
+      "bonuses": { "agi": 1, "tqn": 1 },
+      "track": ""
+    },
+    {
+      "id": "hearthstone-lullaby",
+      "name": "Destiny Ablaze",
+      "img": "systems/emblem-rpg/assets/object/sound.png",
+      "dc": 10,
+      "performers": 1,
+      "description": "A slow, warm cradle song from the lowland farms. Settles the body and braces it against the cold.",
+      "bonuses": { "hpMax": 2, "def": 1 },
+      "track": ""
+    },
+    {
+      "id": "vigil-of-the-long-night",
+      "name": "Edge of Dawn",
+      "img": "systems/emblem-rpg/assets/object/sound.png",
+      "dc": 10,
+      "performers": 1,
+      "description": "A watchman's hymn sung through the small hours. Keeps weariness at bay and the spirit unshaken.",
+      "bonuses": { "stnMax": 1, "res": 1 },
+      "track": ""
+    },
+    {
+      "id": "the-gilded-courtier",
+      "name": "Lost in Thoughts",
+      "img": "systems/emblem-rpg/assets/object/sound.png",
+      "dc": 10,
+      "performers": 1,
+      "description": "A flattering court air of the old capital. Everyone who hears it walks a little taller and speaks a little smoother.",
+      "bonuses": { "cha": 3 },
+      "track": ""
+    }
+  ]
+}

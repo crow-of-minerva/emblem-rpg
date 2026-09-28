@@ -1,0 +1,127 @@
+{
+  "statLabels": {
+    "atk": "Atk",
+    "acc": "Acc",
+    "crit": "Crit",
+    "critDmg": "Crit Dmg",
+    "brk": "Brk",
+    "spd": "Spd",
+    "eva": "Eva",
+    "def": "Def",
+    "res": "Res",
+    "stnMax": "Stn",
+    "wit": "Wit",
+    "cha": "Cha",
+    "mov": "Mov"
+  },
+  "affinities": {
+    "Audacity": {
+      "label": "Audacity",
+      "adjective": "audacious",
+      "stats": {
+        "mov": { "None": 1, "E": 2, "D": 2, "C": 2, "B": 2, "A": 2, "S": 2 },
+        "def": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -2, "A": -1, "S": 0 },
+        "res": { "None": -4, "E": -4, "D": -3, "C": -2, "B": -2, "A": -1, "S": 0 }
+      }
+    },
+    "Caution": {
+      "label": "Caution",
+      "adjective": "cautious",
+      "stats": {
+        "eva": { "None": 2, "E": 3, "D": 3, "C": 4, "B": 4, "A": 4, "S": 5 },
+        "def": { "None": 2, "E": 3, "D": 3, "C": 3, "B": 4, "A": 5, "S": 5 },
+        "atk": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -3, "A": -2, "S": -1 }
+      }
+    },
+    "Cunning": {
+      "label": "Cunning",
+      "adjective": "cunning",
+      "stats": {
+        "eva": { "None": 2, "E": 3, "D": 3, "C": 3, "B": 4, "A": 4, "S": 5 },
+        "acc": { "None": 2, "E": 3, "D": 3, "C": 4, "B": 4, "A": 5, "S": 5 },
+        "atk": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -3, "A": -2, "S": -1 }
+      }
+    },
+    "Decisiveness": {
+      "label": "Decisiveness",
+      "adjective": "decisive",
+      "stats": {
+        "crit": { "None": 15, "E": 20, "D": 25, "C": 30, "B": 35, "A": 35, "S": 40 },
+        "critDmg": { "None": 0.25, "E": 0.5, "D": 0.5, "C": 0.5, "B": 0.75, "A": 1, "S": 1 },
+        "spd": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -3, "A": -2, "S": -1 }
+      }
+    },
+    "Focus": {
+      "label": "Focus",
+      "adjective": "focused",
+      "stats": {
+        "acc": { "None": 2, "E": 3, "D": 3, "C": 4, "B": 4, "A": 5, "S": 5 },
+        "atk": { "None": 2, "E": 3, "D": 3, "C": 3, "B": 4, "A": 4, "S": 5 },
+        "crit": { "None": -25, "E": -25, "D": -20, "C": -20, "B": -15, "A": -10, "S": -5 }
+      }
+    },
+    "Impulse": {
+      "label": "Impulse",
+      "adjective": "impulsive",
+      "stats": {
+        "spd": { "None": 2, "E": 3, "D": 3, "C": 4, "B": 4, "A": 5, "S": 5 },
+        "eva": { "None": 2, "E": 3, "D": 3, "C": 3, "B": 4, "A": 4, "S": 5 },
+        "def": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -3, "A": -2, "S": -1 }
+      }
+    },
+    "Rage": {
+      "label": "Rage",
+      "adjective": "furious",
+      "stats": {
+        "atk": { "None": 2, "E": 3, "D": 3, "C": 4, "B": 4, "A": 4, "S": 5 },
+        "crit": { "None": 10, "E": 15, "D": 15, "C": 15, "B": 20, "A": 25, "S": 25 },
+        "eva": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -3, "A": -2, "S": -1 }
+      }
+    },
+    "Savagery": {
+      "label": "Savagery",
+      "adjective": "savage",
+      "stats": {
+        "atk": { "None": 2, "E": 3, "D": 3, "C": 4, "B": 4, "A": 5, "S": 5 },
+        "spd": { "None": 2, "E": 3, "D": 3, "C": 3, "B": 4, "A": 4, "S": 5 },
+        "acc": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -3, "A": -2, "S": -1 }
+      }
+    },
+    "Serenity": {
+      "label": "Serenity",
+      "adjective": "serene",
+      "stats": {
+        "res": { "None": 2, "E": 3, "D": 3, "C": 4, "B": 4, "A": 5, "S": 5 },
+        "eva": { "None": 2, "E": 3, "D": 3, "C": 3, "B": 4, "A": 4, "S": 5 },
+        "def": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -3, "A": -2, "S": -1 }
+      }
+    },
+    "Tenacity": {
+      "label": "Tenacity",
+      "adjective": "tenacious",
+      "stats": {
+        "brk": { "None": 0.25, "E": 0.5, "D": 0.5, "C": 1, "B": 1, "A": 1, "S": 1.5 },
+        "stnMax": { "None": 1, "E": 2, "D":3 , "C": 3, "B": 4, "A": 4, "S": 5 },
+        "spd": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -2, "A": -2, "S": -1 }
+      }
+    },
+    "Vigilance": {
+      "label": "Vigilance",
+      "adjective": "vigilant",
+      "stats": {
+        "def": { "None": 2, "E": 3, "D": 3, "C": 4, "B": 4, "A": 5, "S": 5 },
+        "res": { "None": 2, "E": 3, "D": 3, "C": 3, "B": 4, "A": 4, "S": 5 },
+        "mov": { "None": -3, "E": -3, "D": -2, "C": -2, "B": -2, "A": -2, "S": -1 }
+      }
+    },
+    "Wisdom": {
+      "label": "Wisdom",
+      "adjective": "wise",
+      "stats": {
+        "wit": { "None": 3, "E": 4, "D": 4, "C": 5, "B": 5, "A": 5, "S": 6 },
+        "cha": { "None": 3, "E": 4, "D": 4, "C": 4, "B": 5, "A": 5, "S": 6 },
+        "spd": { "None": -4, "E": -4, "D": -3, "C": -3, "B": -3, "A": -2, "S": -1 }
+      }
+    }
+  }
+}

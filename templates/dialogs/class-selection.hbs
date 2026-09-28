@@ -1,0 +1,31 @@
+<div class="class-dialog-container">
+  <div class="class-tier-tabs ed-tabs">
+    {{#each sections}}
+      <button type="button" class="class-tier-button ed-tab {{#if @first}}is-active{{/if}}" data-tier="{{this.tier}}">{{this.tier}}</button>
+    {{/each}}
+  </div>
+
+  <div class="class-list-container">
+    {{#each sections}}
+      <div class="class-section {{#unless @first}}hidden{{/unless}}" data-tier="{{this.tier}}">
+        {{#if this.defaultId}}
+          <div class="class-select-item class-default-item" data-class-id="{{this.defaultId}}">
+            <div class="class-icon class-icon-default"><i class="fas fa-asterisk"></i></div>
+            <span class="class-label" data-class-id="{{this.defaultId}}">{{this.defaultLabel}}</span>
+            <div class="class-checkbox" data-value="{{this.defaultId}}"></div>
+          </div>
+        {{/if}}
+        {{#each this.classes}}
+          <div class="class-select-item {{#if (eq this.id ../../selectedId)}}selected{{/if}}" data-class-id="{{this.id}}">
+            <img src="{{this.img}}" class="class-icon" alt="{{this.name}}">
+            <span class="class-label" data-class-id="{{this.id}}">{{this.name}}</span>
+            {{#if this.source}}<i class="fas fa-book class-source-badge" data-tooltip="{{this.source}}"></i>{{/if}}
+            <div class="class-checkbox {{#if (eq this.id ../../selectedId)}}checked{{/if}}" data-value="{{this.id}}"></div>
+          </div>
+        {{else}}
+          <div class="class-section-empty">No {{this.tier}} classes found.</div>
+        {{/each}}
+      </div>
+    {{/each}}
+  </div>
+</div>

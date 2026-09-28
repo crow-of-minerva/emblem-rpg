@@ -1,0 +1,92 @@
+<div class="ed-container uses-scaling-container">
+  {{#if showUsesType}}
+  <div class="ed-section us-uses-type-section">
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.uses.type'}}">uses type</span>
+      <select class="us-uses-type">
+        <option value="limited">Limited</option>
+        <option value="infinite">Infinite</option>
+        <option value="conditional">Conditional</option>
+      </select>
+    </label>
+  </div>
+  {{/if}}
+
+  <div class="ed-section us-section">
+    <label class="ed-field ed-field--row us-factor-row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.scaling.factor'}}">scales with</span>
+      <span class="ed-check-slot">
+        <select class="us-factor"></select>
+        <select class="us-subject" hidden></select>
+      </span>
+    </label>
+
+    <label class="ed-field ed-field--row us-type-row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.scaling.type'}}">scaling type</span>
+      <select class="us-type">
+        <option value="Threshold">Threshold</option>
+        <option value="Multiple">Multiple</option>
+        <option value="Additive">Additive</option>
+        <option value="Formula">Formula</option>
+      </select>
+    </label>
+
+    <label class="ed-field ed-field--row us-base-row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.scaling.base'}}">{{baseLabel}}</span>
+      <input type="number" class="us-base" min="1" step="1" value="1" style="max-width:80px" />
+    </label>
+  </div>
+
+  <div class="ed-section us-type-section" data-section="Threshold">
+    <div class="us-thresholds"></div>
+    <div class="us-thresholds-footer">
+      <button type="button" class="ed-btn us-add-threshold" data-tooltip="{{tooltip 'editor.scaling.add-threshold'}}">
+        <i class="fas fa-plus"></i> add threshold
+      </button>
+      <label class="ed-check" data-tooltip="{{tooltip 'editor.scaling.add-to-base'}}">
+        <input type="checkbox" class="us-add-to-base" />
+        <span>add to base</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="ed-section us-type-section" data-section="Multiple">
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.scaling.multiplier'}}">multiplier</span>
+      <input type="number" class="us-multiplier" step="1" value="1" style="max-width:80px" />
+    </label>
+    <label class="ed-check" data-tooltip="{{tooltip 'editor.scaling.add-to-base'}}">
+      <input type="checkbox" class="us-add-to-base" />
+      <span>add to base</span>
+    </label>
+  </div>
+
+  <div class="ed-section us-type-section" data-section="Formula">
+    <label class="ed-field ed-field--textarea">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.scaling.formula'}}">formula</span>
+      <textarea class="us-formula" rows="3" spellcheck="false" placeholder="(5 + scaleFactor) / 2"></textarea>
+    </label>
+    <label class="ed-check" data-tooltip="{{tooltip 'editor.scaling.round-down'}}">
+      <input type="checkbox" class="us-round-down" />
+      <span>round down</span>
+    </label>
+  </div>
+
+  {{#if showLosRule}}
+  <div class="ed-section us-los-section">
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'uses-formula.line-of-sight'}}">line of sight</span>
+      <select class="us-los-rule">
+        <option value="normal">Normal</option>
+        <option value="ignoreHeight">Ignore height</option>
+        <option value="ignoreLoS">Ignore line of sight</option>
+      </select>
+    </label>
+  </div>
+  {{/if}}
+
+  <div class="ed-section us-preview-section" hidden>
+    <span class="ed-label" data-tooltip="{{tooltip 'editor.scaling.preview'}}">preview</span>
+    <pre class="us-preview"></pre>
+  </div>
+</div>

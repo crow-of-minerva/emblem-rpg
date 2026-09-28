@@ -1,0 +1,30 @@
+<div class="ed-container">
+  <div class="ed-section">
+    <div class="ed-row">
+      <label class="ed-label">Partner</label>
+      <select name="partner">
+        {{#each partnerOptions}}
+          <option value="{{this.uuid}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>
+        {{/each}}
+      </select>
+    </div>
+    <div class="ed-row">
+      <label class="ed-label">Rank</label>
+      <select name="rank">
+        {{#each rankOptions}}
+          <option value="{{this.value}}" data-needed="{{this.needed}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+        {{/each}}
+      </select>
+    </div>
+  </div>
+  <div class="ed-section">
+    <div class="ed-row">
+      <label class="ed-label">Current XP</label>
+      <input name="xp" type="number" value="{{xp}}" min="0" step="1">
+    </div>
+    <div class="ed-row">
+      <label class="ed-label">XP for Next Rank</label>
+      <input class="support-editor-needed" type="text" value="{{needed}}" disabled>
+    </div>
+  </div>
+</div>
