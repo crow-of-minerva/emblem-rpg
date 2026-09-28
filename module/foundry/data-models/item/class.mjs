@@ -68,7 +68,6 @@ export class ClassDataModel extends foundry.abstract.TypeDataModel {
 
   /** Hold skill ranks to whole numbers from 0 to SKILL_RANK_MAX, whatever the source data holds. */
   static migrateData(source) {
-    const baseStats = source?.baseStats;
     if (source?.skills) {
       for (const key of Object.keys(source.skills)) {
         const rank = source.skills[key];

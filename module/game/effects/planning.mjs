@@ -132,7 +132,7 @@ export function resolveHealEchoAmount({
 /* -------------------------------------------- */
 
 const ENTRY_IDENTITY_FIELDS = Object.freeze([
-  'trigger', 'failedSave', 'itemNames', 'itemUuids', 'delayMs', 'tokenAwaits', 'condition', 'action'
+  'trigger', 'itemNames', 'itemUuids', 'delayMs', 'tokenAwaits', 'condition', 'action'
 ]);
 
 /**

@@ -139,7 +139,6 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
       }),
       effectsV2: new F.ArrayField(new F.SchemaField({
         trigger: new F.StringField({ initial: '' }), name: new F.StringField({ initial: '' }),
-        failedSave: new F.BooleanField({ required: false, nullable: true, initial: null }),
         itemNames: new F.ArrayField(new F.StringField(), { initial: () => [] }),
         itemUuids: new F.ArrayField(new F.StringField(), { initial: () => [] }),
         delayMs: number(0), tokenAwaits: bool(false),
@@ -192,8 +191,6 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
           materials: new F.ArrayField(material(), { initial: () => [] })
         }),
         refinement: new F.SchemaField({
-          // Refinement tiers hold changes from the item's base stats, never absolute values.
-          relative: bool(true),
           tiers: new F.ArrayField(refinementTier(), { initial: () => Array.from({ length: REFINEMENT_TIER_COUNT }, () => ({
             enabled: false, xpReq: 0, forgeMult: null, skillCheck: '', materials: [],
             modifiers: {

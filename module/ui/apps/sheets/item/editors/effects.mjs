@@ -2162,9 +2162,9 @@ function pruneEmptyBranches(steps) {
 }
 
 /**
- * Read the effect entry for validation and save. The fields the dialog doesn't edit (`failedSave`, `itemUuids`)
- * are carried over from the entry it opened with. `condition` is always null, because it was folded into an if step
- * on open. Item names are collected only for the trigger that uses them.
+ * Read the effect entry for validation and save. The one field the dialog doesn't edit, `itemUuids`, is carried over
+ * from the entry it opened with. `condition` is always null, because it was folded into an if step on open. Item
+ * names are collected only for the trigger that uses them.
  * @param {object} [source]               The entry the dialog opened with.
  */
 function readEntryFromDom(dialogEl, source = {}) {
@@ -2182,7 +2182,6 @@ function readEntryFromDom(dialogEl, source = {}) {
     : [];
   const entry = {
     trigger, name, delayMs, tokenAwaits,
-    failedSave: source.failedSave ?? null,
     condition: null,
     action,
     itemNames,
@@ -2252,7 +2251,6 @@ export async function createEffectEntry(itemSheet, { group = '' } = {}) {
   const entry = {
     trigger: triggerPoolForGroup(group)[0]?.key ?? '',
     name: '',
-    failedSave: null,
     itemNames: [],
     itemUuids: [],
     delayMs: 0,

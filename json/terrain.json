@@ -67,10 +67,6 @@
         "teleportLetter": "A", "teleportCost": "standard", "teleportMov": 0
       }
     }
-  ],
-  "legacyIcons": {
-    "Heal 10 Tile": "icons/svg/heal.svg",
-    "Entangling Vines": "icons/svg/net.svg"
-  }
+  ]
 }
 

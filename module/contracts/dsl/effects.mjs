@@ -400,9 +400,6 @@ export function validateEffectEntry(entry, path = 'entry') {
   if (entry.name !== undefined && typeof entry.name !== 'string') {
     errors.push(`${path}.name: must be a string`);
   }
-  if (entry.failedSave !== undefined && entry.failedSave !== null && typeof entry.failedSave !== 'boolean') {
-    errors.push(`${path}.failedSave: must be boolean or null`);
-  }
   validateStringList(entry.itemNames, `${path}.itemNames`, errors);
   validateStringList(entry.itemUuids, `${path}.itemUuids`, errors);
   if (entry.delayMs !== undefined && (!Number.isFinite(Number(entry.delayMs)) || Number(entry.delayMs) < 0)) {

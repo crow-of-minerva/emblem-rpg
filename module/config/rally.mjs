@@ -40,7 +40,6 @@ export function rallyAbilityData() {
       effectsV2: [{
         trigger: 'onActivation',
         name: 'Rally Effect Animation',
-        failedSave: null,
         itemNames: [],
         itemUuids: [],
         delayMs: 500,
