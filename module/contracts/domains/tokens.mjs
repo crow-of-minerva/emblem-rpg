@@ -63,13 +63,13 @@ export function readTokenEntryReferences(raw) {
 /**
  * Tell whether one Item is what a reference list names. A name matches case-insensitively, and a name written
  * without a refinement suffix also matches every refined copy, so "Iron Sword" covers "Iron Sword (+1)". A
- * reference that is an id or UUID matches the Item's own id, source id or compendium source.
+ * reference that is an id or UUID matches the Item's own id or its compendium source.
  */
 export function tokenEntryReferenceMatches(item, references) {
   if (!item || !references.length) return false;
   const name = normalizeReferenceName(item.name);
   const baseName = name.replace(REFINEMENT_SUFFIX, '');
-  const ids = new Set([item.id, idTail(item.uuid), idTail(item.sourceId), idTail(item.compendiumSource)]
+  const ids = new Set([item.id, idTail(item.uuid), idTail(item.compendiumSource)]
     .filter(Boolean));
   return references.some(reference => {
     const wanted = normalizeReferenceName(reference);

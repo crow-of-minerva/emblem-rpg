@@ -1,7 +1,6 @@
 /** @layer foundry/data-models/item */
 import { AURA_TARGET_TYPES, WEAPON_PROFICIENCIES } from '../../../contracts/domains/items.mjs';
 import { UNIT_TYPES } from '../../../game/character/rules.mjs';
-import { ARMOR_DURABILITY_DEFAULTS } from '../../../game/items/rules.mjs';
 import { DAMAGE_TYPES } from '../../../contracts/domains/damage.mjs';
 import { REQUIREMENT_TYPES } from '../../../contracts/dsl/requirements.mjs';
 
@@ -207,25 +206,6 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
         })
       })
     };
-  }
-
-  /**
-   * Normalize item data as Foundry cleans it: an unknown action type falls back to a Standard Action, a Booster is
-   * always one, and a whole Armor source without a durability maximum gets its default.
-   */
-  static migrateData(source, options) {
-    if (typeof source?.actionType === 'string' && !ACTION_TYPES.includes(source.actionType)) source.actionType = 'Standard Action';
-    if (source?.itemType === 'Booster' && typeof source.actionType === 'string') source.actionType = 'Standard Action';
-    // Foundry migrates an update's partial diff too, and an infinite item's sheet submits no maximum, so only a whole
-    // Armor source gets the default durability.
-    if (source?.itemType === 'Armor' && options?.partial !== true) {
-      const uses = source.uses ?? (source.uses = {});
-      if (uses.type !== 'infinite' && !(Number(uses.max) > 0)) {
-        const maximum = ARMOR_DURABILITY_DEFAULTS[source.armor?.req] ?? 10;
-        uses.max = maximum; uses.current = maximum; uses.type = 'limited';
-      }
-    }
-    return super.migrateData(source);
   }
 }
 

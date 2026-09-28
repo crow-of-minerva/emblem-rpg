@@ -132,7 +132,7 @@ function unavailableReason({ bypassItem, meetsRequirements, hasPromoItem, itemMa
 function usedItemMatches(usedItem, ref) {
   if (!usedItem || (!ref?.uuid && !ref?.name)) return false;
   const refUuid = String(ref.uuid ?? '');
-  if (refUuid && [usedItem.uuid, usedItem.sourceId, usedItem.compendiumSource].includes(refUuid)) return true;
+  if (refUuid && [usedItem.uuid, usedItem.compendiumSource].includes(refUuid)) return true;
   const refName = normal(ref.name);
   return Boolean(refName) && normal(usedItem.name) === refName;
 }

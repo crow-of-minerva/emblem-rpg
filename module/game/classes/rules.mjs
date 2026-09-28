@@ -192,8 +192,7 @@ function normal(value) {
 
 function matchesRef(item, ref) {
   const uuid = String(ref?.uuid ?? '');
-  const sourceId = item.sourceId ?? item.flags?.core?.sourceId;
-  if (uuid && (item.uuid === uuid || sourceId === uuid)) return true;
+  if (uuid && (item.uuid === uuid || item.compendiumSource === uuid)) return true;
   return Boolean(normal(ref?.name) && normal(item.name) === normal(ref.name));
 }
 

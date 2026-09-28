@@ -949,7 +949,6 @@ export function projectFoundryTokenArtItem(item) {
     itemType: String(item.itemType ?? system.itemType ?? item.subtype ?? ''),
     isWielded: item.isWielded === true || system.isWielded === true,
     weaponRequirement: String(item.weaponRequirement ?? system.weapon?.req ?? ''),
-    sourceId: String(item.sourceId ?? item.flags?.core?.sourceId ?? ''),
     compendiumSource: String(item.compendiumSource ?? item._stats?.compendiumSource ?? '')
   });
 }

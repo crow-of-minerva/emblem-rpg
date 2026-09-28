@@ -337,9 +337,8 @@ async function prepareFeatures(actor, refs) {
     queued.add(key);
     const sourceData = source.toObject();
     sourceData._id = foundry.utils.randomID();
-    sourceData.flags ??= {};
-    sourceData.flags.core ??= {};
-    sourceData.flags.core.sourceId ||= source.uuid;
+    sourceData._stats ??= {};
+    sourceData._stats.compendiumSource ||= source.uuid;
     if (sourceData.system?.uses) sourceData.system.uses.current = sourceData.system.uses.max || 100;
     data.push(sourceData);
     granted.push(ref);
@@ -362,7 +361,7 @@ function itemProjection(item) {
   return Object.freeze({
     id: item.id,
     uuid: item.uuid,
-    sourceId: String(item.flags?.core?.sourceId ?? ''),
+    compendiumSource: String(item._stats?.compendiumSource ?? ''),
     name: item.name,
     type: item.type,
     itemType: String(item.system?.itemType ?? '')
@@ -410,7 +409,7 @@ function indexHas(index, id) {
 
 function matchesRef(item, ref) {
   const uuid = String(ref?.uuid ?? '');
-  if (uuid && (item.uuid === uuid || item.flags?.core?.sourceId === uuid)) return true;
+  if (uuid && (item.uuid === uuid || item._stats?.compendiumSource === uuid)) return true;
   const name = String(ref?.name ?? '').trim().toLowerCase();
   return Boolean(name && String(item.name).trim().toLowerCase() === name);
 }

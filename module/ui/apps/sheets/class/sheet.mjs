@@ -253,7 +253,7 @@ export class ClassSheet extends EmblemSheetMixin(foundry.applications.sheets.Ite
 /*  Class sheet helpers                         */
 /* -------------------------------------------- */
 function actorItemProjection(actor) {
-  return [...(actor?.items ?? [])].map(item => ({ uuid: item.uuid, sourceId: String(item.flags?.core?.sourceId ?? ''), name: item.name }));
+  return [...(actor?.items ?? [])].map(item => ({ uuid: item.uuid, compendiumSource: String(item._stats?.compendiumSource ?? ''), name: item.name }));
 }
 
 /** resolveClassBundleStates for these bundles of a Class, read against the Character holding it, if any. */

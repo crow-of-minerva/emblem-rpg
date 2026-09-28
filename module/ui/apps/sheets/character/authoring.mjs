@@ -411,7 +411,7 @@ export async function openClassSelectionDialog(actor, sheetApp) {
   for (const entry of allClasses) grouped[entry.tier].push(entry);
   for (const tier of CLASS_TIERS) grouped[tier].sort((a, b) => a.name.localeCompare(b.name));
 
-  const currentSource = currentClass?.flags?.core?.sourceId ?? currentClass?._stats?.compendiumSource ?? '';
+  const currentSource = currentClass?._stats?.compendiumSource ?? '';
   const currentName = normal(currentClass?.name);
   const selectedId = allClasses.find(entry => currentSource && entry.uuid === currentSource)?.uuid
     ?? allClasses.find(entry => currentName && normal(entry.name) === currentName)?.uuid
@@ -496,9 +496,8 @@ async function resolveClassSelection(selected) {
   }
   const data = selectedItem.toObject();
   delete data._id;
-  data.flags ??= {};
-  data.flags.core ??= {};
-  data.flags.core.sourceId ||= selectedItem.uuid;
+  data._stats ??= {};
+  data._stats.compendiumSource ||= selectedItem.uuid;
   return { data, label: `Class "${selectedItem.name}"` };
 }
 

@@ -65,17 +65,4 @@ export class ClassDataModel extends foundry.abstract.TypeDataModel {
       }), { initial: () => [] })
     };
   }
-
-  /** Hold skill ranks to whole numbers from 0 to SKILL_RANK_MAX, whatever the source data holds. */
-  static migrateData(source) {
-    if (source?.skills) {
-      for (const key of Object.keys(source.skills)) {
-        const rank = source.skills[key];
-        if (!Number.isInteger(rank) || rank < 0 || rank > SKILL_RANK_MAX) {
-          source.skills[key] = Math.max(0, Math.min(SKILL_RANK_MAX, Math.round(Number(rank) || 0)));
-        }
-      }
-    }
-    return super.migrateData(source);
-  }
 }

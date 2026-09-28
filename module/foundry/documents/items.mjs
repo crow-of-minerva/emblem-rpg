@@ -2,6 +2,7 @@
 import { admitNativeWrite } from '../adapters/services/authority.mjs';
 import { REFINEMENT_OUTCOME_CODES } from '../../contracts/domains/items.mjs';
 import {
+  armorCreationDurability,
   evaluateScaling,
   baseItemName,
   databaseRefinementAllowed,
@@ -88,7 +89,8 @@ export class EmblemItem extends Item {
 
   /**
    * Refuse a refined name or forging XP on a world or compendium item. On a carried Equipment copy, bring the name
-   * suffix and forging XP into agreement. Then fill in the item type and settle stored uses and wield state.
+   * suffix and forging XP into agreement. Then fill in the item type, give a new Armor its default durability, and
+   * settle stored uses and wield state.
    */
   async _preCreate(data, options, user) {
     if (!admitNativeWrite(user, this, 'create')) return false;
@@ -111,6 +113,8 @@ export class EmblemItem extends Item {
     }
     const itemType = data.system?.itemType || ITEM_TYPE_DEFAULTS[data.type ?? this.type];
     if (itemType && !data.system?.itemType) this.updateSource({ 'system.itemType': itemType });
+    const durability = armorCreationDurability(this._source.system);
+    if (durability) this.updateSource(durability);
     const settled = settleStoredItemState({
       documentType: this.type, embedded: Boolean(this.parent), system: this._source.system,
       ownerSystem: this.parent?.system ?? null, name: this.name

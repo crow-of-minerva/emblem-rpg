@@ -76,6 +76,13 @@ function addAttackBonus(base, bonus) {
 /*  Forging                                     */
 /* -------------------------------------------- */
 
+/** The limited, full durability a new Armor gets when it is created without a maximum, or null when it has one. */
+export function armorCreationDurability(system) {
+  if (system?.itemType !== 'Armor' || system.uses?.type === 'infinite' || numeric(system.uses?.max) > 0) return null;
+  const maximum = baseDurability(system);
+  return { 'system.uses.max': maximum, 'system.uses.current': maximum, 'system.uses.type': 'limited' };
+}
+
 /** The durability a copy is authored with: its maximum, else the armor class default, else the clothing default. */
 export function baseDurability(system) {
   const maximum = numeric(system?.uses?.max);

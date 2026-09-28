@@ -163,7 +163,7 @@ function projectBg3PendingFeatureChoices(actor) {
   const choices = actor.flags?.[SYSTEM_ID]?.classChoices ?? {};
   const actorItems = [...(actor.items ?? [])].map(item => ({
     id: item.id, uuid: item.uuid, name: item.name, type: item.type,
-    sourceId: String(item.flags?.core?.sourceId ?? '')
+    compendiumSource: String(item._stats?.compendiumSource ?? '')
   }));
   const pending = [];
   for (const classItem of actor.items ?? []) {

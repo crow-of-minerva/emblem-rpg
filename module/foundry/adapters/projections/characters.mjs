@@ -98,7 +98,7 @@ export function classStateFingerprint(actor) {
       uuid: item.uuid,
       name: item.name,
       type: item.type,
-      sourceId: String(item.flags?.core?.sourceId ?? ''),
+      compendiumSource: String(item._stats?.compendiumSource ?? ''),
       system: item._source?.system ?? item.system
     })),
     choices: actor.flags?.[SYSTEM_ID]?.classChoices ?? {}
@@ -166,7 +166,6 @@ function projectUsedItem(item) {
     id: item.id,
     uuid: item.uuid,
     name: String(item.name ?? ''),
-    sourceId: String(item.flags?.core?.sourceId ?? ''),
     compendiumSource: String(item._stats?.compendiumSource ?? ''),
     uses: Object.freeze({
       type: String(item.system?.uses?.type ?? ''),
