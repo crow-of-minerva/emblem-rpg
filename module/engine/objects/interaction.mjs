@@ -20,6 +20,7 @@ import {
 } from '../../contracts/domains/objects.mjs';
 import { PROFICIENCY_RANK_LETTERS } from '../../contracts/domains/items.mjs';
 import { SKILL_BY_KEY } from '../../game/character/rules.mjs';
+import { energyLaneSpend } from '../../game/downtime/rules.mjs';
 import { planForcedLanding } from '../../game/movement/input-policy.mjs';
 import { resolveStandingDestination, standsOverObstacle } from '../../game/movement/pathfinding.mjs';
 import { planArmamentWield, planItemDrop, planLockOpening, successChanceBand } from '../../game/objects/rules.mjs';
@@ -45,7 +46,7 @@ async function openLock(context, services) {
   const snapshot = await services.objects.getLockSnapshot(intent);
   if (!snapshot) return refuse(RESULT_CODES.OBJECT_LOCK_UNAVAILABLE);
   const plan = planLockOpening(lockFacts(snapshot, intent.method));
-  if (!plan.ok) return refuse(plan.code, lockRefusalData(snapshot));
+  if (!plan.ok) return refuse(plan.code, lockRefusalData(snapshot, plan));
   const landing = planForcedLanding({
     grounds: snapshot.claimsAction === true && snapshot.sourceAirborne === true,
     landingBlocked: standsOverObstacle(snapshot.source.movement)
@@ -77,14 +78,15 @@ async function openLock(context, services) {
 }
 
 /**
- * Roll the Locktouch check when the plan needs one and wait for its card, then unlock through
- * FoundryObjectRepository and use up the key if the plan says so. The turn is spent inside the same operation,
- * which openLock captured through before the first write.
+ * Pay a free-exploration attempt's Energy, roll the Locktouch check when the plan needs one and wait for its card,
+ * then unlock through FoundryObjectRepository and use up the key if the plan says so. The turn is spent inside the
+ * same operation, which openLock captured through before the first write.
  */
 async function settleLock(services, snapshot, plan, context) {
   let opened = true;
   let roll = null;
   let check = null;
+  if (plan.energyCost > 0) await spendLockpickEnergy(services, snapshot, plan.energyCost);
   if (plan.rollsCheck) {
     check = lockpickCheck(snapshot);
     roll = await services.checks.roll(snapshot.source.actorUuid, check,
@@ -123,6 +125,19 @@ async function settleLock(services, snapshot, plan, context) {
     requestId: context.requestId,
     userId: context.userId
   });
+}
+
+/**
+ * Spend a lockpick's Energy and commit the unit to the Energy lane, as gathering, forging and brewing do, through
+ * FoundryObjectRepository.spendEnergy. The exploration roster then shows the attempt against the unit's Energy.
+ */
+async function spendLockpickEnergy(services, snapshot, cost) {
+  const spend = energyLaneSpend({
+    energy: snapshot.source.downtime.energy, cost, label: `Lockpicking: ${snapshot.lock.name}`
+  });
+  if (!await services.objects.spendEnergy(snapshot, spend)) {
+    throw new CombatPersistenceError('objects.energy-spend-failed');
+  }
 }
 
 /** Spend the turn an attempt costs in an encounter, or only fix the square a free interaction stood on. */
@@ -328,17 +343,20 @@ function lockFacts(snapshot, method) {
     inReach: snapshot.inReach,
     visible: snapshot.visible,
     claimsAction: snapshot.claimsAction,
-    standardAvailable: snapshot.source.standardAvailable
+    standardAvailable: snapshot.source.standardAvailable,
+    exploring: snapshot.exploring,
+    downtime: snapshot.source.downtime
   };
 }
 
 /** The notice data for a lock attempt planLockOpening refused. */
-function lockRefusalData(snapshot) {
+function lockRefusalData(snapshot, plan) {
   return {
     actorName: snapshot.source.actorName,
     lockName: snapshot.lock.name,
     keyName: snapshot.lock.keyName,
-    hasLocktouch: snapshot.source.hasLocktouch === true
+    hasLocktouch: snapshot.source.hasLocktouch === true,
+    blocked: String(plan.blocked ?? '')
   };
 }
 
@@ -370,8 +388,9 @@ function lockpickCheck(snapshot) {
 /* -------------------------------------------- */
 
 /**
- * Read-only lock views for the object API in api/facade.mjs: whether the unit can use the key or pick the lock, and
- * its chance. The lock command checks costs and reach again before writing.
+ * Read-only lock views for the object API in api/facade.mjs: whether the unit can use the key or pick the lock, its
+ * chance, and a pick's Energy cost or the downtime reason it can't pay it. The lock command checks costs and reach
+ * again before writing.
  */
 export function createObjectQueries({ objects }) {
   return Object.freeze({
@@ -398,6 +417,9 @@ export function createObjectQueries({ objects }) {
         canUseKey: keyPlan.ok,
         canPick: pickPlan.ok,
         refusal: keyPlan.ok || pickPlan.ok ? '' : pickPlan.code,
+        actorName: snapshot.source.actorName,
+        pickBlocked: String(pickPlan.blocked ?? ''),
+        energyCost: pickPlan.ok ? pickPlan.energyCost : 0,
         difficultyClass: snapshot.lock.difficultyClass,
         skillLabel: SKILL_BY_KEY[LOCKTOUCH_SKILL_KEY].label,
         successPercent,
