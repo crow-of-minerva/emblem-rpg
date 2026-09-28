@@ -648,7 +648,8 @@ export function cancelInteraction() {
 
 /**
  * Offer a carried key or Locktouch, then send the lock command for the host to check. In an encounter, the host
- * ends the unit's turn on any attempt it accepts. The held plan is handed back when the attempt ends, including
+ * ends the unit's turn on any attempt it accepts. In free exploration a pick costs Energy, and a unit that can't pick
+ * for a downtime reason is told which. The held plan is handed back when the attempt ends, including
  * after a cancel or a refusal. An opened chest goes on to its loot window instead. While exploring, any other
  * accepted attempt closes the plan where the unit stands through `release`.
  */
@@ -668,7 +669,12 @@ async function attemptLock(sourceTokenUuid, lockTokenUuid, handlers = {}) {
     }
     const method = facts.canUseKey ? LOCK_METHODS.KEY : facts.canPick ? LOCK_METHODS.LOCKTOUCH : null;
     if (!method) {
-      notify('warn', `${facts.lockName} is locked.`);
+      if (facts.pickBlocked) {
+        notifications.show(NOTIFICATION_IDS.OBJECT_LOCKPICK_BLOCKED,
+          { actorName: facts.actorName, blocked: facts.pickBlocked });
+      } else {
+        notify('warn', `${facts.lockName} is locked.`);
+      }
       playUiSound(SOUND_IDS.UI_ERROR);
       return true;
     }
