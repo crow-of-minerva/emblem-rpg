@@ -2,7 +2,6 @@
 import { admitNativeWrite } from '../adapters/services/authority.mjs';
 import { REFINEMENT_OUTCOME_CODES } from '../../contracts/domains/items.mjs';
 import {
-  armorCreationDurability,
   evaluateScaling,
   baseItemName,
   databaseRefinementAllowed,
@@ -12,6 +11,7 @@ import {
   reconcileRefinement,
   refinementRenameReset,
   refinementTier,
+  settleItemTypeRules,
   settleStoredItemState
 } from '../../game/items/rules.mjs';
 /* -------------------------------------------- */
@@ -89,8 +89,8 @@ export class EmblemItem extends Item {
 
   /**
    * Refuse a refined name or forging XP on a world or compendium item. On a carried Equipment copy, bring the name
-   * suffix and forging XP into agreement. Then fill in the item type, give a new Armor its default durability, and
-   * settle stored uses and wield state.
+   * suffix and forging XP into agreement. Then fill in the item type, apply the values that type fixes, and settle
+   * stored uses and wield state.
    */
   async _preCreate(data, options, user) {
     if (!admitNativeWrite(user, this, 'create')) return false;
@@ -113,8 +113,8 @@ export class EmblemItem extends Item {
     }
     const itemType = data.system?.itemType || ITEM_TYPE_DEFAULTS[data.type ?? this.type];
     if (itemType && !data.system?.itemType) this.updateSource({ 'system.itemType': itemType });
-    const durability = armorCreationDurability(this._source.system);
-    if (durability) this.updateSource(durability);
+    const typed = settleItemTypeRules(this._source.system);
+    if (typed) this.updateSource(typed);
     const settled = settleStoredItemState({
       documentType: this.type, embedded: Boolean(this.parent), system: this._source.system,
       ownerSystem: this.parent?.system ?? null, name: this.name
@@ -124,8 +124,9 @@ export class EmblemItem extends Item {
   }
 
   /**
-   * The same checks as _preCreate for an update. Renaming a refined copy to a different base item also resets its
-   * stats to that base item's, and each outcome is announced through publishDocumentOutcome.
+   * The same checks as _preCreate for an update, so a change of item type applies the values the new type fixes.
+   * Renaming a refined copy to a different base item also resets its stats to that base item's, and each outcome is
+   * announced through publishDocumentOutcome.
    */
   async _preUpdate(changed, options, user) {
     if (!admitNativeWrite(user, this, 'update', changed)) return false;
@@ -180,6 +181,10 @@ export class EmblemItem extends Item {
         });
       }
     }
+    const typed = settleItemTypeRules(foundry.utils.mergeObject(
+      foundry.utils.deepClone(this._source.system), foundry.utils.expandObject(changed).system ?? {}, { inplace: false }
+    ));
+    for (const [path, value] of Object.entries(typed ?? {})) foundry.utils.setProperty(changed, path, value);
     const settled = settleStoredItemState({
       documentType: this.type, embedded: this.isEmbedded,
       system: storedStateAfter(this._source.system, foundry.utils.expandObject(changed).system),
