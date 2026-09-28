@@ -159,6 +159,7 @@ export const RESULT_CODES = Object.freeze({
   OBJECT_KEY_MISSING: 'objects.key-missing',
   OBJECT_LOCK_UNPICKABLE: 'objects.lock-unpickable',
   OBJECT_ACTION_UNAVAILABLE: 'objects.action-unavailable',
+  OBJECT_LOCKPICK_BLOCKED: 'objects.lockpick-blocked',
   ARMAMENT_WIELDED: 'objects.armament-wielded',
   ARMAMENT_RELEASED: 'objects.armament-released',
   ARMAMENT_INPUT_INVALID: 'objects.armament-input-invalid',
