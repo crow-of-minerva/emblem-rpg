@@ -1,5 +1,6 @@
 /** @layer foundry/adapters/document-writes */
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
+import { DOWNTIME_FLAG } from '../../../contracts/domains/downtime.mjs';
 import {
   ARMAMENT_FLAGS,
   DROP_SETTLEMENT_OUTCOMES,
@@ -24,6 +25,7 @@ import {
 import { resolveAvatarScale } from '../../../game/character/rules.mjs';
 import { isAirborneActor, projectActorStatusKeys } from '../projections/combat-context.mjs';
 import { projectDoorVisibility } from '../projections/vision.mjs';
+import { projectDowntimeUnitState } from '../projections/downtime.mjs';
 import { findSceneCombat, sceneExplorationActive } from '../projections/encounters.mjs';
 import { projectAttributeTotals, projectSkillRanks } from '../projections/items.mjs';
 import { collectionValues, delay } from '../../../lib/core/runtime.mjs';
@@ -157,6 +159,20 @@ export class FoundryObjectRepository {
     if (!key) return false;
     await actor.deleteEmbeddedDocuments('Item', [key.id], { emblemObjectSettlement: true });
     return !actor.items.get(key.id);
+  }
+
+  /**
+   * Write the Energy and Energy-lane commitment a lockpick in free exploration leaves the unit with, the same two
+   * fields the downtime writer spends for gathering, forging and brewing.
+   */
+  async spendEnergy(snapshot, spend) {
+    const actor = await resolveActor(snapshot.source.actorUuid);
+    if (!actor) return false;
+    await actor.update({
+      'system.resources.energy.value': spend.energy,
+      [`flags.${SYSTEM_ID}.${DOWNTIME_FLAG}`]: { ...spend.commitment }
+    }, { emblemDowntimeSettlement: true });
+    return true;
   }
 
   /** An attempt during an encounter costs the unit's action, and its turn ends where it stands. */
@@ -545,6 +561,7 @@ function projectLockSource(token, actor, movement, keyName) {
     standardAvailable: system.turn?.actionAvailable !== false,
     carriesKey: Boolean(keyName) && itemNames.includes(keyName),
     hasLocktouch: itemNames.includes(LOCKTOUCH_ITEM_NAME),
+    downtime: projectDowntimeUnitState(actor),
     movement: movement ?? null
   });
 }
