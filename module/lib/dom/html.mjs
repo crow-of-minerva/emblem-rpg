@@ -40,22 +40,84 @@ export function avatarScaleStyle(rawScale) {
 /* -------------------------------------------- */
 /*  HTML sanitizing                             */
 /* -------------------------------------------- */
-/** Strip executable elements, event handlers, and script URL schemes from authored rich text. */
+/** Elements authored rich text keeps. Any other element loses its tags but keeps its text. */
+const ALLOWED_TAGS = new Set([
+  'a', 'abbr', 'b', 'blockquote', 'br', 'caption', 'cite', 'code', 'dd', 'del', 'div', 'dl', 'dt', 'em',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'ins', 'li', 'mark', 'ol', 'p', 'pre', 'q', 's',
+  'small', 'span', 'strong', 'sub', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul'
+]);
+
+/** Elements dropped together with everything inside them. */
+const DROPPED_TAGS = new Set([
+  'script', 'style', 'template', 'noscript', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet',
+  'svg', 'math', 'link', 'meta', 'base', 'title', 'head', 'form', 'input', 'button', 'select', 'textarea'
+]);
+
+/** Attributes any kept element may carry. */
+const GLOBAL_ATTRIBUTES = new Set(['class', 'style', 'title']);
+
+/** Attributes kept only on their own element. */
+const ELEMENT_ATTRIBUTES = Object.freeze({
+  a: new Set(['href', 'target', 'rel']),
+  img: new Set(['src', 'alt', 'width', 'height']),
+  td: new Set(['colspan', 'rowspan']),
+  th: new Set(['colspan', 'rowspan']),
+  ol: new Set(['start', 'type', 'reversed']),
+  li: new Set(['value'])
+});
+
+/**
+ * The schemes each URL attribute accepts. A value is read with the browser's own URL parser, so a scheme hidden
+ * behind entities, tabs or control characters is seen the way a click would see it. A relative path resolves
+ * against the placeholder base and reads as https.
+ */
+const URL_SCHEMES = Object.freeze({
+  href: new Set(['http:', 'https:', 'mailto:']),
+  src: new Set(['http:', 'https:', 'data:'])
+});
+const URL_BASE = 'https://sanitize.invalid/';
+
+/** Whether a URL attribute's value resolves to a scheme it accepts. */
+function allowedUrl(name, value) {
+  const schemes = URL_SCHEMES[name];
+  if (!schemes) return true;
+  const url = URL.parse(value, URL_BASE);
+  return url !== null && schemes.has(url.protocol);
+}
+
+/** Rebuild one parsed node from the allowlists, into a fragment of the output document. */
+function cleanNode(node, output) {
+  if (node.nodeType === Node.TEXT_NODE) return output.createTextNode(node.data);
+  const fragment = output.createDocumentFragment();
+  if (node.nodeType !== Node.ELEMENT_NODE) return fragment;
+  const tag = node.localName;
+  if (DROPPED_TAGS.has(tag) || node.namespaceURI !== 'http://www.w3.org/1999/xhtml') return fragment;
+  if (!ALLOWED_TAGS.has(tag)) {
+    for (const child of node.childNodes) fragment.appendChild(cleanNode(child, output));
+    return fragment;
+  }
+  const element = output.createElement(tag);
+  for (const { name, value } of node.attributes) {
+    if (!GLOBAL_ATTRIBUTES.has(name) && !ELEMENT_ATTRIBUTES[tag]?.has(name)) continue;
+    if (!allowedUrl(name, value)) continue;
+    element.setAttribute(name, value);
+  }
+  for (const child of node.childNodes) element.appendChild(cleanNode(child, output));
+  return element;
+}
+
+/**
+ * Rebuild authored rich text from an allowlist of elements, attributes and URL schemes. Nothing is copied that
+ * isn't listed, so event handlers, script URLs, SVG and form controls never reach the page.
+ */
 export function sanitizeHtml(value) {
   const markup = String(value ?? '');
   if (!markup) return '';
   try {
-    const document = new DOMParser().parseFromString(markup, 'text/html');
-    document.querySelectorAll('script, style, iframe, object, embed, link, meta, base, form').forEach(element => element.remove());
-    for (const element of document.querySelectorAll('*')) {
-      for (const attribute of [...element.attributes]) {
-        const name = attribute.name.toLowerCase();
-        if (name.startsWith('on')) element.removeAttribute(attribute.name);
-        else if (/^(?:src|href|xlink:href|action|formaction)$/.test(name)
-          && /^\s*(?:javascript|vbscript):/i.test(attribute.value)) element.removeAttribute(attribute.name);
-      }
-    }
-    return document.body.innerHTML;
+    const source = new DOMParser().parseFromString(markup, 'text/html');
+    const output = document.implementation.createHTMLDocument('');
+    for (const child of source.body.childNodes) output.body.appendChild(cleanNode(child, output));
+    return output.body.innerHTML;
   } catch {
     return escapeHtml(markup);
   }
