@@ -497,7 +497,7 @@ async function resolveClassSelection(selected) {
   const data = selectedItem.toObject();
   delete data._id;
   data._stats ??= {};
-  data._stats.compendiumSource ||= selectedItem.uuid;
+  data._stats.compendiumSource = selectedItem.uuid;
   return { data, label: `Class "${selectedItem.name}"` };
 }
 

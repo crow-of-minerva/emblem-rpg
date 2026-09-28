@@ -359,7 +359,6 @@ function projectAuraEmissions(actor) {
         itemId: String(item.id ?? ''),
         itemUuid: String(item.uuid ?? ''),
         itemName: String(item.name ?? ''),
-        itemSource: String(item._stats?.compendiumSource ?? ''),
         range,
         conditional: hasConditionTree(modifier.conditionTree),
         modifier: Object.freeze({

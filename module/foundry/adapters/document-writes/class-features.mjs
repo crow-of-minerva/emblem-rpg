@@ -338,7 +338,7 @@ async function prepareFeatures(actor, refs) {
     const sourceData = source.toObject();
     sourceData._id = foundry.utils.randomID();
     sourceData._stats ??= {};
-    sourceData._stats.compendiumSource ||= source.uuid;
+    sourceData._stats.compendiumSource = source.uuid;
     if (sourceData.system?.uses) sourceData.system.uses.current = sourceData.system.uses.max || 100;
     data.push(sourceData);
     granted.push(ref);
