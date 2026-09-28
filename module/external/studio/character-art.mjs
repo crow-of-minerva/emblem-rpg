@@ -65,7 +65,10 @@ export function studioClassSeedUpdate(actor, className) {
   return update && typeof update === 'object' ? update : {};
 }
 
-/** Open Emblem Sprite Studio on an item's image. Item sheets call it when a GM right-clicks the portrait. */
+/**
+ * Open Emblem Sprite Studio on an item's image. Item sheets call it when an author right-clicks the portrait: staff,
+ * or a Trusted Player who owns the item. Studio checks its own allowlist and refuses anyone it does not admit.
+ */
 export async function openStudioForItem(item) {
   if (item?.documentName !== 'Item') return failure(STUDIO_OPEN_CODES.ITEM_REQUIRED);
   const api = game.modules.get(MODULE_ID)?.api;

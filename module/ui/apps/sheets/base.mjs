@@ -183,10 +183,10 @@ export function EmblemSheetMixin(Base) {
       return {};
     }
 
-    /** Open the pixel editor on the document's image, on a right-click. */
+    /** Open the pixel editor on the document's image, on a right-click. Studio makes the final call. */
     async _onEditImageStudio(event) {
       event.preventDefault();
-      if (!game.user.isGM) return;
+      if (!game.user.isGM && !canFoundryUserAuthorDocument(game.user, this.document)) return;
       return openStudioForItem(this.document);
     }
   };
