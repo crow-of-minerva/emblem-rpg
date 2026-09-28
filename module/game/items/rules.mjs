@@ -14,8 +14,8 @@ const VALUE_MULTIPLIERS = [1, 1.25, 1.5, 2, 2.5, 3];
 const REFINEMENT_TIER_COUNT = 5;
 const DEFAULT_FORGE_MULT = 1;
 const DEFAULT_FORGE_SKILL = 'Handicraft';
-export const ARMOR_DURABILITY_DEFAULTS = Object.freeze({ Light: 20, Medium: 30, Heavy: 40 });
-const DEFAULT_DURABILITY = 10;
+const ARMOR_DURABILITY_DEFAULTS = Object.freeze({ Light: 50, Medium: 75, Heavy: 100 });
+const DEFAULT_DURABILITY = 30;
 
 const numeric = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 
@@ -76,11 +76,22 @@ function addAttackBonus(base, bonus) {
 /*  Forging                                     */
 /* -------------------------------------------- */
 
-/** The limited, full durability a new Armor gets when it is created without a maximum, or null when it has one. */
-export function armorCreationDurability(system) {
-  if (system?.itemType !== 'Armor' || system.uses?.type === 'infinite' || numeric(system.uses?.max) > 0) return null;
-  const maximum = baseDurability(system);
-  return { 'system.uses.max': maximum, 'system.uses.current': maximum, 'system.uses.type': 'limited' };
+/**
+ * The values an item's type fixes, as flattened `system.*` changes, or null when the item already holds them: a
+ * Booster is always a Standard Action, and an Armor without a durability maximum gets its armor class default, full.
+ * @param {object} system The system data as it will be stored.
+ * @returns {Record<string, *>|null}
+ */
+export function settleItemTypeRules(system) {
+  const changes = {};
+  if (system?.itemType === 'Booster' && system.actionType !== 'Standard Action') {
+    changes['system.actionType'] = 'Standard Action';
+  }
+  if (system?.itemType === 'Armor' && system.uses?.type !== 'infinite' && !(numeric(system.uses?.max) > 0)) {
+    const maximum = baseDurability(system);
+    Object.assign(changes, { 'system.uses.max': maximum, 'system.uses.current': maximum, 'system.uses.type': 'limited' });
+  }
+  return Object.keys(changes).length ? changes : null;
 }
 
 /** The durability a copy is authored with: its maximum, else the armor class default, else the clothing default. */
