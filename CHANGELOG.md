@@ -5,7 +5,7 @@
 ### Added
 
 - **World content GM macros** for migration and synchronization:
-  - **Migration:** updates world content data to match the codebase schemas. Run it once if you imported 1.0.0 content, then let it work. Wait for it to say it's finished.
+  - **Migration:** updates world content data to match the codebase schemas. Only needed if the automatic migration fails.
   - **Synchronization:** updates world content data to match the compendium's canonical values. Renamed content is skipped.
 
 ### Fixed
@@ -19,7 +19,7 @@
 ### Changed
 
 - Terrain Builder zone buttons are always visible instead of only on hover.
-- Improvements/fixes to the studio application.
+- General improvements/fixes to the studio application.
 
 ### Background Stuff
 
