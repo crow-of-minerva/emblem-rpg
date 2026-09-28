@@ -19,7 +19,7 @@
 ### Changed
 
 - Terrain Builder zone buttons are always visible instead of only on hover.
-- Improved handling of studio for Trusted Players.
+- Improvements/fixes to the studio application.
 
 ### Background Stuff
 
