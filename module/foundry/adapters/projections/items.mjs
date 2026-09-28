@@ -456,7 +456,7 @@ function projectActivationItem(item, engagement, source, envelope) {
       numeric: param?.numeric === true
     }))),
     activationAnimation: clone(selectActivationAnimation(item, engagement, source, envelope)),
-    attackAnimation: clone(selectAnimationRange(system.animV2?.attack, engagement))
+    attackAnimation: clone(selectAnimationRange(system.anim?.attack, engagement))
   });
 }
 
@@ -465,7 +465,7 @@ function projectActivationItem(item, engagement, source, envelope) {
  * (mountActivationIntent).
  */
 function selectActivationAnimation(item, engagement, source, envelope) {
-  const slot = item.system?.animV2?.activation;
+  const slot = item.system?.anim?.activation;
   if (!isMountActivation(item)) return selectAnimationRange(slot, engagement, { self: envelope?.selfTargeted === true });
   const payload = mountActivationIntent(source) === 'dismount' ? slot?.ranged : slot?.melee;
   return isPopulated(payload) ? payload : null;
@@ -473,7 +473,7 @@ function selectActivationAnimation(item, engagement, source, envelope) {
 
 function projectActivationEntries(item) {
   const entries = [];
-  for (const entry of item.system?.effectsV2 ?? []) {
+  for (const entry of item.system?.effects ?? []) {
     if (!ITEM_ACTIVATION_TRIGGERS.includes(String(entry?.trigger ?? ''))) continue;
     entries.push(Object.freeze({
       ...clone(entry),
@@ -489,7 +489,7 @@ function projectPassiveActivationEntries(actor) {
   const entries = [];
   for (const item of collectionValues(actor.items)) {
     if (String(item.system?.itemType ?? '') !== 'Passive') continue;
-    for (const entry of item.system?.effectsV2 ?? []) {
+    for (const entry of item.system?.effects ?? []) {
       if (String(entry?.trigger ?? '') !== 'onUseItem') continue;
       entries.push(Object.freeze({
         ...clone(entry),

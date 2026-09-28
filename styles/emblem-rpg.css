@@ -4822,7 +4822,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   cursor: var(--cursor-pointer);
 }
 
-:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .add-effect-v2-btn,
+:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .add-effect-btn,
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .add-modifier {
   display: inline-flex;
   align-items: center;
@@ -5668,7 +5668,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .application.sheet.emblem-rpg.item.item-sheet .extra-attacks label { font-size: 10px; color: #aaa; }
 
 /* The add buttons reuse the sidebar directory header button recipe. */
-:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) :is(.add-effect-v2-btn,.add-modifier,.add-requirement-btn,.open-params-btn) {
+:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) :is(.add-effect-btn,.add-modifier,.add-requirement-btn,.open-params-btn) {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(208, 168, 92, 0.35);
   border-radius: 5px;
@@ -5681,7 +5681,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   transition: color var(--emblem-motion), border-color var(--emblem-motion);
 }
 
-:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) :is(.add-effect-v2-btn,.add-modifier,.add-requirement-btn,.open-params-btn):hover {
+:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) :is(.add-effect-btn,.add-modifier,.add-requirement-btn,.open-params-btn):hover {
   border-color: var(--emblem-gold);
   color: var(--emblem-gold-bright);
   box-shadow: none;

@@ -14,7 +14,6 @@ import { wireCatalogPicker } from '../../../../../lib/dom/search-dropdown.mjs';
 import {
   ACTOR_TYPES,
   AREA_FACTIONS,
-  EFFECT_VERSION,
   empty as emptyAction,
   isPopulated as actionIsPopulated,
   STEP_KINDS,
@@ -202,19 +201,15 @@ function customStatusTemplate() {
 export const TEMPLATES = Object.freeze({
   default: () => emptyAction(),
   applyDamage: () => ({
-    version: 2,
     steps: [{ kind: 'damage', target: 'target', formula: '1d4', dmgType: 'slashing' }]
   }),
   applyHealing: () => ({
-    version: 2,
     steps: [{ kind: 'heal', target: 'target', formula: '1d4' }]
   }),
   applyStatus: () => ({
-    version: 2,
     steps: [{ kind: 'applyEffect', target: 'target', preset: 'restrained', durationPhases: DEFAULT_STATUS_DURATION }]
   }),
   applyCustomStatus: () => ({
-    version: 2,
     steps: [{
       kind: 'applyEffect',
       target: 'target',
@@ -224,23 +219,20 @@ export const TEMPLATES = Object.freeze({
     }]
   }),
   damageAndStatus: () => ({
-    version: 2,
     steps: [
       { kind: 'damage', target: 'target', formula: '1d4', dmgType: 'slashing' },
       { kind: 'applyEffect', target: 'target', preset: 'poisoned', durationPhases: DEFAULT_STATUS_DURATION }
     ]
   }),
   translateToken: () => ({
-    version: 2,
     steps: [{ kind: 'moveToken', target: 'target', mode: 'push', distance: 1 }]
   }),
   linkedAnimation: () => ({
-    version: 2,
     steps: [
       { kind: 'applyEffect', target: 'target', preset: 'shine', durationPhases: 2,
         linkAnimationTag: 'shine-aura' },
       { kind: 'animation', persistent: true, tag: 'shine-aura',
-        animation: { version: 2, steps: [] }, attachTarget: 'target', attachToEffectName: 'Shine' }
+        animation: { steps: [] }, attachTarget: 'target', attachToEffectName: 'Shine' }
     ]
   })
 });
@@ -1578,7 +1570,7 @@ function readStepFromCard(cardEl) {
   const animTa = ownStepField(cardEl, 'animation');
   const animation = readStepJson(animTa, cardId, 'animation');
   if (animation) step.animation = animation.value;
-  else if (kind === 'animation' && !animTa?.value.trim()) step.animation = { version: 2, steps: [] };
+  else if (kind === 'animation' && !animTa?.value.trim()) step.animation = { steps: [] };
   const conditionHost = ownConditionHost(cardEl);
   if (conditionHost) {
     stepCards.state.set(cardId, 'conditionFolded', conditionHost.classList.contains('is-folded'));
@@ -2144,7 +2136,7 @@ function locateStepsArray(action, listEl) {
 function readActionFromDom(dialogEl) {
   const rootList = dialogEl.querySelector('.ed-list[data-branch-list="root"]');
   const steps = rootList ? stepCards.read(rootList) : [];
-  return { version: EFFECT_VERSION, steps };
+  return { steps };
 }
 
 /**
@@ -2207,7 +2199,7 @@ function makeStepDefault(kind) {
       return { kind, target: 'target', preset: 'restrained', durationPhases: DEFAULT_STATUS_DURATION };
     case 'setFaction':   return { kind, target: 'target', actorType: 'Ally' };
     case 'removeEffect': return { kind, target: 'target', name: '' };
-    case 'animation':    return { kind, animation: { version: 2, steps: [] } };
+    case 'animation':    return { kind, animation: { steps: [] } };
     case 'floatingText': return { kind, target: 'target', text: '' };
     case 'moveToken':    return { kind, target: 'target', mode: 'push', pair: 'self', distance: '1' };
     case 'spawnToken':   return { kind, actorUuid: '', location: 'targetLocation' };

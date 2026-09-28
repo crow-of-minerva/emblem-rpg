@@ -384,7 +384,7 @@ function projectContextItem(item) {
 
 /** Whether an Item's effects move its user before the attacks, which makes the attack distance a prediction. */
 function movesBeforeCombat(item) {
-  return (item?.system?.effectsV2 ?? []).some(entry => entry?.trigger === 'preCombat'
+  return (item?.system?.effects ?? []).some(entry => entry?.trigger === 'preCombat'
     && (entry.action?.steps ?? []).some(step => step?.kind === 'moveToken' && step.target === 'self'));
 }
 
@@ -442,7 +442,7 @@ export function projectPreCombatApproach({
     distance: boardDistance, engagement: boardEngagement, inMeleeRange: boardMeleeRange, movementSpent,
     sourceChanceRolls, targetChanceRolls
   }, () => predictGeometryApproach({
-    entries: activatedItem.system?.effectsV2 ?? [],
+    entries: activatedItem.system?.effects ?? [],
     movement,
     anchorRect,
     context: projectFoundryCombatActorContext(sourceActor),
@@ -612,8 +612,8 @@ function armamentWeaponShape(token, armament) {
         targetShape: String(block.targetShape ?? 'Cross'),
         targetArea: bools(block.targetArea)
       }),
-      effectsV2: Object.freeze(Array.isArray(armament.system?.effects) ? armament.system.effects : []),
-      animV2: Object.freeze({ ...(armament.system?.anim ?? {}) }),
+      effects: Object.freeze(Array.isArray(armament.system?.effects) ? armament.system.effects : []),
+      anim: Object.freeze({ ...(armament.system?.anim ?? {}) }),
       effectData: Object.freeze({ losRule: 'normal', targetType: 'Hostile', rngShape: '', gridColor: '' })
     })
   });

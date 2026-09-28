@@ -66,8 +66,7 @@ export function studioClassSeedUpdate(actor, className) {
 }
 
 /**
- * Open Emblem Sprite Studio on an item's image. Item sheets call it when an author right-clicks the portrait: staff,
- * or a Trusted Player who owns the item. Studio checks its own allowlist and refuses anyone it does not admit.
+ * Open Emblem Sprite Studio on an item's image for GM or trusted players who have access/ownership.
  */
 export async function openStudioForItem(item) {
   if (item?.documentName !== 'Item') return failure(STUDIO_OPEN_CODES.ITEM_REQUIRED);

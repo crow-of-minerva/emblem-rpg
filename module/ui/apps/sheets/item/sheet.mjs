@@ -224,8 +224,8 @@ function reconcileItemSubmitData(submitData, { prepared, stored, echoGuardActive
       ...modifier, conditionTree: existing[index]?.conditionTree ?? null
     }));
   }
-  if (submittedSystem && Object.hasOwn(submittedSystem, 'effectsV2')) {
-    submittedSystem.effectsV2 = storedSystem.effectsV2 ?? [];
+  if (submittedSystem && Object.hasOwn(submittedSystem, 'effects')) {
+    submittedSystem.effects = storedSystem.effects ?? [];
   }
   const effectData = submittedSystem?.effectData;
   if (effectData) {
@@ -484,17 +484,17 @@ export class ItemSheet extends EmblemSheetMixin(foundry.applications.sheets.Item
   }
 
   _wireEffects(root) {
-    for (const button of root.querySelectorAll('.add-effect-v2-btn')) button.addEventListener('click', event => { event.preventDefault(); openEffectEditor(this); });
+    for (const button of root.querySelectorAll('.add-effect-btn')) button.addEventListener('click', event => { event.preventDefault(); openEffectEditor(this); });
     for (const button of root.querySelectorAll('.eff-row-edit')) button.addEventListener('click', event => { event.preventDefault(); openEffectEditor(this, Number(button.dataset.effectIndex)); });
     for (const button of root.querySelectorAll('.eff-row-delete')) button.addEventListener('click', async event => {
       event.preventDefault();
       const index = Number(button.dataset.effectIndex);
-      if (!await this._confirmDelete('effect', this.document.system.effectsV2[index]?.name)) return;
-      const effects = foundry.utils.deepClone(Array.from(this.document.system.effectsV2)); effects.splice(index, 1);
-      await this.document.update({ 'system.effectsV2': effects });
+      if (!await this._confirmDelete('effect', this.document.system.effects[index]?.name)) return;
+      const effects = foundry.utils.deepClone(Array.from(this.document.system.effects)); effects.splice(index, 1);
+      await this.document.update({ 'system.effects': effects });
     });
-    this._wireInlineName(root, '.eff-row-name', 'effectIndex', 'system.effectsV2');
-    this._wireReorder(root, '.effects-entries', '.effects-entry', '.eff-row-drag', 'effectIndex', 'system.effectsV2');
+    this._wireInlineName(root, '.eff-row-name', 'effectIndex', 'system.effects');
+    this._wireReorder(root, '.effects-entries', '.effects-entry', '.eff-row-drag', 'effectIndex', 'system.effects');
   }
 
   _wireModifiers(root) {

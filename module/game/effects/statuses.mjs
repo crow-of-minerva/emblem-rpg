@@ -180,7 +180,7 @@ const ON_HIT_TRIGGERS = Object.freeze(['onHit', 'onHitOrCrit']);
 /**
  * Whether an item's authored entries apply a harmful effect to the target on a hit. The Enemy AI's loadout
  * (projectLoadoutWeapon in projections/attack-targeting.mjs) reports it as `onHitDebuff`.
- * @param {readonly object[]} entries Authored `effectsV2` entries.
+ * @param {readonly object[]} entries Authored `effects` entries.
  * @returns {boolean}
  */
 export function hasOnHitDebuff(entries = []) {

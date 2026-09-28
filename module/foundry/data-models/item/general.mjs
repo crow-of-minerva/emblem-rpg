@@ -125,7 +125,7 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
         type: new F.StringField({ initial: 'limited', choices: USE_TYPES }),
         scaling: scaling('Level', ['Level', 'Proficiency', 'Stat', 'Skill'])
       }),
-      animV2: new F.SchemaField({
+      anim: new F.SchemaField({
         attack: new F.ObjectField({ required: false, nullable: true, initial: null }),
         critical: new F.ObjectField({ required: false, nullable: true, initial: null }),
         activation: new F.ObjectField({ required: false, nullable: true, initial: null })
@@ -136,7 +136,7 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
         ...Object.fromEntries(WEAPON_PROFICIENCIES.slice(0, 6).map(key => [key, bool(false)])),
         validTypes: new F.ArrayField(new F.StringField(), { initial: () => [], persisted: false })
       }),
-      effectsV2: new F.ArrayField(new F.SchemaField({
+      effects: new F.ArrayField(new F.SchemaField({
         trigger: new F.StringField({ initial: '' }), name: new F.StringField({ initial: '' }),
         itemNames: new F.ArrayField(new F.StringField(), { initial: () => [] }),
         itemUuids: new F.ArrayField(new F.StringField(), { initial: () => [] }),

@@ -32,12 +32,12 @@ export function rallyAbilityData() {
       itemType: 'Active',
       actionType: 'Standard Action',
       uses: { current: 0, max: 0, type: 'infinite' },
-      animV2: {
+      anim: {
         attack: null,
         critical: null,
         activation: { melee: rallyCastArt(1020), ranged: rallyCastArt(1220), self: null }
       },
-      effectsV2: [{
+      effects: [{
         trigger: 'onActivation',
         name: 'Rally Effect Animation',
         itemNames: [],
@@ -46,11 +46,9 @@ export function rallyAbilityData() {
         tokenAwaits: false,
         condition: null,
         action: {
-          version: 2,
           steps: [{
             kind: 'animation',
             animation: {
-              version: 2,
               steps: [{
                 kind: 'effect', file: 'jb2a.condition.boon.01.002.blue', atLocation: 'target', perTarget: true,
                 scaleToObject: 1
@@ -89,7 +87,6 @@ export function rallyAbilityData() {
 /** The caster's cast art: a chime, a blue blessing and a soundwave, lasting `duration` milliseconds. */
 function rallyCastArt(duration) {
   return {
-    version: 2,
     steps: [
       { kind: 'sound', file: `systems/${SYSTEM_ID}/sound/combat/crit-flash.wav`, audioChannel: 'environment' },
       {

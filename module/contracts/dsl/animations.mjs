@@ -5,12 +5,6 @@ import { isPlainObject } from '../../lib/core/runtime.mjs';
 /*  Vocabulary                                  */
 /* -------------------------------------------- */
 
-/**
- * Schema version stamped on every animation payload. Payloads carrying any other version are rejected rather
- * than migrated.
- */
-export const ANIM_VERSION = 2;
-
 /** Step kinds a sequence may contain. */
 export const STEP_KINDS = Object.freeze(['effect', 'sound', 'wait', 'tokenAnim']);
 
@@ -91,9 +85,9 @@ const STEP_KEYS_BY_KIND = {
 /*  Factory Methods                             */
 /* -------------------------------------------- */
 
-/** Create an empty animation payload at the current schema version. */
+/** Create an empty animation payload. */
 export function empty() {
-  return { version: ANIM_VERSION, steps: [] };
+  return { steps: [] };
 }
 
 /** Create an empty slot with no sequence bound to any range. */
@@ -115,9 +109,6 @@ export function validate(anim) {
 
   if (!isPlainObject(anim)) {
     return { valid: false, errors: ['root must be an object'] };
-  }
-  if (anim.version !== ANIM_VERSION) {
-    errors.push(`unsupported version ${anim.version} (expected ${ANIM_VERSION})`);
   }
   if (!Array.isArray(anim.steps)) {
     errors.push('steps must be an array');
@@ -202,9 +193,8 @@ export function validateSlot(slot) {
 /*  Helpers                                     */
 /* -------------------------------------------- */
 
-/** Whether a payload is worth playing: current version, with at least one step. */
+/** Whether a payload is worth playing: it has at least one step. */
 export function isPopulated(anim) {
   if (!isPlainObject(anim)) return false;
-  if (anim.version !== ANIM_VERSION) return false;
   return Array.isArray(anim.steps) && anim.steps.length > 0;
 }

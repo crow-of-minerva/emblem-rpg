@@ -253,7 +253,7 @@ export class ObjectSheet extends EmblemSheetMixin(foundry.applications.sheets.Ac
     // for (const button of this.element.querySelectorAll('.boon-item-delete')) {
     //   button.addEventListener('click', event => this._deleteBoon(event.currentTarget.dataset.boonIndex));
     // }
-    this.element.querySelector('.add-effect-v2-btn')?.addEventListener('click', () => {
+    this.element.querySelector('.add-effect-btn')?.addEventListener('click', () => {
       void openEffectEditor(this.document, null, { effectsPath: OBJECT_EFFECTS_PATH });
     });
     for (const button of this.element.querySelectorAll('.eff-row-edit')) {

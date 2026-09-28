@@ -417,10 +417,10 @@ function recordCombatContext({ intent, sourceToken, targetToken, targetItem }, f
 function projectFoundryCombatAnimations(weapon, activeItem, engagement) {
   const itemSystem = weapon?.system ?? {};
   return Object.freeze({
-    attackAnimation: clone(selectAnimationRange(itemSystem.animV2?.attack, engagement)),
-    criticalAnimation: clone(selectAnimationRange(itemSystem.animV2?.critical, engagement)),
+    attackAnimation: clone(selectAnimationRange(itemSystem.anim?.attack, engagement)),
+    criticalAnimation: clone(selectAnimationRange(itemSystem.anim?.critical, engagement)),
     activationAnimation: activeItem?.system?.itemType === 'Weapon Art'
-      ? clone(selectAnimationRange(activeItem.system?.animV2?.activation, engagement)) : null
+      ? clone(selectAnimationRange(activeItem.system?.anim?.activation, engagement)) : null
   });
 }
 
@@ -623,7 +623,7 @@ function projectActiveEffectEntries(weapon, activeItem) {
   const items = activeItem && activeItem !== weapon ? [weapon, activeItem] : [weapon];
   for (const item of items) {
     if (!item) continue;
-    for (const entry of item.system?.effectsV2 ?? []) {
+    for (const entry of item.system?.effects ?? []) {
       entries.push(Object.freeze({
         ...clone(entry),
         sourceItemUuid: item.uuid,
@@ -639,7 +639,7 @@ function projectPassiveEffectEntries(actor) {
   const entries = [];
   for (const item of collectionValues(actor.items)) {
     if (String(item.system?.itemType ?? '') !== 'Passive') continue;
-    for (const entry of item.system?.effectsV2 ?? []) {
+    for (const entry of item.system?.effects ?? []) {
       entries.push(Object.freeze({
         ...clone(entry),
         sourceItemUuid: item.uuid,

@@ -14,12 +14,6 @@ const VOICE_CATEGORY_KEYS = Object.freeze([
   'select', 'crit', 'thanks', 'rally', 'injured', 'defeat', 'levelGood', 'levelBad'
 ]);
 
-/**
- * Schema version stamped on every effect payload. Payloads carrying any other version are rejected rather than
- * migrated.
- */
-export const EFFECT_VERSION = 2;
-
 /** Every step kind the effect editor can author and effect execution runs. */
 export const STEP_KINDS = Object.freeze([
   'damage', 'heal', 'modShield',
@@ -139,9 +133,9 @@ export const ACTOR_TYPES = FACTION_ROLES;
 /*  Factory Methods                             */
 /* -------------------------------------------- */
 
-/** Create an empty effect payload at the current schema version. */
+/** Create an empty effect payload. */
 export function empty() {
-  return { version: EFFECT_VERSION, steps: [] };
+  return { steps: [] };
 }
 
 /* -------------------------------------------- */
@@ -159,10 +153,9 @@ function attachesToSpawnedToken(anim) {
     && (s.attachTo === 'lastSpawned' || s.atLocation === 'lastSpawned'));
 }
 
-/** Whether a payload is worth running: current version, with at least one step. */
+/** Whether a payload is worth running: it has at least one step. */
 export function isPopulated(action) {
   if (!isPlainObject(action)) return false;
-  if (action.version !== EFFECT_VERSION) return false;
   return Array.isArray(action.steps) && action.steps.length > 0;
 }
 
@@ -184,9 +177,6 @@ export function validate(action) {
   if (action === null || action === undefined) return { valid: true, errors: [] };
   if (!isPlainObject(action)) return { valid: false, errors: ['root: must be an object'] };
   const errors = [];
-  if (action.version !== EFFECT_VERSION) {
-    errors.push(`unsupported version ${action.version} (expected ${EFFECT_VERSION})`);
-  }
   if (!Array.isArray(action.steps)) {
     errors.push('steps: must be an array');
   } else {

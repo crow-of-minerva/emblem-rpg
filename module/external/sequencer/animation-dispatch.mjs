@@ -1,5 +1,5 @@
 /** @layer external/sequencer */
-import { ANIM_VERSION, isPopulated } from '../../contracts/dsl/animations.mjs';
+import { isPopulated } from '../../contracts/dsl/animations.mjs';
 import { planAnimationSteps } from '../../game/effects/animation-planning.mjs';
 import { SequencerRuntime, audioChannelReady, transientSoundsAudible } from './runtime.mjs';
 import { collectionValues, waitFor } from '../../lib/core/runtime.mjs';
@@ -33,7 +33,7 @@ export class AnimationDispatcher {
 export async function playMountFlourish(actor, { dismount = false } = {}) {
   const mount = collectionValues(actor?.items)
     .find(item => item?.system?.itemType === 'Mount' && item?.system?.isEquipped === true);
-  const payload = dismount ? mount?.system?.animV2?.activation?.ranged : mount?.system?.animV2?.activation?.melee;
+  const payload = dismount ? mount?.system?.anim?.activation?.ranged : mount?.system?.anim?.activation?.melee;
   if (!isPopulated(payload)) return false;
   const token = actor.getActiveTokens()[0] ?? null;
   if (!token) return false;
@@ -48,7 +48,6 @@ export async function playMountFlourish(actor, { dismount = false } = {}) {
 
 /** The destruction smoke, written as animation DSL steps. */
 const DESTRUCTION_SMOKE = Object.freeze({
-  version: ANIM_VERSION,
   steps: Object.freeze([Object.freeze({
     kind: 'effect',
     file: 'animated-spell-effects-cartoon.smoke.11',

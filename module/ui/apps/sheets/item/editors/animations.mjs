@@ -6,7 +6,6 @@
  * the animation on an effect step.
  */
 import {
-  ANIM_VERSION,
   STEP_KINDS,
   SLOT_KINDS,
   RANGE_KINDS,
@@ -478,7 +477,7 @@ function readDurationFromDom(paneEl) {
 function buildPayloadFromTab(paneEl, tabKey) {
   const steps = readStepsFromDom(paneEl, tabKey);
   if (steps.length === 0) return null;
-  const payload = { version: ANIM_VERSION, steps };
+  const payload = { steps };
   const dur = readDurationFromDom(paneEl);
   if (dur > 0) payload.duration = dur;
   return payload;
@@ -490,38 +489,34 @@ function buildPayloadFromTab(paneEl, tabKey) {
  */
 function collectSlotPayloads(tabs, dialogEl) {
 
-  const animV2 = { attack: emptySlot(), critical: emptySlot(), activation: emptySlot() };
+  const anim = { attack: emptySlot(), critical: emptySlot(), activation: emptySlot() };
   for (const t of tabs) {
     const pane = dialogEl.querySelector(`.anim-tab-pane[data-anim-pane="${t.key}"]`);
     if (!pane) continue;
     const def = TAB_DEFINITIONS[t.key];
-    animV2[def.slot][def.range] = buildPayloadFromTab(pane, t.key);
+    anim[def.slot][def.range] = buildPayloadFromTab(pane, t.key);
   }
 
   for (const slot of SLOT_KINDS) {
-    if (RANGE_KINDS.every(range => animV2[slot][range] === null)) delete animV2[slot];
+    if (RANGE_KINDS.every(range => anim[slot][range] === null)) delete anim[slot];
   }
-  return animV2;
+  return anim;
 }
 
 /**
- * The update that writes these slots onto a document, with each removed slot set to null. persistAnimV2 applies it.
- * @param {Item|Actor} it                 The document.
+ * The update that writes these slots at `system.anim`, where an Item and an Armament Actor both keep them, with each
+ * removed slot set to null. persistAnim applies it.
+ * @param {object} anim                   The slot payloads.
  * @returns {object}
  */
-function animationUpdate(it, animV2) {
+function animationUpdate(anim) {
   const updates = {};
-  for (const slot of SLOT_KINDS) updates[`${animationPath(it)}.${slot}`] = animV2[slot] ?? null;
+  for (const slot of SLOT_KINDS) updates[`system.anim.${slot}`] = anim[slot] ?? null;
   return updates;
 }
 
-/** An Item keeps its animations at `system.animV2`. An Armament Actor keeps the same slots at `system.anim`. */
-function animationPath(it) {
-  return it.documentName === 'Actor' ? 'system.anim' : 'system.animV2';
-}
-
-async function persistAnimV2(it, animV2) {
-  await it.update(animationUpdate(it, animV2));
+async function persistAnim(it, anim) {
+  await it.update(animationUpdate(anim));
 }
 
 /* -------------------------------------------- */
@@ -530,7 +525,7 @@ async function persistAnimV2(it, animV2) {
 
 /** The stored animation for one slot and range, or an empty one. */
 function readPayload(item, slot, range) {
-  const data = foundry.utils.getProperty(item, `${animationPath(item)}.${slot}.${range}`);
+  const data = foundry.utils.getProperty(item, `system.anim.${slot}.${range}`);
   if (isPopulated(data)) return data;
   return empty();
 }
@@ -755,7 +750,7 @@ async function runPreview(tabKey, editorHtml) {
     distance,
     path: SOUND_PATH
   };
-  const payload = { version: ANIM_VERSION, steps };
+  const payload = { steps };
   if (duration > 0) payload.duration = duration;
   await AnimationDispatcher.play(payload, ctx, { preview: true });
 
@@ -877,7 +872,7 @@ function attachAnimationStepButtons(html) {
       if (mode === 'add') {
         appendStepList(pane, pastedSteps);
       } else {
-        paintStepList(pane, { version: 2, steps: pastedSteps });
+        paintStepList(pane, { steps: pastedSteps });
         if (_clipboard.duration > 0) {
           const dur = pane.querySelector('.anim-duration-input');
           if (dur) dur.value = _clipboard.duration;
@@ -1001,17 +996,17 @@ export async function openAnimationEditorDialog(item) {
     content,
     gather: (root) => {
       if (unparsedJsonRefused([...root.querySelectorAll('.anim-tab-pane')])) return undefined;
-      const animV2 = collectSlotPayloads(tabs, root);
-      for (const [slot, slotData] of Object.entries(animV2)) {
+      const anim = collectSlotPayloads(tabs, root);
+      for (const [slot, slotData] of Object.entries(anim)) {
         const r = validateSlot(slotData);
         if (!r.valid) {
           notify.error(`Animation "${slot}" is invalid: ${r.errors.join(' | ')}`);
           return undefined;
         }
       }
-      return animV2;
+      return anim;
     },
-    apply: (animV2) => persistAnimV2(item, animV2),
+    apply: (anim) => persistAnim(item, anim),
     wire: (html) => {
       for (const t of tabs) {
         const pane = html.querySelector(`.anim-tab-pane[data-anim-pane="${t.key}"]`);
@@ -1064,7 +1059,7 @@ export async function openAnimationPayloadEditor(payload, { title = 'Edit Animat
       if (unparsedJsonRefused([pane])) return undefined;
       const steps = readStepsFromDom(pane, paneKey);
       if (steps.length === 0) return empty();
-      const out = { version: ANIM_VERSION, steps };
+      const out = { steps };
       const dur = readDurationFromDom(pane);
       if (dur > 0) out.duration = dur;
 

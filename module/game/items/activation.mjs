@@ -97,7 +97,7 @@ export function activationTriggers() {
 /**
  * Whether an item's activation entries deal damage, searching conditional branches too. deriveActivationEnvelope
  * uses it to decide whether the item can strike Destructibles.
- * @param {readonly object[]} entries The Item's authored `effectsV2` entries.
+ * @param {readonly object[]} entries The Item's authored `effects` entries.
  * @returns {boolean}
  */
 function activationDealsDamage(entries = []) {
@@ -152,7 +152,7 @@ export function deriveActivationEnvelope(input = {}) {
   const mount = isMountActivation(item);
   const locationShape = String(effectData.rngShape ?? 'Normal') === 'Square' ? 'Square' : 'Normal';
   const cone = rngType === 'Cone';
-  const dealsDamage = activationDealsDamage(system.effectsV2);
+  const dealsDamage = activationDealsDamage(system.effects);
   return Object.freeze({
     ok: true,
     itemUuid: String(item.uuid ?? ''),
@@ -196,8 +196,8 @@ export function deriveActivationEnvelope(input = {}) {
     consumable: String(item.type ?? '') === CONSUMABLE_DOCUMENT_TYPE,
     dealsDamage,
     strikesObjects: dealsDamage && targetType !== 'Friendly',
-    authored: (system.effectsV2 ?? []).some(entry => entry?.action?.version === 2
-      && Array.isArray(entry.action.steps) && entry.action.steps.length > 0)
+    authored: (system.effects ?? []).some(entry => Array.isArray(entry?.action?.steps)
+      && entry.action.steps.length > 0)
   });
 }
 

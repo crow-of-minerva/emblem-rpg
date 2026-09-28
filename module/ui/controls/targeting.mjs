@@ -1139,7 +1139,7 @@ function drawConfirmHighlight(fresh, resolved, placement) {
  * @returns {Promise<{status: string, placement?: {x: number, y: number}, cells?: object[], stage?: object}>}
  */
 async function promptGeometryPlacement(current, fresh, resolved, request) {
-  const found = findPromptGeometryStep(fresh.source.conditionItem?.system?.effectsV2);
+  const found = findPromptGeometryStep(fresh.source.conditionItem?.system?.effects);
   if (!found) return NO_PLACEMENT;
   const geometry = normalizeGeometry(found.step.geometry);
   const target = resolved.targets?.[0] ?? null;

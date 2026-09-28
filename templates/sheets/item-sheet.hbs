@@ -948,7 +948,7 @@
         {{!-- Effective Types spans both grid rows, and Add Effect sits under the Weapon Breaker and Extra Attacks
           boxes. --}}
         <div class="effects-row-hit-effect">
-          <button type="button" class="add-effect-v2-btn">
+          <button type="button" class="add-effect-btn">
             <i class="fas fa-plus"></i> Add Effect
           </button>
         </div>
@@ -956,9 +956,9 @@
         </div>
 
         {{!-- _wireEffects in ui/apps/sheets/item/sheet.mjs makes these rows drag-reorderable and saves the new
-          order to system.effectsV2. --}}
+          order to system.effects. --}}
         <div class="effects-entries">
-          {{#each item.system.effectsV2 as |entry idx|}}
+          {{#each item.system.effects as |entry idx|}}
           <div class="effects-entry" data-effect-index="{{idx}}" draggable="true">
             <span class="eff-row-drag" data-tooltip="{{tooltip 'item.drag-to-reorder'}}"><i class="fas fa-grip-vertical"></i></span>
             <span class="eff-row-pill eff-row-pill-{{entry.trigger}}">{{triggerLabel entry.trigger}}</span>
@@ -975,13 +975,13 @@
         {{#if typeFlags.isPassive}}
 
         <div class="eff-groupb-header">
-          <button type="button" class="eff-groupb-btn add-effect-v2-btn">
+          <button type="button" class="eff-groupb-btn add-effect-btn">
             <i class="fas fa-plus"></i> Add Effect
           </button>
         </div>
 
         <div class="effects-entries">
-          {{#each item.system.effectsV2 as |entry idx|}}
+          {{#each item.system.effects as |entry idx|}}
           <div class="effects-entry" data-effect-index="{{idx}}" draggable="true">
             <span class="eff-row-drag" data-tooltip="{{tooltip 'item.drag-to-reorder'}}"><i class="fas fa-grip-vertical"></i></span>
             <span class="eff-row-pill eff-row-pill-{{entry.trigger}}">{{triggerLabel entry.trigger}}</span>
@@ -998,7 +998,7 @@
         {{#if typeFlags.isActivatedItem}}
 
         <div class="eff-groupb-header">
-          <button type="button" class="eff-groupb-btn add-effect-v2-btn">
+          <button type="button" class="eff-groupb-btn add-effect-btn">
             <i class="fas fa-plus"></i> Add Effect
           </button>
           <button type="button" class="eff-groupb-btn open-params-btn">
@@ -1011,7 +1011,7 @@
         </div>
 
         <div class="effects-entries">
-          {{#each item.system.effectsV2 as |entry idx|}}
+          {{#each item.system.effects as |entry idx|}}
           <div class="effects-entry" data-effect-index="{{idx}}" draggable="true">
             <span class="eff-row-drag" data-tooltip="{{tooltip 'item.drag-to-reorder'}}"><i class="fas fa-grip-vertical"></i></span>
             <span class="eff-row-pill eff-row-pill-{{entry.trigger}}">{{triggerLabel entry.trigger}}</span>

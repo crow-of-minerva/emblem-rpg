@@ -566,7 +566,7 @@ function projectPhaseEntries(actor) {
   const entries = [];
   for (const item of collectionValues(actor.items)) {
     if (String(item.system?.itemType ?? '') !== 'Passive') continue;
-    for (const entry of item.system?.effectsV2 ?? []) {
+    for (const entry of item.system?.effects ?? []) {
       if (!PHASE_TRIGGERS.includes(String(entry?.trigger ?? ''))) continue;
       entries.push(Object.freeze({
         ...structuredClone(entry),

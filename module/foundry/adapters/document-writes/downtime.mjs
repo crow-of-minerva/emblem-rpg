@@ -349,7 +349,7 @@ export class FoundryDowntimeRepository {
     for (const name of names) {
       const entry = catalog.find(candidate => candidate.name.trim().toLowerCase() === name.toLowerCase());
       const item = entry ? await resolveItem(entry.uuid) : null;
-      const slots = item?.system?.animV2 ?? {};
+      const slots = item?.system?.anim ?? {};
       const authored = selectAnimationRange(slots.attack, ENGAGEMENT_KINDS.MELEE)
         ?? selectAnimationRange(slots.activation, ENGAGEMENT_KINDS.MELEE);
       if (!authored) continue;

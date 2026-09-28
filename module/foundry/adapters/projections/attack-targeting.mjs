@@ -869,7 +869,7 @@ function projectLoadoutWeapon(actor, item, unit, usable) {
     damageTypes: Object.freeze(enabledFlags(system.weapon?.dmgTypes).filter(type => type !== 'randomize')),
     randomizeDamageType: system.weapon?.dmgTypes?.randomize === true,
     effectiveAgainst: Object.freeze(enabledFlags(system.weapon?.effectiveAgainst)),
-    onHitDebuff: hasOnHitDebuff(system.effectsV2 ?? [])
+    onHitDebuff: hasOnHitDebuff(system.effects ?? [])
   });
 }
 
@@ -897,7 +897,7 @@ function projectLoadoutItem(actor, item, usable) {
     usesCurrent: finite(uses.current),
     usesInfinite: uses.type === 'infinite',
     hasUses: uses.type === 'infinite' || finite(uses.current) > 0,
-    healAverage: activationHealAverage(system.effectsV2),
+    healAverage: activationHealAverage(system.effects),
     usable: usable.casterOk === true,
     flags: detachedFlags(item.flags)
   });

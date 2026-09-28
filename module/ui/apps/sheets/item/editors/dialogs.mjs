@@ -26,7 +26,7 @@ const EFFECT_PARAMETERS_TEMPLATE = `systems/emblem-rpg/templates/editors/effect-
 const DAMAGE_CONDITION_TEMPLATE = `systems/emblem-rpg/templates/editors/weapon-dmg-conditions.hbs`;
 
 /** Where an Item keeps its effects. An Object keeps its own at `system.effects`. */
-const DEFAULT_EFFECTS_PATH = 'system.effectsV2';
+const DEFAULT_EFFECTS_PATH = 'system.effects';
 
 /**
  * The item types resolved by activation rather than by attacking.
