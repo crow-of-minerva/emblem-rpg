@@ -4,6 +4,7 @@
 
 ### Added
 
+- **World content automatic migration** that runs once when the system launches to update documents to be in line with backend updates.
 - **World content GM macros** for migration and synchronization:
   - **Migration:** updates world content data to match the codebase schemas. Only needed if the automatic migration fails.
   - **Synchronization:** updates world content data to match the compendium's canonical values. Renamed content is skipped.
