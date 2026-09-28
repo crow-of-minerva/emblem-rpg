@@ -66,12 +66,22 @@ export function resolveParticipants(roster = [], { lane, energyCost = 0 } = {}) 
   }));
 }
 
+/**
+ * Why a unit cannot pay `cost` Energy for an Energy-lane act outside the downtime menus, or empty when it can.
+ * planLockOpening in game/objects/rules.mjs asks it for a lockpick in free exploration. The command authorizes the
+ * unit's Token, so ownership is not a block here.
+ */
+export function energyLaneBlock({ commitment, energy = 0 } = {}, cost = 0) {
+  return participantBlock({ commitment, energy, lane: DOWNTIME_LANES.ENERGY, energyCost: cost });
+}
+
 /* -------------------------------------------- */
 /*  Spending                                    */
 /* -------------------------------------------- */
 /**
  * The Energy and commitment an Energy-lane activity leaves a unit with, for gathering, forging and brewing in
- * engine/downtime/resolvers.mjs. Spending the last Energy exhausts the unit.
+ * engine/downtime/resolvers.mjs and a lockpick in engine/objects/interaction.mjs. Spending the last Energy exhausts
+ * the unit.
  */
 export function energyLaneSpend({ energy = 0, cost = 0, label = '' } = {}) {
   const remaining = Math.max(0, (Number(energy) || 0) - Math.max(0, Number(cost) || 0));
@@ -94,8 +104,9 @@ export function actionLaneSpend(label = '') {
 /* -------------------------------------------- */
 /**
  * The Energy a unit still has to report, read by the exploration roster in ui/apps/foundry/combat-tracker.mjs.
- * Only an Energy-lane commitment (gathering, forging or brewing) leaves Energy worth watching. An Action-lane
- * activity exhausts the unit as it finishes, and an uncommitted unit is still at the capacity exploration refilled.
+ * Only an Energy-lane commitment (gathering, forging, brewing or lockpicking) leaves Energy worth watching. An
+ * Action-lane activity exhausts the unit as it finishes, and an uncommitted unit is still at the capacity exploration
+ * refilled.
  * @returns {?{value: number, max: number, action: string}} Null when there is nothing to report.
  */
 export function resolveCommittedEnergy({ commitment, energy = 0, energyMax = 0 } = {}) {
@@ -182,3 +193,4 @@ export function leadRoster(roster = [], cursorActorUuid = null) {
   const lead = roster.filter(entry => entry.actorUuid === cursorActorUuid);
   return Object.freeze([...lead, ...roster.filter(entry => entry.actorUuid !== cursorActorUuid)]);
 }
+
