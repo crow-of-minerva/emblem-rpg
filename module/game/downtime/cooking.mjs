@@ -34,6 +34,13 @@ const MEAL_PASSIVE_NAMES = Object.freeze({
   [MEAL_OUTCOMES.FAIL]: 'Sated Stomach', [MEAL_OUTCOMES.SUCCESS]: 'Well Fed', [MEAL_OUTCOMES.SPECIAL]: 'Envigorated'
 });
 
+/** The status art of each meal passive, whatever dish left it. */
+const MEAL_PASSIVE_IMAGES = Object.freeze({
+  [MEAL_OUTCOMES.FAIL]: `systems/${SYSTEM_ID}/assets/status/SatedStomach.png`,
+  [MEAL_OUTCOMES.SUCCESS]: `systems/${SYSTEM_ID}/assets/status/WellFed.png`,
+  [MEAL_OUTCOMES.SPECIAL]: `systems/${SYSTEM_ID}/assets/status/Envigorated.png`
+});
+
 /** Support XP by meal outcome, for supportXpFor. Even a failed shared meal grants some. */
 const SUPPORT_XP_BY_OUTCOME = Object.freeze({
   [MEAL_OUTCOMES.SPECIAL]: 15, [MEAL_OUTCOMES.SUCCESS]: 10, [MEAL_OUTCOMES.FAIL]: 5
