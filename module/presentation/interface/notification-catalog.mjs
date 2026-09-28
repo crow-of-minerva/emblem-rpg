@@ -439,6 +439,10 @@ export const NOTIFICATIONS = Object.freeze({
   [NOTIFICATION_IDS.OBJECT_ACTION_UNAVAILABLE]: {
     level: 'warn', text: data => `${data.actorName ?? 'This unit'} has no Standard Action left.`
   },
+  [NOTIFICATION_IDS.OBJECT_LOCKPICK_BLOCKED]: {
+    level: 'warn',
+    text: data => `${data.actorName ?? 'This unit'} cannot pick a lock now: ${data.blocked || 'no Energy'}.`
+  },
   [NOTIFICATION_IDS.ITEM_GROUND_OCCUPIED]: { level: 'warn', text: () => 'Ground targeting requires an empty square.' },
   [NOTIFICATION_IDS.ITEM_FORCED_TARGET_AIRBORNE]: {
     level: 'warn', text: data => `${data.ability ?? 'That ability'} needs a grounded target.`
