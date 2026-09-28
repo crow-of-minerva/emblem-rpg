@@ -206,7 +206,7 @@ function chooseClassSlot({ hasMount, hasFlying, hasHeavyArmor }) {
 
 /**
  * Preview art for a class in the promotion window (ui/apps/menus/promote-app.mjs), from that class's own art slots.
- * The actor's own slots are used only with allowGlobalFallback, because they show the current class, not the
+ * The actor's default token is used only with allowGlobalFallback, because it shows the current class, not the
  * promotion target.
  * @param {object} art The actor's art model: `tokens`, `tokenScales`, `tabs`.
  * @param {string} className Class to preview.
@@ -224,11 +224,8 @@ export function resolveClassPreviewArt(art, className, capabilities, fallbackIma
       if (path) return { img: path, scale: slotScale(tab.tokenScales, slot) };
     }
   }
-  if (allowGlobalFallback) {
-    for (const slot of chain) {
-      const path = art?.tokens?.[slot];
-      if (path) return { img: path, scale: slotScale(art?.tokenScales, slot) };
-    }
+  if (allowGlobalFallback && art?.tokens?.default) {
+    return { img: art.tokens.default, scale: slotScale(art?.tokenScales, 'default') };
   }
   return { img: fallbackImage || DEFAULT_PREVIEW_IMAGE, scale: 1 };
 }

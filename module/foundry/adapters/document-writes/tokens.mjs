@@ -21,7 +21,6 @@ import {
 } from '../services/host.mjs';
 import { RESTORE_WRITE_OPTION } from '../../../contracts/domains/recovery.mjs';
 import { DEFAULT_UNIT_SIGHT_RANGE, TOKEN_BASE_MAGNIFICATION } from '../../../config/constants.mjs';
-import { TOKEN_ART_SLOTS } from '../../../contracts/domains/tokens.mjs';
 import { objectSpriteOffset, objectTokenAppearance } from '../../../game/objects/rules.mjs';
 import {
   activeTokenOffsetY, selectActiveTokenArt, selectTransientTokenArt
@@ -562,10 +561,6 @@ function unconfiguredTokenArtPort(name, methods) {
 let transitions = unconfiguredTokenArtPort('transitions', TOKEN_ART_TRANSITION_METHODS);
 const ART_PATHS = Object.freeze([
   'system.art.tokens.default',
-  'system.art.tokens.armored',
-  'system.art.tokens.cavalry',
-  'system.art.tokens.armoredCavalry',
-  'system.art.tokens.flying',
   'system.art.tokenScales',
   'system.art.tokenOffsetsY',
   'system.art.tabs',
@@ -596,7 +591,7 @@ function projectTokenArtFacts(actor, usedItem = null) {
     unitType: foundry.utils.deepClone(actor?.system?.unitType ?? {}),
     airborne: isAirborneActor(actor),
     mounted: actor?.system?.statuses?.mounted === true,
-    paths: Object.fromEntries(TOKEN_ART_SLOTS.map(slot => [slot.key, String(tokens[slot.key] ?? '')])),
+    paths: { default: String(tokens.default ?? '') },
     scales: foundry.utils.deepClone(art.tokenScales ?? {}),
     offsets: foundry.utils.deepClone(art.tokenOffsetsY ?? {}),
     tabs: foundry.utils.deepClone(art.tabs ?? []),

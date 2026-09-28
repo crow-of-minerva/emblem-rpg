@@ -101,9 +101,8 @@ function characterFieldShapes() {
     cavalry: new F.StringField({ initial: '' }), armoredCavalry: new F.StringField({ initial: '' }),
     flying: new F.StringField({ initial: '' })
   });
-  const tokenScales = (avatar = false) => new F.SchemaField({
-    default: number(1), armored: number(1), cavalry: number(1), armoredCavalry: number(1), flying: number(1),
-    ...(avatar ? { avatar: number(1.25) } : {})
+  const tokenScales = () => new F.SchemaField({
+    default: number(1), armored: number(1), cavalry: number(1), armoredCavalry: number(1), flying: number(1)
   });
   const tokenOffsets = () => new F.SchemaField({
     default: number(0), armored: number(0), cavalry: number(0), armoredCavalry: number(0), flying: number(0)
@@ -138,7 +137,8 @@ function characterFieldShapes() {
 }
 
 /**
- * A Character's art: its avatar, its voice, its footsteps and the token sets its Classes wear.
+ * A Character's art: its avatar, its voice, its footsteps, its default token and the token sets its Classes wear.
+ * Only a Class tab carries the armored, mounted and flying variants.
  * @param {object} shapes   The field shapes the schema is written in.
  * @returns {object} The art schema field.
  */
@@ -149,9 +149,9 @@ function characterArtField({ F, number, footsteps, tokenArt, tokenScales, tokenO
     footsteps: new F.SchemaField({
       onFoot: footsteps(), armored: footsteps(), mounted: footsteps(), flying: footsteps()
     }),
-    tokens: tokenArt(),
-    tokenScales: tokenScales(true),
-    tokenOffsetsY: tokenOffsets(),
+    tokens: new F.SchemaField({ default: new F.StringField({ initial: '' }) }),
+    tokenScales: new F.SchemaField({ default: number(1), avatar: number(1.25) }),
+    tokenOffsetsY: new F.SchemaField({ default: number(0) }),
     tabs: new F.ArrayField(new F.SchemaField({
       id: new F.StringField({ initial: '' }),
       name: new F.StringField({ initial: '' }),

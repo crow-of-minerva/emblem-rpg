@@ -88,7 +88,7 @@ export function activeTokenOffsetY(facts) {
   const slotKey = chooseTokenSlotKey(facts);
   const tab = tokenTabForClass(facts);
   const tabValue = Number(tab?.tokenOffsetsY?.[slotKey]);
-  const raw = Number.isFinite(tabValue) ? tabValue : Number(facts?.offsets?.[slotKey]);
+  const raw = Number.isFinite(tabValue) ? tabValue : Number(slotKey === 'default' ? facts?.offsets?.default : 0);
   return Number.isFinite(raw) ? Math.max(-0.5, Math.min(1, raw)) : 0;
 }
 
@@ -119,9 +119,9 @@ function selectBaselineTokenArt(facts) {
   const tab = tokenTabForClass(facts);
   let path = String(tab?.tokens?.[slotKey] ?? '').trim();
   let scale = Number(tab?.tokenScales?.[slotKey]);
-  if (!path) {
-    path = String(facts?.paths?.[slotKey] ?? '').trim();
-    scale = Number(facts?.scales?.[slotKey]);
+  if (!path && slotKey === 'default') {
+    path = String(facts?.paths?.default ?? '').trim();
+    scale = Number(facts?.scales?.default);
   }
   if (!Number.isFinite(scale) || scale <= 0) scale = 1;
   return { path, scale, slotKey };

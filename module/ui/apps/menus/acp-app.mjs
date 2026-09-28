@@ -726,18 +726,15 @@ export class ActorControlPanel extends ActorControlApplication {
   }
 
   _defaultTokenSnapshot() {
-    const flags = this.actor.system.art;
-    return Object.fromEntries(TOKEN_ART_SLOTS.map(slot => [slot.key, flags.tokens[slot.key] || '']));
+    return { default: this.actor.system.art.tokens.default || '' };
   }
 
   _defaultScalesSnapshot() {
-    const scales = this.actor.system.art.tokenScales;
-    return Object.fromEntries(TOKEN_ART_SLOTS.map(slot => [slot.key, clampScale(scales[slot.key])]));
+    return { default: clampScale(this.actor.system.art.tokenScales.default) };
   }
 
   _defaultOffsetsSnapshot() {
-    const offsets = this.actor.system.art.tokenOffsetsY;
-    return Object.fromEntries(TOKEN_ART_SLOTS.map(slot => [slot.key, clampOffsetY(offsets[slot.key])]));
+    return { default: clampOffsetY(this.actor.system.art.tokenOffsetsY.default) };
   }
 
   /* -------------------------------------------- */
