@@ -19,6 +19,11 @@ const TABLE_FIELDS = Object.freeze(new Set(['items']));
 const LEVEL_FACTOR_SPAN = 5;
 const LEVEL_FACTOR_MAX = 2;
 
+/**
+ * The share of an ally's HP a `damage-based` entry counts as a full heal.
+ */
+const FULL_HEAL_HP_SHARE = 0.8;
+
 /* -------------------------------------------- */
 /*  Table parsing                               */
 /* -------------------------------------------- */
@@ -175,12 +180,15 @@ function changed(effect) {
   return finite(effect?.hp) > 0 || finite(effect?.stn) > 0 || effect?.status === true;
 }
 
-/** One counting target's score: the entry's value, or its share of the target's HP and Stance, then the level gap. */
+/**
+ * One counting target's score: the entry's value, or its share of the target's HP and Stance, then the level gap.
+ */
 function targetScore(entry, target, casterLevel) {
   let score = entry.value;
   if (entry.mode === 'damage-based') {
     const effect = target.hostile ? target.harmful : target.helpful;
-    score = entry.value * (share(effect?.hp, target.hpMax) + share(effect?.stn, target.stnMax));
+    const hpPool = target.hostile ? target.hpMax : finite(target.hpMax) * FULL_HEAL_HP_SHARE;
+    score = entry.value * (share(effect?.hp, hpPool) + share(effect?.stn, target.stnMax));
   }
   if (entry.leveled) {
     score *= clamp(1 + ((finite(target.level) - casterLevel) / LEVEL_FACTOR_SPAN), 0, LEVEL_FACTOR_MAX);
