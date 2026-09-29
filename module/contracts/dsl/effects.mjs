@@ -2,6 +2,7 @@
 import { DAMAGE_TYPES } from '../domains/damage.mjs';
 import { validate as validateAnimation } from './animations.mjs';
 import { DEFAULT_STATUS_DURATION, FACTION_ROLES, REGISTERED_STATUS_KEYS } from '../domains/characters.mjs';
+import { GUARD_BOND_REFUSALS } from '../domains/combat.mjs';
 import { validateGeometry } from './terrain-geometry.mjs';
 import { isPlainObject } from '../../lib/core/runtime.mjs';
 import { validate as validateConditionTree } from './conditions.mjs';
@@ -79,6 +80,51 @@ const EFFECT_TRIGGER_KEYS = Object.freeze([
     ...PASSIVE_EFFECT_TRIGGERS,
   ])
 ]);
+
+/* -------------------------------------------- */
+/*  Step outcomes                               */
+/* -------------------------------------------- */
+
+/**
+ * The codes a step returns when it was authored for a moment that can't give it what it needs, or when the board
+ * left it nothing to act on: no preset, no unit to move or to move against, no square to land on, no Actor or square
+ * to summon, no Guard partner. The Foundry writers return each one before the step writes anything.
+ */
+export const EFFECT_STEP_PRECONDITION_FAILURES = Object.freeze({
+  PRESET_MISSING: 'effect.preset-missing',
+  MOVE_TARGET_MISSING: 'effect.move-target-missing',
+  MOVE_PAIR_MISSING: 'effect.move-pair-missing',
+  MOVE_MODE_UNKNOWN: 'effect.move-mode-unknown',
+  MOVE_DESTINATION_MISSING: 'effect.move-destination-missing',
+  SPAWN_SOURCE_MISSING: 'effect.spawn-source-missing',
+  SPAWN_LOCATION_MISSING: 'effect.spawn-location-missing',
+  GUARD_TARGET_MISSING: 'effect.guard-target-missing'
+});
+
+/** The precondition codes above, plus every refused Guard bond, which is likewise refused before any write. */
+const PRECONDITION_FAILURE_CODES = new Set([
+  ...Object.values(EFFECT_STEP_PRECONDITION_FAILURES),
+  ...Object.values(GUARD_BOND_REFUSALS)
+]);
+
+/**
+ * Whether a failed step's code is an authoring or precondition failure, which engine/effects/execution.mjs skips
+ * with a GM notice, rather than a persistence failure, which still fails the command so it restores.
+ * @param {string} code The failed step's result code.
+ * @returns {boolean}
+ */
+export function isEffectPreconditionFailure(code) {
+  return PRECONDITION_FAILURE_CODES.has(String(code ?? ''));
+}
+
+/**
+ * The codes game/effects/planning.mjs lists in a plan's `errors`: an entry that fails validation, and an entry or
+ * `if` condition that throws. Either one is skipped, and engine/effects/execution.mjs reports it to the GM.
+ */
+export const EFFECT_PLAN_ERRORS = Object.freeze({
+  INVALID_ENTRY: 'invalid-entry',
+  CONDITION_FAILED: 'condition-evaluation-failed'
+});
 
 /* -------------------------------------------- */
 /*  Step Schema                                 */

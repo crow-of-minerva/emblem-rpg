@@ -28,6 +28,7 @@ import {
 } from '../services/host.mjs';
 import { EFFECT_MOVE_ACTION, EFFECT_MOVE_ANIMATION, ENCOUNTER_DECAY_FLAGS } from '../../../contracts/domains/combat.mjs';
 import { DEFAULT_STATUS_DURATION } from '../../../contracts/domains/characters.mjs';
+import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
 import { ACTIVATION_EXPERIENCE_USES_FLAG } from '../../../contracts/domains/progression.mjs';
 import { applyRallyEffect, recordRallyTarget } from './rallies.mjs';
 import { projectActivationExperienceUses } from '../projections/items.mjs';
@@ -230,7 +231,7 @@ async function modifyShield(targets, step, runtime) {
 async function applyEffects(targets, step, repository, runtime) {
   const definition = step.preset === 'custom' ? step.customData
     : STATUS_EFFECTS[step.preset];
-  if (!definition) return Object.freeze({ ok: false, code: 'effect.preset-missing' });
+  if (!definition) return Object.freeze({ ok: false, code: PRECONDITION.PRESET_MISSING });
   const caster = await resolveActor(runtime.self?.actorUuid);
   const plans = (await resolveTargetActors(targets)).map(({ actor }) =>
     planEffectApplication(actor, activeEffectData(definition, step, caster, repository.randomId())));
@@ -344,7 +345,7 @@ async function guard(targets, runtime, repository) {
   const bonds = repository.guardBonds;
   if (!bonds) return Object.freeze({ ok: false, code: 'effect.guard-unavailable' });
   const token = await resolveToken(targets[0]?.tokenUuid);
-  if (!token) return Object.freeze({ ok: false, code: 'effect.guard-target-missing' });
+  if (!token) return Object.freeze({ ok: false, code: PRECONDITION.GUARD_TARGET_MISSING });
   const guarderToken = await resolveToken(runtime.self?.tokenUuid);
   const guarder = bonds.sideOf(guarderToken);
   const guarded = bonds.sideOf(token);
@@ -367,7 +368,7 @@ async function resolveTargetActors(targets) {
 
 async function moveTokens(targets, step, runtime, repository, choices = null) {
   const moving = await resolveToken(targets[0]?.tokenUuid);
-  if (!moving) return Object.freeze({ ok: false, code: 'effect.move-target-missing' });
+  if (!moving) return Object.freeze({ ok: false, code: PRECONDITION.MOVE_TARGET_MISSING });
   const scene = moving.parent;
   const gridSize = scene.grid.size;
   const teleport = step.bypassWalls === true;
@@ -378,7 +379,7 @@ async function moveTokens(targets, step, runtime, repository, choices = null) {
 
   if (step.mode === 'swap') {
     const pair = await resolveToken((await repository.resolveTargets(step.pair ?? 'self', runtime))[0]?.tokenUuid);
-    if (!pair) return Object.freeze({ ok: false, code: 'effect.move-pair-missing' });
+    if (!pair) return Object.freeze({ ok: false, code: PRECONDITION.MOVE_PAIR_MISSING });
     await captureDocuments(runtime, [moving, pair]);
     const left = tokenGridPosition(moving, gridSize);
     const right = tokenGridPosition(pair, gridSize);
@@ -404,7 +405,7 @@ async function moveTokens(targets, step, runtime, repository, choices = null) {
     };
   } else if (step.mode === 'push' || step.mode === 'pull') {
     const pair = await resolveToken((await repository.resolveTargets(step.pair ?? 'self', runtime))[0]?.tokenUuid);
-    if (!pair) return Object.freeze({ ok: false, code: 'effect.move-pair-missing' });
+    if (!pair) return Object.freeze({ ok: false, code: PRECONDITION.MOVE_PAIR_MISSING });
     const current = tokenGridPosition(moving, gridSize);
     const reference = tokenGridPosition(pair, gridSize);
     const dx = current.x - reference.x;
@@ -417,10 +418,10 @@ async function moveTokens(targets, step, runtime, repository, choices = null) {
   } else if (step.mode === 'terrainGeometry') {
     destination = await resolveGeometryDestination(moving, step, runtime, repository, choices);
   } else {
-    return Object.freeze({ ok: false, code: `effect.move-${step.mode}-unknown` });
+    return Object.freeze({ ok: false, code: PRECONDITION.MOVE_MODE_UNKNOWN });
   }
 
-  if (!destination) return Object.freeze({ ok: false, code: 'effect.move-destination-missing' });
+  if (!destination) return Object.freeze({ ok: false, code: PRECONDITION.MOVE_DESTINATION_MISSING });
   if (destination.standing === true) {
     const stood = Object.freeze({ x: destination.x, y: destination.y });
     return recheckGuardBonds([moving], repository, runtime, { ok: true, destination: stood });
@@ -535,7 +536,7 @@ function placementFill(token, actor) {
  */
 async function createEffectSpawn(spawn, step, runtime) {
   const scene = await resolveScene(spawn.sceneUuid);
-  if (!scene) return Object.freeze({ ok: false, code: 'effect.spawn-source-missing' });
+  if (!scene) return Object.freeze({ ok: false, code: PRECONDITION.SPAWN_SOURCE_MISSING });
   let created = scene.tokens.get(spawn.tokenId) ?? null;
   const placedNow = !created;
   if (!created) {

@@ -39,6 +39,8 @@ export const NOTIFICATION_IDS = Object.freeze({
   GUARD_BOND_GROUNDED: GUARD_BOND_REFUSALS.GROUNDED,
   GUARD_BOND_SMALLER: GUARD_BOND_REFUSALS.SMALLER,
   GUARD_BOND_BROKEN: 'combat.guard-bond-broken',
+  /** The GM's notice that an authored effect step or entry was skipped (engine/effects/execution.mjs). */
+  EFFECT_STEP_SKIPPED: 'effect.step-skipped',
   COINPURSE_CARRIER_REQUIRED: 'economy.coinpurse-carrier-required',
   VENDOR_STOCK_EMPTY: 'vendor.stock-empty',
   VENDOR_STOCK_ALL_LOCKED: 'vendor.stock-all-locked',

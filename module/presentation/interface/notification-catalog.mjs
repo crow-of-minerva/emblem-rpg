@@ -1,6 +1,7 @@
 /** @layer presentation/interface */
 import { EQUIPMENT_REFUSALS, FORCED_MOVEMENT_ABILITIES } from '../../contracts/domains/items.mjs';
-import { GUARD_BOND_BREAKS } from '../../contracts/domains/combat.mjs';
+import { GUARD_BOND_BREAKS, GUARD_BOND_REFUSALS } from '../../contracts/domains/combat.mjs';
+import { EFFECT_PLAN_ERRORS, EFFECT_STEP_PRECONDITION_FAILURES } from '../../contracts/dsl/effects.mjs';
 import { DOWNTIME_NOTIFICATIONS, counted } from './downtime-notifications.mjs';
 import { NOTIFICATION_IDS } from './notification-ids.mjs';
 
@@ -127,6 +128,7 @@ export const NOTIFICATIONS = Object.freeze({
     level: 'info',
     text: ({ reason = '', actorName = '' } = {}) => `Guard bond broken: ${guardBondBreakReason(reason, actorName)}.`
   },
+  [NOTIFICATION_IDS.EFFECT_STEP_SKIPPED]: { level: 'warn', text: effectSkipText },
   [NOTIFICATION_IDS.ITEM_ACTIVATED]: { silent: true, text: () => '' },
   [NOTIFICATION_IDS.ITEM_ACTIVATION_INPUT_INVALID]: { level: 'warn', text: () => 'Item not found.' },
   [NOTIFICATION_IDS.ITEM_ACTIVATION_UNSUPPORTED]: { level: 'warn', text: () => 'That item type cannot be used yet.' },
@@ -1072,4 +1074,26 @@ function guardBondBreakReason(reason, actorName) {
   if (reason === GUARD_BOND_BREAKS.FELL) return `${actorName} fell`;
   if (reason === GUARD_BOND_BREAKS.LEFT) return `${actorName} left the bond`;
   return 'partner not found';
+}
+
+/** Why an effect step or entry was skipped, by the code engine/effects/execution.mjs reports. */
+const EFFECT_SKIP_REASONS = Object.freeze({
+  [EFFECT_STEP_PRECONDITION_FAILURES.PRESET_MISSING]: 'it names no status to apply',
+  [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_TARGET_MISSING]: 'there was no unit to move',
+  [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_PAIR_MISSING]: 'there was no unit to move against',
+  [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_MODE_UNKNOWN]: 'its movement mode is unknown',
+  [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_DESTINATION_MISSING]: 'there was no square to move to',
+  [EFFECT_STEP_PRECONDITION_FAILURES.SPAWN_SOURCE_MISSING]: 'the unit to summon, or the map, was not found',
+  [EFFECT_STEP_PRECONDITION_FAILURES.SPAWN_LOCATION_MISSING]: 'there was no square to summon onto',
+  [EFFECT_STEP_PRECONDITION_FAILURES.GUARD_TARGET_MISSING]: 'there was no unit to Guard',
+  [EFFECT_PLAN_ERRORS.INVALID_ENTRY]: 'the entry is invalid',
+  [EFFECT_PLAN_ERRORS.CONDITION_FAILED]: 'its condition could not be evaluated'
+});
+
+/** The GM's notice for a skipped effect step or entry. A refused Guard bond reads as one reason. */
+function effectSkipText({ itemName = '', stepKind = '', code = '' } = {}) {
+  const reason = EFFECT_SKIP_REASONS[code]
+    ?? (Object.values(GUARD_BOND_REFUSALS).includes(code) ? 'the Guard bond could not form' : 'it could not run');
+  const skipped = stepKind ? `its ${stepKind} step was skipped` : 'an effect entry was skipped';
+  return `${itemName || 'An effect'}: ${skipped} because ${reason}. The console has the details.`;
 }

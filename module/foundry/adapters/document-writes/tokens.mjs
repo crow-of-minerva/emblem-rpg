@@ -8,6 +8,7 @@ import {
   GUARD_BOND_RECORD_FAILED,
   GUARD_BOND_ROLES
 } from '../../../contracts/domains/combat.mjs';
+import { EFFECT_STEP_PRECONDITION_FAILURES } from '../../../contracts/dsl/effects.mjs';
 import { GUARD_BOND_EFFECT_DATA } from '../../../config/statuses.mjs';
 import { guardBondHolds } from '../../../game/effects/planning.mjs';
 import { collectionValues } from '../../../lib/core/runtime.mjs';
@@ -392,7 +393,9 @@ export class FoundryGuardBondRepository {
   async establish(plan, { operation = null } = {}) {
     const guarder = await resolveToken(plan.guarderTokenUuid);
     const guarded = await resolveToken(plan.guardedTokenUuid);
-    if (!guarder?.actor || !guarded?.actor) return Object.freeze({ ok: false, code: 'effect.guard-target-missing' });
+    if (!guarder?.actor || !guarded?.actor) {
+      return Object.freeze({ ok: false, code: EFFECT_STEP_PRECONDITION_FAILURES.GUARD_TARGET_MISSING });
+    }
     const halves = [];
     for (const half of plan.effects) {
       const actor = await resolveActorDocument(half.actorUuid);

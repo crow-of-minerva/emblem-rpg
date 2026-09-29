@@ -772,6 +772,9 @@ export function createSystemRuntime() {
   }));
   const effectExecution = new EffectExecutionService({ diagnostics,
     effects: effectRepository,
+    notifyGm: notice => {
+      if (localUserIsActiveGm()) notifications.show(NOTIFICATION_IDS.EFFECT_STEP_SKIPPED, notice);
+    },
     present: broadcastPort.broadcast,
     stances: stanceRepository,
     wait: presentationDelivery.wait

@@ -1,7 +1,11 @@
 /** @layer game/effects */
 import { STATS } from '../../contracts/domains/characters.mjs';
 import { GUARD_BOND_REFUSALS, GUARD_BOND_ROLES } from '../../contracts/domains/combat.mjs';
-import { isPopulated as actionIsPopulated, validateEffectEntry } from '../../contracts/dsl/effects.mjs';
+import {
+  EFFECT_PLAN_ERRORS,
+  isPopulated as actionIsPopulated,
+  validateEffectEntry
+} from '../../contracts/dsl/effects.mjs';
 import { isEmpty as conditionIsEmpty } from '../../contracts/dsl/conditions.mjs';
 import { chanceNodePaths, evaluate as evaluateConditionTree } from './conditions.mjs';
 import { SafeEval } from '../../lib/core/safe-eval.mjs';
@@ -162,6 +166,9 @@ function entryContentText(entry) {
 /**
  * Expand the authored entries that fire for these triggers into ordered operations for engine/effects/execution.mjs.
  * Nothing is written or rolled here. The engine and the Foundry adapters handle writes, dice and presentation.
+ * An invalid entry is skipped, and listed as one error carrying all its problems only when its trigger is one being
+ * planned, which is the moment it would have fired. A condition that fails to evaluate is listed too, and skips its
+ * entry or `if` step.
  * @param {object} input `entries`, `triggers` (one or a list), `context`, `activatedItem`, and `chanceRolls` (one
  *   number, or draws keyed by chance path).
  * @returns {{entries: object[], operations: object[], errors: object[]}}
@@ -177,7 +184,8 @@ export function planEffectEntries(input = {}) {
   entries.forEach((entry, entryIndex) => {
     const validation = validateEffectEntry(entry, `entries[${entryIndex}]`);
     if (!validation.valid) {
-      errors.push(...validation.errors.map(message => ({ code: 'invalid-entry', entryIndex, message })));
+      if (!triggerSet.has(entry?.trigger)) return;
+      errors.push({ code: EFFECT_PLAN_ERRORS.INVALID_ENTRY, entryIndex, message: validation.errors.join('; ') });
       return;
     }
     if (!triggerSet.has(entry.trigger) || !actionIsPopulated(entry.action)) return;
@@ -265,7 +273,7 @@ function passesConditionGate(tree, context, chanceRolls, entryIdentity, entryInd
     return evaluateConditionTree(tree, context,
       nodePath => chanceRollFor(chanceRolls, `${entryIdentity}:entry:${nodePath}`));
   } catch {
-    errors.push({ code: 'condition-evaluation-failed', entryIndex, path: 'entry.condition' });
+    errors.push({ code: EFFECT_PLAN_ERRORS.CONDITION_FAILED, entryIndex, path: 'entry.condition' });
     return false;
   }
 }
@@ -296,7 +304,7 @@ function planSteps(steps, context, options, prefix, operations, errors) {
             nodePath => chanceRollFor(options.chanceRolls, `${options.entryIdentity}:${owner}:${nodePath}`));
         } catch {
           errors.push({
-            code: 'condition-evaluation-failed',
+            code: EFFECT_PLAN_ERRORS.CONDITION_FAILED,
             entryIndex: options.entryIndex ?? null,
             path: `steps.${path.join('.')}.condition`
           });

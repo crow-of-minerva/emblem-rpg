@@ -8,6 +8,7 @@ import {
   STANCE_BREAK_PRESENTATION_KIND
 } from '../../contracts/domains/damage.mjs';
 import { GUARD_BOND_REFUSALS } from '../../contracts/domains/combat.mjs';
+import { isEffectPreconditionFailure } from '../../contracts/dsl/effects.mjs';
 import { RESULT_CODES } from '../../contracts/results.mjs';
 import {
   resolveDamage,
@@ -23,7 +24,13 @@ import {
   resolveEffectValue
 } from '../../game/effects/planning.mjs';
 import { MAX_SETTLEMENT_ATTEMPTS } from '../../contracts/commands.mjs';
-import { recordDiagnostic, diagnosticData, requirePorts } from '../../contracts/protocol.mjs';
+import {
+  DIAGNOSTIC_SEVERITIES,
+  DIAGNOSTIC_SOURCES,
+  recordDiagnostic,
+  diagnosticData,
+  requirePorts
+} from '../../contracts/protocol.mjs';
 
 /* -------------------------------------------- */
 /*  Effect execution                            */
@@ -40,10 +47,19 @@ const UNIT_WRITING_STEPS = new Set(['modShield', 'applyEffect', 'setFaction', 'm
  * presentation port. Built in init/system.mjs and shared by item activation, the combat exchange and phase triggers.
  */
 export class EffectExecutionService {
-  constructor({ diagnostics, effects, present, stances, wait }) {
-    requirePorts('EffectExecutionService', { diagnostics, effects, present, stances, wait });
+  /** The authoring problems this session has already reported, by entry identity, path and code. */
+  #reported = new Set();
+
+  /**
+   * @param {object} ports
+   * @param {Function} ports.notifyGm Shows the GM one notice for a skipped step or entry, given
+   *   `{itemName, trigger, entryName, stepKind, code}`. init/system.mjs shows it only on the active GM.
+   */
+  constructor({ diagnostics, effects, notifyGm, present, stances, wait }) {
+    requirePorts('EffectExecutionService', { diagnostics, effects, notifyGm, present, stances, wait });
     this.diagnostics = diagnostics;
     this.effects = effects;
+    this.notifyGm = notifyGm;
     this.present = present;
     this.stances = stances;
     this.wait = wait;
@@ -54,6 +70,8 @@ export class EffectExecutionService {
    * and random placement is drawn here, once for this run. The writers capture into `runtime.operation` before
    * they change anything, so a failed command restores. A busy refusal stops the run, and notices go only to the
    * users in `audience`.
+   * A step that fails an authoring precondition (isEffectPreconditionFailure) wrote nothing, so it is skipped
+   * rather than failed, and the run goes on. It and each of the plan's errors are reported to the GM once.
    * `combatContext`, which only an exchange passes, reaches the effect host's health reads and nothing else. It
    * stays out of the runtime because the runtime travels to every client in presentation messages, and the context
    * holds the host's chance draws.
@@ -69,6 +87,11 @@ export class EffectExecutionService {
     }
     const plan = planEffectEntries({ entries, triggers, context, activatedItem, chanceRolls });
     const identities = effectEntryIdentities(entries);
+    for (const error of plan.errors) {
+      const path = String(error.path ?? 'entry');
+      const kind = path.startsWith('steps.') ? 'if' : '';
+      this.#report({ ...error, path, kind }, entries, identities, context);
+    }
     const held = { runtime: executionRuntime, context, resources, audience: noticeAudience(audience), combatContext };
     const outcomes = [];
     for (const entry of plan.entries) {
@@ -76,7 +99,12 @@ export class EffectExecutionService {
       for (const operation of entry.operations) {
         if (operation.delayMs > 0) await this.wait(operation.delayMs);
         const addressed = { ...operation, entryIdentity: identities[entry.entryIndex] };
-        const outcome = await this.#execute(addressed, held);
+        const outcome = skippedPrecondition(await this.#execute(addressed, held), operation.kind);
+        if (outcome?.skipped === PRECONDITION_SKIP) {
+          const path = `steps.${operation.path.join('.')}`;
+          this.#report({ entryIndex: entry.entryIndex, path, kind: operation.kind, code: outcome.code }, entries,
+            identities, context);
+        }
         outcomes.push(outcome);
         if (outcome?.code === RESULT_CODES.COMMAND_RESOURCE_BUSY) {
           return settledRun(outcomes, plan.errors, outcome);
@@ -359,6 +387,38 @@ export class EffectExecutionService {
     }
   }
 
+  /**
+   * Tell the GM, once per session, about a step or entry that could not run: a skipped step (`kind` is its kind),
+   * an invalid entry (`path` is 'entry'), or a condition that threw (`kind` is 'if' when it guards a step). The
+   * warning diagnostic raises no toast of its own, so the GM sees the one notice rather than a generic layer error.
+   * Per-blow and per-phase triggers repeat the same problem, which the entry's identity, path and code name.
+   * @param {{entryIndex: number, path: string, kind: string, code: string, message?: string}} problem
+   */
+  #report({ entryIndex, path, kind, code, message = '' }, entries, identities, context) {
+    const key = [identities[entryIndex], path, code].join('|');
+    if (this.#reported.has(key)) return;
+    this.#reported.add(key);
+    const source = entries[entryIndex];
+    const itemName = String(source?.sourceItemName || context?.item?.name || '');
+    const trigger = String(source?.trigger ?? '');
+    const entryName = String(source?.name ?? '');
+    const place = `item "${itemName || 'unknown'}", trigger ${trigger || 'none'}, entry ${entryIndex}`
+      + (entryName ? ` "${entryName}"` : '');
+    const step = kind ? ` (${kind})` : '';
+    const why = message ? ` (${message})` : '';
+    recordDiagnostic(this.diagnostics, {
+      sourcePath: import.meta.url,
+      source: DIAGNOSTIC_SOURCES.EFFECTS,
+      severity: DIAGNOSTIC_SEVERITIES.WARNING,
+      detail: `Effect ${kind ? 'step' : 'entry'} skipped: ${place}, ${path}${step}: ${code}${why}`,
+      notify: false
+    });
+    try { this.notifyGm(Object.freeze({ itemName, trigger, entryName, stepKind: kind, code })); }
+    catch (diagnosticError) {
+      recordDiagnostic(this.diagnostics, { sourcePath: import.meta.url, error: diagnosticError, detail: 'notifyGm' });
+    }
+  }
+
   /** Settle stance through the operation the run names, so its writes are captured with the rest of the action. */
   async #settleStance(actorUuid, runtime) {
     return settleStanceBreak(this.stances, actorUuid, runtime.operation ?? null);
@@ -476,6 +536,22 @@ function healthFailure(persisted, code) {
 /** The outcome of a unit-only step with no unit target, or of a heal aimed at a Destructible. */
 function sceneryOutcome(detail) {
   return { ok: true, skipped: 'scenery', ...detail };
+}
+
+/* -------------------------------------------- */
+/*  Authoring problems                          */
+/* -------------------------------------------- */
+
+/** The `skipped` value of a step that failed an authoring precondition. */
+const PRECONDITION_SKIP = 'precondition';
+
+/**
+ * A failed step's outcome, or a skipped success when the step failed an authoring precondition. Such a step wrote
+ * nothing, so the exchange, activation or phase change that ran it carries on. Any other failure stays failed.
+ */
+function skippedPrecondition(outcome, kind) {
+  if (outcome?.ok !== false || !isEffectPreconditionFailure(outcome.code)) return outcome;
+  return { ok: true, skipped: PRECONDITION_SKIP, code: outcome.code, kind };
 }
 
 /* -------------------------------------------- */

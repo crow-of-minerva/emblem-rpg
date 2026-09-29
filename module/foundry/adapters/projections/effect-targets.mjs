@@ -1,6 +1,7 @@
 /** @layer foundry/adapters/projections */
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { SUMMONED_BY_FLAG } from '../../../contracts/domains/combat.mjs';
+import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
 import { factionGroup } from '../../../game/character/rules.mjs';
 import { resolveTargetKind, TARGET_KINDS } from '../../../game/objects/rules.mjs';
 import { rectDistance } from '../../../lib/core/geometry.mjs';
@@ -12,8 +13,8 @@ import { placedActorUuids } from './encounters.mjs';
 /*  Effect targets                              */
 /* -------------------------------------------- */
 
-const SPAWN_SOURCE_MISSING = Object.freeze({ ok: false, code: 'effect.spawn-source-missing' });
-const SPAWN_LOCATION_MISSING = Object.freeze({ ok: false, code: 'effect.spawn-location-missing' });
+const SPAWN_SOURCE_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPAWN_SOURCE_MISSING });
+const SPAWN_LOCATION_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPAWN_LOCATION_MISSING });
 
 /**
  * The units an effect step's target reference names: 'self', 'target', an explicit actor or token, or an area.
