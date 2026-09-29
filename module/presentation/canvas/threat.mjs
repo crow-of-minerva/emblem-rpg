@@ -178,10 +178,9 @@ export class ThreatIndicators {
     this.invalidate();
   }
 
-  /** Only the grades changed: reach can't have moved, so the measured lines are kept and each one is graded again. */
+  /** Only the grades changed (an aura or stance moved), so the lines stay up and recolour as each is graded again. */
   invalidateColours() {
     this.#regrade = true;
-    this.#reprocessing = true;
     this.#invalidatedAt = this.#now();
   }
 

@@ -365,7 +365,8 @@ function freezeRange(range, item) {
   return Object.freeze({
     ...range,
     shape: normalizeShape(item?.shape),
-    area
+    area,
+    losRule: String(item?.losRule ?? 'normal')
   });
 }
 
@@ -375,6 +376,17 @@ function normalizeShape(shape) {
 
 function usesChebyshev(shape) {
   return shape === 'Square' || shape === 'Cone';
+}
+
+/**
+ * How far a range reaches in straight (non-diagonal) steps, for distance prefilters. Square and Cone ranges measure
+ * diagonally, so their far corner is twice the maximum away. Only Armaments carry those shapes.
+ * @param {{maxRange: number, shape?: string}} range A range from {@link resolveAttackRanges}.
+ * @returns {number}
+ */
+export function attackReachSteps(range) {
+  const maxRange = Math.max(0, Math.floor(Number(range?.maxRange) || 0));
+  return usesChebyshev(normalizeShape(range?.shape)) ? maxRange * 2 : maxRange;
 }
 
 function activeSectors(area) {

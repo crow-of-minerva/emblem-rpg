@@ -9,9 +9,9 @@ import {
   collectCrossingOptions,
   remainingMovement,
   resolveMovementOccupancy,
-  terrainBoundsTravelByDistance
+  travelShortcuts
 } from '../../../game/movement/pathfinding.mjs';
-import { resolveAttackRanges } from '../../../game/targeting/attack-grid.mjs';
+import { attackReachSteps, resolveAttackRanges } from '../../../game/targeting/attack-grid.mjs';
 import { createGeometryResolver } from '../../../game/targeting/shapes.mjs';
 import { crossingFallDamage, normalizeTerrainProfile } from '../../../game/terrain/rules.mjs';
 import { hasStealAbility, isStealableItem, tradeActionAvailable } from '../../../game/economy/trade.mjs';
@@ -445,7 +445,8 @@ function attackItemFacts(item) {
     shape: system.weapon?.targetShape,
     area: system.weapon?.targetArea && typeof system.weapon.targetArea === 'object'
       ? Object.freeze({ ...system.weapon.targetArea })
-      : null
+      : null,
+    losRule: String(system.effectData?.losRule ?? 'normal')
   });
 }
 
@@ -555,10 +556,11 @@ export function projectThreatBoard(selectedTokenUuid) {
     const unit = projectThreatUnit(tokenDocument, gridSize, scene);
     if (unit) units.push(unit);
   }
+  const terrain = readTerrainMovement(scene, null);
   return Object.freeze({
     gridSize,
     encounterActive: sceneCombatActive(scene) === true,
-    travelBoundedByDistance: terrainBoundsTravelByDistance(snapshot),
+    travelShortcuts: travelShortcuts({ terrainCosts: terrain.costs, terrainTeleports: terrain.teleports }),
     classicFlyers: worldClassicFlyerTargeting(),
     flightForbidden: flyingForbidden(snapshot.permission),
     selected: Object.freeze({
@@ -598,6 +600,7 @@ function projectThreatUnit(tokenDocument, gridSize, scene) {
   const system = actor.system ?? {};
   const tauntor = tauntedByActorUuid(actor);
   const compulsion = tauntor ? tauntCompulsion(scene, tauntor) : ABSENT_TAUNTOR;
+  const ranges = projectAttackRanges(actor, projectWieldedArmament(actor));
   return Object.freeze({
     tokenUuid: String(tokenDocument.uuid ?? ''),
     tokenId: String(tokenDocument.id ?? ''),
@@ -611,20 +614,13 @@ function projectThreatUnit(tokenDocument, gridSize, scene) {
     visible: tokenDocument.hidden !== true && tokenDocument.object?.visible !== false,
     airborne: isAirborneActor(actor),
     movement: Number(system.stats?.mov?.total) || 0,
-    maxAttackRange: maxAttackRange(actor),
+    maxAttackRange: Math.max(0, ...ranges.map(range => Number(range.maxRange) || 0)),
+    maxAttackReach: Math.max(0, ...ranges.map(attackReachSteps)),
     rect: Object.freeze(threatRect(tokenDocument, gridSize)),
     tauntedByActorUuid: tauntor,
     tauntorPresent: compulsion.present,
     tauntorGuardedByActorUuid: compulsion.guardedByActorUuid
   });
-}
-
-function maxAttackRange(actor) {
-  let maximum = 0;
-  for (const range of projectAttackRanges(actor, projectWieldedArmament(actor))) {
-    maximum = Math.max(maximum, Number(range.maxRange) || 0);
-  }
-  return maximum;
 }
 
 const ABSENT_TAUNTOR = Object.freeze({ present: false, guardedByActorUuid: '' });

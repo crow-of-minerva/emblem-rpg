@@ -3,7 +3,8 @@ import { INCAPACITATING_STATUSES, THREAT_SEVERE_HP_FRACTION, THREAT_TIERS } from
 import { areFactionsHostile, CRITICAL_MULTIPLIER_BASE } from '../character/rules.mjs';
 import { airborneBeyondMelee, hasRequiredProficiency, parseAttackRange } from '../targeting/attack-grid.mjs';
 import { isMagicItem } from '../effects/requirements.mjs';
-import { cellKey, rectDistance, rectKeys } from '../../lib/core/geometry.mjs';
+import { shortcutTravelDistance } from '../movement/pathfinding.mjs';
+import { cellKey, rectKeys } from '../../lib/core/geometry.mjs';
 import { clamp, finite } from '../../lib/core/runtime.mjs';
 
 /* -------------------------------------------- */
@@ -80,18 +81,20 @@ function compelledElsewhere(hostile, targetActorUuid) {
 /* -------------------------------------------- */
 /**
  * The hostiles worth building a movement reach for when the threat overlay inspects the selected unit
- * (beginInspection in engine/combat/threat.mjs). A hostile farther away than its movement and attack range plus the
- * selected unit's own movement is skipped, but only when `travelBoundedByDistance` says distance limits travel.
- * Free cells, teleports priced by movement and exploration turn that shortcut off.
- * @param {object} board The selected unit's facts and every other unit on the board.
+ * (beginInspection in engine/combat/threat.mjs). A hostile is skipped when it is too far away to matter: farther
+ * than its movement and attack reach plus the selected unit's movement, teleports included. Free cells and
+ * exploration turn the skip off.
+ * @param {object} board The selected unit, every other unit on the board and the scene's `travelShortcuts`.
  * @returns {Readonly<object>} The candidates, plus the live hostiles, taunt sources and prefilter area that later
  *   checks need to decide whether to rebuild.
  */
 export function selectThreatCandidates(board) {
   const selected = board?.selected ?? {};
   const selfReach = selected.exploring ? Infinity : movementPoints(selected.movement);
-  const prefilter = board?.travelBoundedByDistance === true && Number.isFinite(selfReach);
+  const shortcuts = Array.isArray(board?.travelShortcuts) ? board.travelShortcuts : null;
+  const prefilter = shortcuts !== null && Number.isFinite(selfReach);
   const selfRect = selected.rect ?? { x: 0, y: 0, width: 1, height: 1 };
+  const slack = teleportSlack(selfRect, shortcuts);
   const candidates = [];
   const liveHostiles = [];
   const compulsionSources = [];
@@ -109,8 +112,8 @@ export function selectThreatCandidates(board) {
     }
     if (compelledElsewhere(unit, selected.actorUuid)) continue;
     if (prefilter) {
-      const bound = movementPoints(unit.movement) + finite(unit.maxAttackRange) + selfReach;
-      if (Number.isFinite(bound) && rectDistance(unit.rect, selfRect) > bound) continue;
+      const bound = movementPoints(unit.movement) + finite(unit.maxAttackReach) + selfReach + slack;
+      if (Number.isFinite(bound) && shortcutTravelDistance(unit.rect, selfRect, shortcuts) > bound) continue;
     }
     candidates.push(unit);
   }
@@ -119,7 +122,7 @@ export function selectThreatCandidates(board) {
     candidates: Object.freeze(candidates),
     liveHostiles: Object.freeze([...new Set(liveHostiles)]),
     compulsionSources: Object.freeze([...new Set(compulsionSources)]),
-    prefilter: prefilter ? Object.freeze({ x: selfRect.x, y: selfRect.y, radius: selfReach }) : null
+    prefilter: prefilter ? Object.freeze({ x: selfRect.x, y: selfRect.y, radius: selfReach, shortcuts }) : null
   });
 }
 
@@ -127,6 +130,15 @@ export function selectThreatCandidates(board) {
 function movementPoints(value) {
   const points = Number(value);
   return Number.isFinite(points) ? Math.max(0, points) : Infinity;
+}
+
+/**
+ * Extra room on teleport maps for a selected unit bigger than one square. Its trips through pads are measured from
+ * its top-left square, not its nearest edge.
+ */
+function teleportSlack(rect, shortcuts) {
+  if (!shortcuts?.length) return 0;
+  return Math.max(0, (rect.width ?? 1) - 1) + Math.max(0, (rect.height ?? 1) - 1);
 }
 
 /* -------------------------------------------- */
@@ -150,10 +162,14 @@ export function threatCovers(threat, focus) {
   return cells.some(cell => threat.reach.has(cell) && (focus.airborne === true || !threat.occluded?.has(cell)));
 }
 
-/** Whether the focus has moved outside the area the prefilter assumed, so the hostiles it skipped need a new look. */
+/**
+ * Whether the focus has moved outside the area the prefilter assumed, so the hostiles it skipped need a new look.
+ * Measured the same way as the prefilter, teleports included.
+ */
 export function leftPrefilterEnvelope(prefilter, focus) {
   if (!prefilter) return false;
-  return Math.abs(focus.x - prefilter.x) + Math.abs(focus.y - prefilter.y) > prefilter.radius;
+  const anchor = point => ({ x: point.x, y: point.y, width: 1, height: 1 });
+  return shortcutTravelDistance(anchor(prefilter), anchor(focus), prefilter.shortcuts ?? []) > prefilter.radius;
 }
 
 /* -------------------------------------------- */

@@ -14,7 +14,7 @@ import {
   terrainElevationAt,
   terrainHeightOccludes
 } from '../targeting/attack-grid.mjs';
-import { cellKey, parseCellKey } from '../../lib/core/geometry.mjs';
+import { cellKey, parseCellKey, rectDistance } from '../../lib/core/geometry.mjs';
 import { areFactionsFriendly } from '../character/rules.mjs';
 import { finite as finiteNumber } from '../../lib/core/runtime.mjs';
 
@@ -433,8 +433,63 @@ function movementReach(source = {}) {
  * @returns {boolean}
  */
 export function terrainBoundsTravelByDistance(source = {}) {
-  if (Object.values(source.terrainCosts ?? {}).some(cost => Number(cost) === 0)) return false;
-  return !(source.terrainTeleports ?? []).some(pad => pad?.exit && pad.cost === TELEPORT_COSTS.MOVEMENT);
+  return travelShortcuts(source)?.length === 0;
+}
+
+/**
+ * The teleports that cost movement, which a distance prefilter must count as shortcuts. Null when the map has free
+ * cells, since then distance limits nothing. Pass the scene's plain terrain, not a unit's version of it: an extra
+ * shortcut only makes the prefilter skip less.
+ * @param {object} source Plain terrain: `terrainCosts` and `terrainTeleports`.
+ * @returns {ReadonlyArray<{x: number, y: number, exit: {x: number, y: number}, cost: number}>|null}
+ */
+export function travelShortcuts(source = {}) {
+  if (Object.values(source.terrainCosts ?? {}).some(cost => Number(cost) === 0)) return null;
+  return Object.freeze((source.terrainTeleports ?? [])
+    .filter(pad => pad?.exit && pad.cost === TELEPORT_COSTS.MOVEMENT)
+    .map(pad => Object.freeze({
+      x: pad.x,
+      y: pad.y,
+      exit: Object.freeze({ x: pad.exit.x, y: pad.exit.y }),
+      cost: Math.max(0, Number(pad.movementCost) || 0)
+    })));
+}
+
+/**
+ * The least movement one footprint could need to reach another, using the shortcuts from {@link travelShortcuts}.
+ * Walking costs at least the number of squares between them. A shortcut costs its price and moves the footprint's
+ * top-left square from pad to exit. Shortcuts work both ways, so the distance is the same in either direction.
+ * @param {{x: number, y: number, width?: number, height?: number}} from The footprint that travels.
+ * @param {{x: number, y: number, width?: number, height?: number}} to The footprint it must reach.
+ * @param {ReadonlyArray<object>} [shortcuts]
+ * @returns {number}
+ */
+export function shortcutTravelDistance(from, to, shortcuts = []) {
+  const size = { width: from.width ?? 1, height: from.height ?? 1 };
+  const target = { x: to.x, y: to.y, width: to.width ?? 1, height: to.height ?? 1 };
+  const origin = { x: from.x, y: from.y, ...size };
+  const ends = shortcuts.flatMap(pad => [
+    { at: pad, other: pad.exit, cost: pad.cost },
+    { at: pad.exit, other: pad, cost: pad.cost }
+  ]);
+  const cell = point => ({ x: point.x, y: point.y, width: 1, height: 1 });
+  let best = rectDistance(origin, target);
+  const reached = ends.map(end => rectDistance(origin, cell(end.at)));
+  const settled = ends.map(() => false);
+  for (;;) {
+    let next = -1;
+    for (let i = 0; i < ends.length; i += 1) {
+      if (!settled[i] && (next < 0 || reached[i] < reached[next])) next = i;
+    }
+    if (next < 0 || reached[next] >= best) return best;
+    settled[next] = true;
+    const landed = { x: ends[next].other.x, y: ends[next].other.y, ...size };
+    const arrival = reached[next] + ends[next].cost;
+    best = Math.min(best, arrival + rectDistance(landed, target));
+    for (let i = 0; i < ends.length; i += 1) {
+      if (!settled[i]) reached[i] = Math.min(reached[i], arrival + rectDistance(landed, cell(ends[i].at)));
+    }
+  }
 }
 
 /**
@@ -503,8 +558,10 @@ function buildCombinedAttackRange(input, placements) {
   for (const placement of placements) {
     const onRack = rack.size > 0 && footprintOverlaps(placement, input.footprint, rack);
     const fromPlacement = new Set();
+    const overHeight = new Set();
     for (const range of input.attackRanges) {
       if (range.emplaced && rack.size > 0 && !onRack) continue;
+      const tiles = input.freeTargeting || range.seesOverHeight ? overHeight : fromPlacement;
       for (const key of calculateAttackTilesFromPosition(
         placement.x,
         placement.y,
@@ -512,18 +569,28 @@ function buildCombinedAttackRange(input, placements) {
         input.columns,
         input.rows,
         input.footprint
-      )) fromPlacement.add(key);
+      )) tiles.add(key);
     }
 
     if (!hasElevation) {
       for (const key of fromPlacement) attackable.add(key);
+      for (const key of overHeight) attackable.add(key);
       continue;
     }
-    if (meleeOnly) filterMeleeElevation(fromPlacement, placement, input.terrainElevations);
+    if (meleeOnly) {
+      filterMeleeElevation(fromPlacement, placement, input.terrainElevations);
+      filterMeleeElevation(overHeight, placement, input.terrainElevations);
+    }
+    for (const key of overHeight) {
+      attackable.add(key);
+      clear.add(key);
+      flyersOnly.delete(key);
+    }
     const obscured = input.airborne
       ? new Set()
       : heightObscuredCells(fromPlacement, placement, input.footprint, input.terrainElevations);
     for (const key of fromPlacement) {
+      if (overHeight.has(key)) continue;
       attackable.add(key);
       if (obscured.has(key)) {
         if (!clear.has(key)) flyersOnly.add(key);
@@ -937,7 +1004,8 @@ function normalizeInput(source = {}, { start: startOverride = null, allowance = 
     armamentCells: new Set(normalizeCellKeys(source.armamentCells)),
     walls,
     wallsByCell: indexWallsByCell(walls),
-    attackRanges: normalizeAttackRanges(source.attackRanges)
+    attackRanges: normalizeAttackRanges(source.attackRanges),
+    freeTargeting: source.freeTargeting === true
   };
 }
 
@@ -973,7 +1041,8 @@ function normalizeAttackRanges(ranges) {
       maxRange: Math.floor(maxRange),
       shape: String(range?.shape ?? 'Cross'),
       area: range?.area && typeof range.area === 'object' ? { ...range.area } : null,
-      emplaced: range?.emplaced === true
+      emplaced: range?.emplaced === true,
+      seesOverHeight: String(range?.losRule ?? 'normal') !== 'normal'
     });
   }
   return normalized;
