@@ -1,5 +1,25 @@
 # Changelog
 
+## Emblem RPG 1.0.2
+
+### Changed
+
+- Critical Hit bonus damage scaling now based on Tqn, not Wit
+- Minor optimizations to the system
+
+### Fixed
+
+- Incorrect exp-data.json values were fixed. Units should now recieve appropriate exp gains for actions other than attacking. **(requires running the shipped Sync World JSON to Canon macro)**
+- Threat lines were ignoring attacks that could ignore LoS. Fixed.
+- Incorrectly authored effects skip instead of reverting the entire action.
+
+### Background Stuff
+
+- Asset and import paths now respect Foundry's route prefix instead of assuming the server root.
+- Groundwork edits to prepare for item authorship panels refactor
+
+------------------------
+
 ## Emblem RPG 1.0.1
 
 ### Added
