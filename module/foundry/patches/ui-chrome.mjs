@@ -11,16 +11,50 @@ import { reportFoundryError } from '../adapters/services/diagnostics.mjs';
 /* -------------------------------------------- */
 const CURSOR_PATH = `systems/${SYSTEM_ID}/assets/ui/cursor/`;
 
+/** Every system cursor, by --cursor-* name: [file in CURSOR_PATH, hotspot x, hotspot y, fallback keyword]. */
 const CURSORS = Object.freeze({
-  default: { url: `${CURSOR_PATH}pointer.svg`, x: 6, y: 5 },
-  'default-down': { url: `${CURSOR_PATH}pointer.svg`, x: 6, y: 5 },
-  pointer: { url: `${CURSOR_PATH}pointer-2.svg`, x: 8, y: 4 },
-  'pointer-down': { url: `${CURSOR_PATH}pointer-2.svg`, x: 8, y: 4 },
-  grab: { url: `${CURSOR_PATH}hand-open.svg`, x: 12, y: 12 },
-  'grab-down': { url: `${CURSOR_PATH}hand-grab.svg`, x: 12, y: 12 },
-  text: { url: `${CURSOR_PATH}bracket_a_vertical.svg`, x: 12, y: 12 },
-  'text-down': { url: `${CURSOR_PATH}bracket_a_vertical.svg`, x: 12, y: 12 },
-  wait: { url: `${CURSOR_PATH}busy_hourglass_outline_detail.svg`, x: 12, y: 12 }
+  default: ['pointer.svg', 6, 5, 'default'],
+  'default-down': ['pointer.svg', 6, 5, 'default'],
+  pointer: ['pointer-2.svg', 8, 4, 'pointer'],
+  'pointer-down': ['pointer-2.svg', 8, 4, 'pointer'],
+  grab: ['hand-open.svg', 12, 12, 'grab'],
+  'grab-down': ['hand-grab.svg', 12, 12, 'grabbing'],
+  text: ['bracket_a_vertical.svg', 12, 12, 'text'],
+  'text-down': ['bracket_a_vertical.svg', 12, 12, 'text'],
+  wait: ['busy_hourglass_outline_detail.svg', 12, 12, 'wait'],
+  context: ['cursor-context.svg', 2, 2, 'context-menu'],
+  'context-menu': ['cursor-context.svg', 2, 2, 'context-menu'],
+  help: ['help.svg', 6, 5, 'help'],
+  progress: ['busy_hourglass_outline_detail.svg', 12, 12, 'progress'],
+  'not-allowed': ['disabled.svg', 6, 5, 'not-allowed'],
+  'no-drop': ['disabled.svg', 6, 5, 'no-drop'],
+  copy: ['copy.svg', 6, 5, 'copy'],
+  alias: ['copy.svg', 6, 5, 'alias'],
+  crosshair: ['crosshair.svg', 12, 12, 'crosshair'],
+  cell: ['crosshair.svg', 12, 12, 'cell'],
+  move: ['move.svg', 12, 12, 'move'],
+  'all-scroll': ['move.svg', 12, 12, 'all-scroll'],
+  'zoom-in': ['zoom-in.svg', 11, 11, 'zoom-in'],
+  'zoom-out': ['zoom-out.svg', 11, 11, 'zoom-out'],
+  'vertical-text': ['bracket_a_vertical.svg', 12, 12, 'vertical-text'],
+  'ns-resize': ['resize-ns.svg', 12, 12, 'ns-resize'],
+  'n-resize': ['resize-ns.svg', 12, 12, 'n-resize'],
+  's-resize': ['resize-ns.svg', 12, 12, 's-resize'],
+  'row-resize': ['resize-ns.svg', 12, 12, 'row-resize'],
+  'ew-resize': ['resize-ew.svg', 12, 12, 'ew-resize'],
+  'e-resize': ['resize-ew.svg', 12, 12, 'e-resize'],
+  'w-resize': ['resize-ew.svg', 12, 12, 'w-resize'],
+  'col-resize': ['resize-ew.svg', 12, 12, 'col-resize'],
+  'nwse-resize': ['resize-nwse.svg', 12, 12, 'nwse-resize'],
+  'nw-resize': ['resize-nwse.svg', 12, 12, 'nw-resize'],
+  'se-resize': ['resize-nwse.svg', 12, 12, 'se-resize'],
+  'nesw-resize': ['resize-nesw.svg', 12, 12, 'nesw-resize'],
+  'ne-resize': ['resize-nesw.svg', 12, 12, 'ne-resize'],
+  'sw-resize': ['resize-nesw.svg', 12, 12, 'sw-resize'],
+  // Cursor assets selected by processing, targeting and movement state classes.
+  locked: ['locked.svg', 6, 5, 'not-allowed'],
+  target: ['target.svg', 16, 16, 'crosshair'],
+  walk: ['boot.svg', 3, 19, 'move']
 });
 
 const KEYWORD_VARIABLES = Object.freeze({
@@ -178,8 +212,15 @@ function installStatusPalette(hud, palette) {
 /* -------------------------------------------- */
 /*  Cursor installation                         */
 /* -------------------------------------------- */
+/**
+ * Register every system cursor in CONFIG.cursors and have core write the --cursor-* variables. Each entry is the
+ * finished CSS value, which core writes as given, so the cursor keeps its own fallback keyword, and getRoute puts
+ * the route prefix on its image.
+ */
 function installCursors() {
-  Object.assign(CONFIG.cursors, CURSORS);
+  for (const [name, [file, x, y, fallback]] of Object.entries(CURSORS)) {
+    CONFIG.cursors[name] = `url("${foundry.utils.getRoute(`${CURSOR_PATH}${file}`)}") ${x} ${y}, ${fallback}`;
+  }
   game.configureCursors();
 }
 
