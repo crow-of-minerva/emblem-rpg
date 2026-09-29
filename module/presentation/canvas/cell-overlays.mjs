@@ -112,7 +112,7 @@ export function markTargetedTokens(tokenUuids = []) {
   for (const token of canvas.tokens?.placeables ?? []) {
     const uuid = String(token?.document?.uuid ?? '');
     const wanted = selected.has(uuid);
-    if (token.isTargeted === wanted) continue;
+    if ((token.targeted?.has?.(game.user) === true) === wanted) continue;
     token.setTarget?.(wanted, { releaseOthers: false });
   }
 }

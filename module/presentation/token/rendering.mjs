@@ -336,7 +336,7 @@ export function onCanvasReadyTokenPresentation() {
     refreshTokenTurnGreyout(token);
     refreshControlIndicator(token);
     applyTokenOutline(token);
-    if (token.isTargeted) showTargetIndicator(token);
+    if (isOwnTarget(token)) showTargetIndicator(token);
   }
 }
 
@@ -360,7 +360,7 @@ export function onDrawTokenPresentation(token) {
   refreshControlIndicator(token);
   applyAirborneSort(token);
   applyTokenOutline(token);
-  if (token?.isTargeted) showTargetIndicator(token);
+  if (isOwnTarget(token)) showTargetIndicator(token);
 }
 
 /**
@@ -441,10 +441,13 @@ export function onControlTokenPresentation(token, controlled) {
   refreshControlIndicator(token, controlled);
 }
 
-/** Replace Foundry target arrows and pips with Emblem’s pulsing SVG reticle. */
-export function onTargetTokenPresentation(_user, token, targeted) {
+/**
+ * Replace Foundry target arrows and pips with Emblem’s pulsing SVG reticle. The hook fires on every client for
+ * every user's targeting, so the reticle follows only this user's own targets.
+ */
+export function onTargetTokenPresentation(_user, token) {
   hideCoreTokenDecorations(token);
-  if (targeted ?? token?.isTargeted) showTargetIndicator(token);
+  if (isOwnTarget(token)) showTargetIndicator(token);
   else clearTargetIndicator(token);
 }
 
@@ -815,6 +818,10 @@ function showTargetIndicator(token) {
   const tick = () => {
     const current = canvas.tokens?.get(token.id);
     if (!current) return;
+    // The overlay sits above the vision mask, so it borrows the token's own visibility: a target that walks out
+    // of sight, or a hidden token, must not show its position through the reticle.
+    sprite.visible = current.visible === true;
+    if (!sprite.visible) return;
     phase += 0.0125;
     sprite.position.set(current.center.x, current.center.y);
     if (sprite.texture.baseTexture.valid) {
@@ -826,6 +833,11 @@ function showTargetIndicator(token) {
   tick();
   canvas.app.ticker.add(tick);
   targetIndicators.set(token.id, { sprite, tick });
+}
+
+/** Whether this client's user targets the token; Token#isTargeted is true for any user's target. */
+function isOwnTarget(token) {
+  return token?.targeted?.has?.(game.user) === true;
 }
 
 function clearTargetIndicator(token) {
