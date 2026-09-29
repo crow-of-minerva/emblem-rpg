@@ -6,11 +6,13 @@ import {
   PAUSED_ENCOUNTER_RECORD_VERSION,
   PHASE_CAMERA_GROUP_SPAN
 } from '../../contracts/domains/combat.mjs';
+import { MOVEMENT_PLAN_PATHS } from '../../contracts/domains/characters.mjs';
 import { DOWNTIME_ENERGY_BASE, DOWNTIME_FLAG } from '../../contracts/domains/downtime.mjs';
 import { SYSTEM_ID } from '../../contracts/protocol.mjs';
 import { TOKEN_MOVEMENT_WRITE_KEYS } from '../../contracts/domains/tokens.mjs';
 import { DOWNTIME_CLEARED } from '../downtime/rules.mjs';
 import { isEncounterStatus } from '../effects/statuses.mjs';
+import { changeLeafPaths } from '../../lib/core/runtime.mjs';
 import { normalizeObjectiveProgress, normalizeObjectiveSnapshot } from './objectives.mjs';
 
 /* -------------------------------------------- */
@@ -257,32 +259,12 @@ export function tokenChangeAffectsRoster(changes) {
     && !(key === 'texture' && facingOnly(changes.texture)));
 }
 
-/**
- * The Actor paths a roster row never reads: a movement plan's bookkeeping (a row reads only whether the turn is
- * spent) and the document stamp Foundry adds to every write.
- */
-const ROSTER_INERT_ACTOR_PATHS = Object.freeze([
-  '_id',
-  'system.turn.movementPlanning',
-  'system.turn.movementControllerId',
-  'system.turn.movementAnchorX',
-  'system.turn.movementAnchorY',
-  'system.turn.movementPlanStartedAt'
-]);
-
 /** Whether an Actor write can change what the roster shows. Picking a unit up or putting it down cannot. */
 export function actorChangeAffectsRoster(changes) {
-  const paths = changePaths(changes).filter(path => !path.startsWith('_stats.') && path !== '_stats');
-  if (!paths.some(path => path !== '_id')) return true;
-  return paths.some(path => !ROSTER_INERT_ACTOR_PATHS.includes(path));
-}
-
-/** Every leaf path an expanded or dotted change names. */
-function changePaths(value, prefix = '') {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return prefix ? [prefix] : [];
-  const keys = Object.keys(value);
-  if (!keys.length) return prefix ? [prefix] : [];
-  return keys.flatMap(key => changePaths(value[key], prefix ? `${prefix}.${key}` : key));
+  const paths = changeLeafPaths(changes)
+    .filter(path => path !== '_id' && path !== '_stats' && !path.startsWith('_stats.'));
+  if (!paths.length) return true;
+  return paths.some(path => !MOVEMENT_PLAN_PATHS.includes(path));
 }
 
 /** Whether a texture change only turns the sprite around, as the movement facing write does. */

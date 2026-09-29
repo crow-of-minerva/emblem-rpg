@@ -90,6 +90,17 @@ export const STATUSES = Object.freeze([
 
 export const STATUS_KEYS = Object.freeze(STATUSES.map(entry => entry.key));
 export const DEFAULT_STATUS_DURATION = 1;
+
+/**
+ * The turn fields a movement plan writes as bookkeeping when a unit is picked up or put down.
+ */
+export const MOVEMENT_PLAN_PATHS = Object.freeze([
+  'system.turn.movementPlanning',
+  'system.turn.movementControllerId',
+  'system.turn.movementAnchorX',
+  'system.turn.movementAnchorY',
+  'system.turn.movementPlanStartedAt'
+]);
 export const BLEEDING_STATUS_ID = 'Bleeding';
 
 /** The statuses that carry art and can be applied as a Foundry status. */

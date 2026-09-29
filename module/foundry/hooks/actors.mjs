@@ -2,10 +2,12 @@
 import { INTERNAL_COMMAND_IDS } from '../../contracts/commands.mjs';
 import { DIAGNOSTIC_SOURCES, SYSTEM_ID, createDiagnostic } from '../../contracts/protocol.mjs';
 import { RESULT_CODES } from '../../contracts/results.mjs';
+import { MOVEMENT_PLAN_PATHS } from '../../contracts/domains/characters.mjs';
 import { ARMAMENT_FLAGS } from '../../contracts/domains/objects.mjs';
 import { RESTORE_WRITE_OPTION } from '../../contracts/domains/recovery.mjs';
 import { isActiveGm as isCurrentCoordinator, isActiveGm as localUserIsActiveGm } from '../adapters/services/host.mjs';
 import { reportFoundryError } from '../adapters/services/diagnostics.mjs';
+import { changeLeafPaths } from '../../lib/core/runtime.mjs';
 
 /* -------------------------------------------- */
 /*  Class features                              */
@@ -118,10 +120,14 @@ function isEquipmentSettlement(options) {
   return options?.emblemEquipmentSettlement === true || options?.[RESTORE_WRITE_OPTION] === true;
 }
 
-/** Whether an Actor update touched a fact a caster requirement can read: the name or anything under system. */
+/**
+ * Whether an Actor update touched a fact a caster requirement can read: the name or anything under system, except
+ * the movement-plan bookkeeping a pickup or put-down writes, which no requirement reads.
+ */
 function actorFactsChanged(changes) {
   if (!changes || typeof changes !== 'object') return false;
-  return Object.keys(changes).some(key => key === 'name' || key === 'system' || key.startsWith('system.'));
+  return changeLeafPaths(changes).some(path => path === 'name'
+    || ((path === 'system' || path.startsWith('system.')) && !MOVEMENT_PLAN_PATHS.includes(path)));
 }
 
 /** Whether an Actor update took up or handed back a borrowed Armament. */
