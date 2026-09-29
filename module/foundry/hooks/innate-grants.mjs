@@ -12,6 +12,7 @@ import {
 } from '../adapters/document-writes/characters.mjs';
 import { isActiveGm as isCurrentCoordinator } from '../adapters/services/host.mjs';
 import { RESULT_CODES } from '../../contracts/results.mjs';
+import { changeLeafPaths } from '../../lib/core/runtime.mjs';
 
 /* -------------------------------------------- */
 /*  Innate grant lifecycle                      */
@@ -75,7 +76,7 @@ export function createInnateGrantLifecycle({ executeInternal, notify = null }) {
       void reconcile(actor);
     },
     onActorUpdated(actor, changes) {
-      if (!innateGrantsAffectedByActorChange(changedPaths(changes))) return;
+      if (!innateGrantsAffectedByActorChange(changeLeafPaths(changes))) return;
       void reconcile(actor);
     },
     onTokenCreated(token) {
@@ -87,7 +88,7 @@ export function createInnateGrantLifecycle({ executeInternal, notify = null }) {
     },
     onItemUpdated(item, changes) {
       if (item?.parent?.documentName !== 'Actor') { sourceChanged(item); return; }
-      if (!innateGrantsAffectedByItemChange(item, changedPaths(changes))) return;
+      if (!innateGrantsAffectedByItemChange(item, changeLeafPaths(changes))) return;
       void reconcile(item.parent);
     },
     onActiveEffectChanged(effect) {
@@ -105,15 +106,4 @@ export function createInnateGrantLifecycle({ executeInternal, notify = null }) {
 function effectChanges(effect) {
   const changes = effect?.changes ?? effect?.system?.changes;
   return Array.isArray(changes) ? changes : [];
-}
-
-/** Every dot-path an update touched, so a nested and a flattened change read the same to a pure predicate. */
-function changedPaths(changes, prefix = '') {
-  const paths = [];
-  for (const [key, value] of Object.entries(changes ?? {})) {
-    const path = prefix ? `${prefix}.${key}` : key;
-    paths.push(path);
-    if (value && typeof value === 'object' && !Array.isArray(value)) paths.push(...changedPaths(value, path));
-  }
-  return paths;
 }

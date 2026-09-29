@@ -139,3 +139,14 @@ export function structurallyEqual(a, b) {
   if (keys.length !== Object.keys(b).length) return false;
   return keys.every(key => Object.hasOwn(b, key) && structurallyEqual(a[key], b[key]));
 }
+
+/**
+ * Every leaf dot-path a document update names, so an expanded and a dotted change read the same. An empty object is a
+ * leaf, because it still says the field was written.
+ */
+export function changeLeafPaths(changes, prefix = '') {
+  if (!isPlainObject(changes)) return prefix ? [prefix] : [];
+  const keys = Object.keys(changes);
+  if (!keys.length) return prefix ? [prefix] : [];
+  return keys.flatMap(key => changeLeafPaths(changes[key], prefix ? `${prefix}.${key}` : key));
+}
