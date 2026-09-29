@@ -1,12 +1,12 @@
 {
   "items": {
     "Absolve, Dire Prayer, Grace, Restore, Salve, Staff of Grace, Staff of Healing, Staff of Mending": { "exp-mode": "damage-based", "target-mode": "single", "leveled": true, "value": 30, "min": 2, "max": 30 },
-    "Aegis": { "exp-mode": "pass-fail", "target-mode": "single", "value": 2 },
-    "Bane": { "exp-mode": "pass-fail", "target-mode": "multiple", "value": 1.5, "leveled": true, "max": 20 },
+    "Aegis": { "exp-mode": "flat", "target-mode": "single", "value": 2 },
+    "Bane": { "exp-mode": "pass-fail", "target-mode": "multiple", "value": 20, "leveled": true, "max": 20 },
     "Bless": { "exp-mode": "pass-fail", "target-mode": "multiple", "value": 5, "max": 20 },
-    "Drakefire": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 5, "leveled": true, "max": 12, "kill-bonus": true },
-    "Dust Devil": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 5, "leveled": true, "max": 10 },
-    "Empower": { "exp-mode": "pass-fail", "target-mode": "single", "value": 5, "limit": 5 },
+    "Drakefire": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 50, "leveled": true, "max": 50, "kill-bonus": true },
+    "Dust Devil": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 30, "leveled": true, "max": 30 },
+    "Empower": { "exp-mode": "flat", "target-mode": "single", "value": 5, "limit": 10 },
     "Enfeeble": { "exp-mode": "pass-fail", "target-mode": "single", "value": 5, "leveled": true, "min": 1, "max": 10 },
     "Fear": { "exp-mode": "pass-fail", "target-mode": "multiple", "value": 5, "leveled": true, "min": 2, "max": 20 },
     "Fireball": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 50, "leveled": true, "max": 50, "kill-bonus": true },
@@ -19,13 +19,12 @@
     "Rescue": { "exp-mode": "pass-fail", "target-mode": "single", "value": 20 , "leveled": true },
     "Sanctuary": { "exp-mode": "flat", "value": 10 },
     "Silence": { "exp-mode": "pass-fail", "target-mode": "single", "value": 2, "leveled": true, "max": 5 },
-    "Staff of Warping": { "exp-mode": "pass-fail", "target-mode": "single", "value": 2 },
-    "Stasis": { "exp-mode": "pass-fail", "target-mode": "single", "value": 3, "leveled": true, "max": 20 },
+    "Stasis": { "exp-mode": "pass-fail", "target-mode": "single", "value": 15, "leveled": true, "max": 15, "min": 5 },
     "Steal": { "exp-mode": "flat", "value": 5, "limit": 10 },
     "Sunbeam": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 50, "leveled": true, "max": 50, "kill-bonus":true },
     "Threaten": { "exp-mode": "pass-fail", "target-mode": "single", "value": 5, "leveled": true, "max": 10, "limit": 10 },
     "Thunderball": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 30, "leveled": true, "max": 30 },
-    "Warp": { "exp-mode": "flat", "target-mode": "single", "value": 10 },
+    "Warp, Staff of Warping": { "exp-mode": "flat", "target-mode": "single", "value": 10 },
     "Wither": { "exp-mode": "damage-based", "target-mode": "multiple", "value": 30, "leveled": true, "max": 30 , "kill-bonus": true }
   }
 }
