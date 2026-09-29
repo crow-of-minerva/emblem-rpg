@@ -535,7 +535,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   overflow: hidden !important;
   background: none !important;
   background-image: none !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/round-border-dark.png') !important;
+  border-image-source: url('../assets/ui/round-border-dark.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 250 fill !important;
   border-image-width: 10px !important;
@@ -632,7 +632,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   border: 0 !important;
   border-color: transparent !important;
   border-style: solid !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/dialog-border.png') !important;
+  border-image-source: url('../assets/ui/dialog-border.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 200 fill !important;
   border-image-width: 25px !important;
@@ -659,7 +659,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   background: none !important;
   border-color: transparent !important;
   border-style: solid !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/button-border-dark.png') !important;
+  border-image-source: url('../assets/ui/button-border-dark.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 250 fill !important;
   border-image-width: 25px !important;
@@ -747,7 +747,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   height: 32px;
   flex: 0 0 auto;
   background-color: rgb(231, 209, 177);
-  mask: url(/ui/pause.svg) center / contain no-repeat;
+  mask: url(../../../ui/pause.svg) center / contain no-repeat;
 }
 
 #emblem-user-lock .emblem-user-lock-actor-img {
@@ -2157,7 +2157,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 
   .application.sheet.emblem-rpg.convoy .window-content {
     overflow: visible !important;
-    border-image-source: url(/systems/emblem-rpg/assets/ui/sheet-border.png) !important;
+    border-image-source: url(../assets/ui/sheet-border.png) !important;
     border-image-repeat: stretch !important;
     border-image-slice: 180 fill !important;
     border-image-width: 20px !important;
@@ -2230,7 +2230,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   .convoy-item,
   .convoy-item:active {
     height: 40px !important;
-    border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark.png) !important;
+    border-image-source: url(../assets/ui/round-border-dark.png) !important;
     border-image-repeat: stretch !important;
     border-image-slice: 250 fill !important;
     border-image-width: 10px !important;
@@ -2243,7 +2243,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   }
 
   .convoy-item:hover {
-    border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-3.png) !important;
+    border-image-source: url(../assets/ui/round-border-dark-3.png) !important;
     background: rgba(90, 50, 60, 1) !important;
     border-radius: 15px !important;
   }
@@ -2689,7 +2689,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 
 .application.sheet.emblem-rpg.vendor .window-content {
   overflow: visible !important;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/sheet-border.png) !important;
+  border-image-source: url(../assets/ui/sheet-border.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 180 fill !important;
   border-image-width: 20px !important;
@@ -2777,7 +2777,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .vendor-item,
 .vendor-item:active {
   height: 40px !important;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark.png) !important;
+  border-image-source: url(../assets/ui/round-border-dark.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 250 fill !important;
   border-image-width: 10px !important;
@@ -2790,7 +2790,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 }
 
 .vendor-item:hover {
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-3.png) !important;
+  border-image-source: url(../assets/ui/round-border-dark-3.png) !important;
   background: rgba(90, 50, 60, 1) !important;
   border-radius: 15px !important;
 }
@@ -2837,7 +2837,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   box-shadow: none !important;
 }
 .application.sheet.emblem-rpg.object .window-content {
-  border-image-source: url('/systems/emblem-rpg/assets/ui/item-sheet-border.png');
+  border-image-source: url('../assets/ui/item-sheet-border.png');
   border-image-repeat: stretch;
   border-image-slice: 200 fill;
   border-image-width: 20px;
@@ -3636,7 +3636,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .window-content {
   overflow: visible !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/item-sheet-border.png') !important;
+  border-image-source: url('../assets/ui/item-sheet-border.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 200 fill !important;
   border-image-width: 20px !important;
@@ -4193,7 +4193,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   padding: 0px !important;
   padding-bottom: 11px !important;
   text-align: center !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/button-border.png') !important;
+  border-image-source: url('../assets/ui/button-border.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 160 fill !important;
   border-image-width: 12px !important;
@@ -4238,7 +4238,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   position: relative !important;
   height: 201px !important;
   border-radius: 5px !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/square-border.png') !important;
+  border-image-source: url('../assets/ui/square-border.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 200 fill !important;
   border-image-width: 35px !important;
@@ -5726,7 +5726,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 
 .application.sheet.emblem-rpg.item.resource-sheet .window-content {
   overflow: visible !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/item-sheet-border.png') !important;
+  border-image-source: url('../assets/ui/item-sheet-border.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 200 fill !important;
   border-image-width: 20px !important;
@@ -5945,7 +5945,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   position: relative !important;
   height: 121px !important;
   border-radius: 5px !important;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/square-border.png) !important;
+  border-image-source: url(../assets/ui/square-border.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 200 fill !important;
   border-image-width: 35px !important;
@@ -6035,7 +6035,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   overflow: visible !important;
   background: transparent !important;
   border: 0 solid transparent !important;
-  border-image: url('/systems/emblem-rpg/assets/ui/dialog-border.png') 230 fill / 20px stretch !important;
+  border-image: url('../assets/ui/dialog-border.png') 230 fill / 20px stretch !important;
 }
 
 .application.sheet.emblem-rpg.item:is(.item-sheet, .resource-sheet) .cost-tracker input {
@@ -6072,7 +6072,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
     overflow: visible !important;
     background: rgba(10, 5, 45, 0.7) !important;
     border: 0 solid transparent !important;
-    border-image: url(/systems/emblem-rpg/assets/ui/class-border.png) 100 fill / 40px stretch !important;
+    border-image: url(../assets/ui/class-border.png) 100 fill / 40px stretch !important;
     box-shadow: 0 0 16px 2px rgba(0, 0, 0, 0.7) !important;
     filter: none !important;
     backdrop-filter: blur(5px) !important;
@@ -6109,7 +6109,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .class-sheet .class-tab-nav { position:relative; z-index:4; display:flex; width:430px; height:42px; gap:3px; margin:0; padding:0; transform:translateX(15px); }
 .class-sheet .class-tab-nav .tab-button {
   position:relative; z-index:5; flex:1 1 0; min-width:0; height:42px !important; margin:0; padding:0 0 11px !important;
-  border:0 solid transparent !important; border-image:url('/systems/emblem-rpg/assets/ui/button-border.png') 220 fill / 16px stretch !important;
+  border:0 solid transparent !important; border-image:url('../assets/ui/button-border.png') 220 fill / 16px stretch !important;
   border-radius:4px 4px 0 0 !important; background:transparent !important; box-shadow:none !important;
   color:var(--color-light-6); font-family:'Libertinus Sans',serif !important; font-size:13px !important; font-weight:700;
   text-align:center; opacity:.5; transition:opacity .5s,color .5s !important;
@@ -6128,7 +6128,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .class-sheet .class-tab-content {
   position:absolute; z-index:6; top:97px; left:0; width:463px; height:413px; display:none; overflow:hidden;
   padding:10px; color:var(--color-light-4); border:0 solid transparent;
-  border-image:url('/systems/emblem-rpg/assets/ui/square-border.png') 200 fill / 20px stretch;
+  border-image:url('../assets/ui/square-border.png') 200 fill / 20px stretch;
 }
 .class-sheet .class-tab-content.active { display:block; }
 .class-sheet .class-tab-content.features-tab,
@@ -6216,7 +6216,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .chat-message {
   overflow: auto !important;
   scrollbar-width: none !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/chat-border.png') !important;
+  border-image-source: url('../assets/ui/chat-border.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 300 fill !important;
   border-image-width: 37px !important;
@@ -6830,7 +6830,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   font-family: "Jersey 10";
   font-size: 16px;
   color: var(--color-light-1);
-  border-image-source: url('/systems/emblem-rpg/assets/ui/button-border-dark.png') !important;
+  border-image-source: url('../assets/ui/button-border-dark.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 250 fill !important;
   border-image-width: 25px !important;
@@ -7074,7 +7074,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 }
 
 .window-combat-preview .form-footer button {
-    border-image-source: url('/systems/emblem-rpg/assets/ui/square-border-transparent.png') !important;
+    border-image-source: url('../assets/ui/square-border-transparent.png') !important;
     border-image-repeat: stretch !important;
     border-image-slice: 110 fill !important;
     border-image-width: 10px !important;
@@ -7512,7 +7512,7 @@ margin-right:9px!important; text-align:right;
 }
 
 .window-combat-preview .attack-sequence-display {
-    border-image-source: url(/systems/emblem-rpg/assets/ui/square-border-transparent.png) !important;
+    border-image-source: url(../assets/ui/square-border-transparent.png) !important;
     border-image-repeat: stretch !important;
     border-image-slice: 90 fill !important;
     border-image-width: 6px !important;
@@ -7629,7 +7629,7 @@ margin-right:9px!important; text-align:right;
     box-shadow: 0 0px 60px 3px rgba(0, 0, 0, 0.8)!important;
     backdrop-filter: blur(6px);
     background: rgba(15, 12, 18, 0.65) !important;
-    border-image-source: url(/systems/emblem-rpg/assets/ui/xp-border.png) !important;
+    border-image-source: url(../assets/ui/xp-border.png) !important;
     border-image-repeat: stretch !important;
     border-image-slice: 130 ;
     border-image-width: 35px ;
@@ -7699,7 +7699,7 @@ margin-right:9px!important; text-align:right;
     box-shadow: 0 0px 60px 3px rgba(0, 0, 0, 0.8)!important;
     backdrop-filter: blur(6px);
   background: rgba(15, 12, 18, 0.5) ;
-    border-image-source: url(/systems/emblem-rpg/assets/ui/xp-border.png) !important;
+    border-image-source: url(../assets/ui/xp-border.png) !important;
   border-image-repeat: stretch ;
     border-image-slice: 130 ;
     border-image-width: 35px ;
@@ -7899,7 +7899,7 @@ margin-right:9px!important; text-align:right;
   background: none !important;
   border: 0px !important;
   box-shadow: 0px 0px 20px 1px black !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/dialog-border.png') !important;
+  border-image-source: url('../assets/ui/dialog-border.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 200 fill !important;
   border-image-width: 35px !important;
@@ -7920,7 +7920,7 @@ margin-right:9px!important; text-align:right;
 .effect-preview-window .form-footer button {
   font-family: "Jersey 10";
   max-width: 166px !important;
-  border-image-source: url('/systems/emblem-rpg/assets/ui/button-border-dark.png') !important;
+  border-image-source: url('../assets/ui/button-border-dark.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 250 fill !important;
   border-image-width: 25px !important;
@@ -9332,7 +9332,7 @@ img.ect-name-badge {
 /*  Trade window                                */
 /* -------------------------------------------- */
 .application.dialog.trade-menu-dialog {
-  border-image-source: url(/systems/emblem-rpg/assets/ui/dialog-border.png) !important;
+  border-image-source: url(../assets/ui/dialog-border.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 220 fill !important;
   border-image-width: 40px !important;
@@ -9388,7 +9388,7 @@ img.ect-name-badge {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-3.png) !important;
+  border-image-source: url(../assets/ui/round-border-dark-3.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 400 fill !important;
   border-image-width: 35px !important;
@@ -9430,7 +9430,7 @@ img.ect-name-badge {
   padding: 15px;
   min-height: 450px;
   max-height: 450px;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-2.png) !important;
+  border-image-source: url(../assets/ui/round-border-dark-2.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 500 fill !important;
   border-image-width: 35px !important;
@@ -9741,7 +9741,7 @@ img.ect-name-badge {
   font-family: "Jersey 10";
   font-size: 16px;
   color: var(--color-light-1);
-  border-image-source: url('/systems/emblem-rpg/assets/ui/button-border-dark.png') !important;
+  border-image-source: url('../assets/ui/button-border-dark.png') !important;
   border-image-repeat: stretch !important;
   border-image-slice: 250 fill !important;
   border-image-width: 25px !important;
@@ -10003,7 +10003,7 @@ img.ect-name-badge {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   column-gap: 14px;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/button-border.png);
+  border-image-source: url(../assets/ui/button-border.png);
   border-image-repeat: stretch;
   border-image-slice: 300 fill;
   border-image-width: 41px;
@@ -10215,7 +10215,7 @@ img.ect-name-badge {
   height: auto;
   min-height: 0;
   padding: 8px 18px;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-3.png);
+  border-image-source: url(../assets/ui/round-border-dark-3.png);
   border-image-repeat: stretch;
   border-image-slice: 400 fill;
   border-image-width: 35px;
@@ -10395,7 +10395,7 @@ img.ect-name-badge {
   gap: 6px;
 }
 .vendor-shop-cart-actions button {
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-3.png) !important;
+  border-image-source: url(../assets/ui/round-border-dark-3.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 400 fill !important;
   border-image-width: 35px !important;
@@ -10442,7 +10442,7 @@ img.ect-name-badge {
   padding: 14px 10px;
   border-radius: 6px;
   box-sizing: border-box;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-2.png) !important;
+  border-image-source: url(../assets/ui/round-border-dark-2.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 500 fill !important;
   border-image-width: 35px !important;
@@ -10486,7 +10486,7 @@ img.ect-name-badge {
   color: var(--color-light-2);
   cursor: var(--cursor-pointer);
   margin-top: 8px;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-3.png) !important;
+  border-image-source: url(../assets/ui/round-border-dark-3.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 400 fill !important;
   border-image-width: 35px !important;
@@ -10564,7 +10564,7 @@ img.ect-name-badge {
   flex-direction: column;
   border-radius: 6px;
   overflow: hidden;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/button-border.png) !important;
+  border-image-source: url(../assets/ui/button-border.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 300 fill !important;
   border-image-width: 41px !important;
@@ -10919,7 +10919,7 @@ img.ect-name-badge {
 /*  Game menus (downtime)                       */
 /* -------------------------------------------- */
 .application.dialog.window-game-menu {
-  border-image-source: url(/systems/emblem-rpg/assets/ui/dialog-border.png) !important;
+  border-image-source: url(../assets/ui/dialog-border.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 220 fill !important;
   border-image-width: 40px !important;
@@ -11171,7 +11171,7 @@ img.ect-name-badge {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-image-source: url(/systems/emblem-rpg/assets/ui/round-border-dark-3.png) !important;
+  border-image-source: url(../assets/ui/round-border-dark-3.png) !important;
   border-image-repeat: stretch !important;
   border-image-slice: 400 fill !important;
   border-image-width: 35px !important;
@@ -19849,20 +19849,20 @@ img.ect-name-badge {
 }
 
 #bg3-hotbar-container .emblem-nameplate.nameplate-border-lord {
-    border-image-source: url(/systems/emblem-rpg/assets/ui/lord-border.png);
+    border-image-source: url(../assets/ui/lord-border.png);
 }
 
 #bg3-hotbar-container .emblem-nameplate.nameplate-border-retainer {
-    border-image-source: url(/systems/emblem-rpg/assets/ui/retainer-border.png);
+    border-image-source: url(../assets/ui/retainer-border.png);
     border-image-outset: 6px;
 }
 
 #bg3-hotbar-container .emblem-nameplate.nameplate-border-boss {
-    border-image-source: url(/systems/emblem-rpg/assets/ui/boss-border.png);
+    border-image-source: url(../assets/ui/boss-border.png);
 }
 
 #bg3-hotbar-container .emblem-nameplate.nameplate-border-npc {
-    border-image-source: url(/systems/emblem-rpg/assets/ui/npc-border.png);
+    border-image-source: url(../assets/ui/npc-border.png);
     border-image-outset: 6px;
 }
 
@@ -20235,7 +20235,7 @@ img.ect-name-badge {
 }
 
 .bg3-hotbar-container {
-    border-image-source: url(/systems/emblem-rpg/assets/ui/xp-border.png) !important;
+    border-image-source: url(../assets/ui/xp-border.png) !important;
     border-image-repeat: stretch !important;
     border-image-slice: 180 fill !important;
     border-image-width: 50px !important;
