@@ -36,7 +36,7 @@ export const COMBAT_STATS = Object.freeze(
 export const GROWTH_STATS = GROWTH_KEYS;
 
 export const CRITICAL_MULTIPLIER_BASE = 2;
-export const CRITICAL_MULTIPLIER_PER_WIT = 0.05;
+export const CRITICAL_MULTIPLIER_PER_TQN = 0.05;
 
 export const SKILLS = VOCAB_SKILLS;
 

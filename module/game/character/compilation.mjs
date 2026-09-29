@@ -14,7 +14,7 @@ import {
 } from '../../contracts/domains/characters.mjs';
 import {
   CRITICAL_MULTIPLIER_BASE,
-  CRITICAL_MULTIPLIER_PER_WIT,
+  CRITICAL_MULTIPLIER_PER_TQN,
   DIFFICULTY_FLAT_STATS,
   difficultyTier,
   isDifficultyTarget
@@ -424,7 +424,7 @@ function totalizeCharacter(compiled, source = {}) {
   stats.eva.total = totalNumeric(stats.eva) + evasionFromAgility(stats.agi.total, compiled.statuses);
   stats.acc.total = totalNumeric(stats.acc) + stats.tqn.total;
   stats.crit.total = totalNumeric(stats.crit) + stats.wit.total;
-  stats.critDmg.total = totalNumeric(stats.critDmg) + (Math.floor(stats.wit.total) * CRITICAL_MULTIPLIER_PER_WIT);
+  stats.critDmg.total = totalNumeric(stats.critDmg) + (Math.floor(stats.tqn.total) * CRITICAL_MULTIPLIER_PER_TQN);
   totalNumeric(stats.brk);
   totalNumeric(stats.critRed);
   totalNumeric(stats.brkRed);
