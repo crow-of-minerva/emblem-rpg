@@ -16,9 +16,9 @@ import { reportFoundryError, reportFoundryProbe } from '../../foundry/adapters/s
  */
 export async function createEmblemBg3Components(importExport) {
   const [PortraitContainer, PassivesContainer, BG3Component] = await Promise.all([
-    importExport('/modules/bg3-hud-core/scripts/components/containers/PortraitContainer.js', 'PortraitContainer'),
-    importExport('/modules/bg3-hud-core/scripts/components/containers/PassivesContainer.js', 'PassivesContainer'),
-    importExport('/modules/bg3-hud-core/scripts/components/BG3Component.js', 'BG3Component')
+    importExport('modules/bg3-hud-core/scripts/components/containers/PortraitContainer.js', 'PortraitContainer'),
+    importExport('modules/bg3-hud-core/scripts/components/containers/PassivesContainer.js', 'PassivesContainer'),
+    importExport('modules/bg3-hud-core/scripts/components/BG3Component.js', 'BG3Component')
   ]);
   return {
     PortraitContainer: buildPortraitContainer(PortraitContainer, BG3Component),

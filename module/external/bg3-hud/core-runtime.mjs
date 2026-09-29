@@ -93,10 +93,14 @@ export function initializeEmblemBg3Core(api, adapter) {
   return registrationPromise;
 }
 
-/** Import one export from a Core script. The error names the file or export that's missing. */
+/**
+ * Import one export from a Core script, named by its path under the data folder. getRoute adds the route prefix and
+ * gives the same URL Core's own imports resolve to, so the patches reach the classes Core runs. The error names the
+ * file or export that's missing.
+ */
 async function importRequiredExport(modulePath, exportName) {
   let imported;
-  try { imported = await import(modulePath); }
+  try { imported = await import(foundry.utils.getRoute(modulePath)); }
   catch (error) {
     reportFoundryError(import.meta.url, error, 'importRequiredExport', null, false);
     throw new Error(`BG3 HUD compatibility import failed: ${modulePath}`, { cause: error });
@@ -666,12 +670,12 @@ function patchTooltipPosition() {
 /** Import every Core class the prototype patches need, once, so a missing one stops registration before any patch. */
 async function preflightCapabilities() {
   capabilitiesPromise ??= Promise.all([
-    importRequiredExport('/modules/bg3-hud-core/scripts/components/containers/ActiveEffectsContainer.js', 'ActiveEffectsContainer'),
-    importRequiredExport('/modules/bg3-hud-core/scripts/managers/PersistenceManager.js', 'PersistenceManager'),
-    importRequiredExport('/modules/bg3-hud-core/scripts/components/containers/ControlContainer.js', 'ControlContainer'),
-    importRequiredExport('/modules/bg3-hud-core/scripts/components/ui/ContextMenu.js', 'ContextMenu'),
-    importRequiredExport('/modules/bg3-hud-core/scripts/components/ui/SlotContextMenu.js', 'SlotContextMenu'),
-    importRequiredExport('/modules/bg3-hud-core/scripts/utils/settings.js', 'updateUIScale')
+    importRequiredExport('modules/bg3-hud-core/scripts/components/containers/ActiveEffectsContainer.js', 'ActiveEffectsContainer'),
+    importRequiredExport('modules/bg3-hud-core/scripts/managers/PersistenceManager.js', 'PersistenceManager'),
+    importRequiredExport('modules/bg3-hud-core/scripts/components/containers/ControlContainer.js', 'ControlContainer'),
+    importRequiredExport('modules/bg3-hud-core/scripts/components/ui/ContextMenu.js', 'ContextMenu'),
+    importRequiredExport('modules/bg3-hud-core/scripts/components/ui/SlotContextMenu.js', 'SlotContextMenu'),
+    importRequiredExport('modules/bg3-hud-core/scripts/utils/settings.js', 'updateUIScale')
   ]).then(([ActiveEffectsContainer, PersistenceManager, ControlContainer, ContextMenu, SlotContextMenu, updateUIScale]) =>
     ({ ActiveEffectsContainer, PersistenceManager, ControlContainer, ContextMenu, SlotContextMenu, updateUIScale }));
   return capabilitiesPromise;
