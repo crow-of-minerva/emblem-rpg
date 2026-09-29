@@ -13,9 +13,11 @@ import {
   refreshCombatTab,
   refreshCombatTabDebounced,
   rerenderTracker,
+  rerenderTrackerForActorChange,
   rerenderTrackerForSightRefresh,
   rerenderTrackerForTokenChange,
-  rerenderTrackerForTokenRefresh
+  rerenderTrackerForTokenRefresh,
+  withRosterRenderHeld
 } from '../ui/apps/foundry/combat-tracker.mjs';
 import { anchorRoundWarning } from '../presentation/graphics/banners.mjs';
 import {
@@ -207,6 +209,8 @@ import {
 } from '../ui/apps/foundry/scene-config.mjs';
 import { installVisionPatches, invalidateSightGate } from '../foundry/patches/vision.mjs';
 import { installBarAttributePatch } from '../foundry/patches/bar-attributes.mjs';
+import { installRosterRenderGate } from '../foundry/patches/roster-render.mjs';
+import { actorChangeAffectsRoster } from '../game/combat/phases.mjs';
 import { installCoreKeybindingDefaults } from '../foundry/patches/core-keybindings.mjs';
 import { createEncounterSceneLock } from '../foundry/patches/scene-lock.mjs';
 import {
@@ -405,6 +409,7 @@ export function installSystemHooks() {
       initializeTokenEffectRendering();
       installVisionPatches();
       installBarAttributePatch();
+      installRosterRenderGate({ affectsRoster: actorChangeAffectsRoster, holdRender: withRosterRenderHeld });
       installCoreKeybindingDefaults();
       sceneLock.install();
       installPlaceablesFilterGate();
@@ -734,7 +739,7 @@ export function installSystemHooks() {
       guarded('unit-turn', () => runtime.encounter.onUnitTurnChanged(...args));
       guarded('actor-sight', () => runtime.vision.onActorSightChanged(...args));
       guarded('door-lock', () => runtime.vision.onDoorLockChanged(...args));
-      guarded('combat-tracker', () => rerenderTracker());
+      guarded('combat-tracker', () => rerenderTrackerForActorChange(args[1]));
       return stanceSettlement;
     },
     updateCombat: (...args) => {

@@ -707,22 +707,29 @@ function footprintPenalty(penalties, anchor, footprint) {
  * Validate a crossing landing before the movement UI offers a check. Require clear terrain,
  * a free footprint and an unobstructed center-to-center segment. Passing through allies does not allow landing on
  * them.
- * @param {object} source Movement snapshot the graph was built from.
+ * @param {object} landing The snapshot's landing facts, from {@link crossingLandingFacts}.
  * @param {{x: number, y: number}} from The square being left.
  * @param {{x: number, y: number}} to The square aimed at.
  * @param {object} [options] `ignoreWalls` lets a step authored to pass through walls land past one.
  * @returns {boolean}
  */
-function crossingLandingIsLegal(source, from, to, { ignoreWalls = false } = {}) {
-  const input = normalizeInput(source);
-  const blocked = new Set([
-    ...input.blockedCells,
-    ...input.terrainOcclusionCells,
-    ...input.terrainImpassableCells
-  ]);
+function crossingLandingIsLegal(landing, from, to, { ignoreWalls = false } = {}) {
+  const { input, blocked, occupied } = landing;
   if (!footprintFits(to, input, blocked)) return false;
-  if (footprintOverlaps(to, input.footprint, new Set(input.occupiedCells))) return false;
+  if (footprintOverlaps(to, input.footprint, occupied)) return false;
   return ignoreWalls || !stepCrossesWall(from, to, input);
+}
+
+/**
+ * What crossingLandingIsLegal reads, built once per snapshot. Normalizing costs about a millisecond on a terrain-heavy
+ * scene, so callers that check many landings build this once instead of once per landing.
+ */
+function crossingLandingFacts(source, input = normalizeInput(source)) {
+  return {
+    input,
+    blocked: new Set([...input.blockedCells, ...input.terrainOcclusionCells, ...input.terrainImpassableCells]),
+    occupied: new Set(input.occupiedCells)
+  };
 }
 
 /**
@@ -740,7 +747,9 @@ export function resolveForcedStep(source, from, to, { ignoreWalls = false } = {}
   if (footprintOverlaps(to, input.footprint, new Set(input.occupiedCells))) {
     return forcedStep(FORCED_STEP_OUTCOMES.OCCUPIED);
   }
-  if (!crossingLandingIsLegal(source, from, to, { ignoreWalls })) return forcedStep(FORCED_STEP_OUTCOMES.BLOCKED);
+  if (!crossingLandingIsLegal(crossingLandingFacts(source, input), from, to, { ignoreWalls })) {
+    return forcedStep(FORCED_STEP_OUTCOMES.BLOCKED);
+  }
   const fromElevation = finiteNumber(input.terrainElevations[cellKey(from.x, from.y)]);
   const toElevation = finiteNumber(input.terrainElevations[cellKey(to.x, to.y)]);
   if (input.airborne || fromElevation === toElevation) return forcedStep(FORCED_STEP_OUTCOMES.WALK);
@@ -768,10 +777,12 @@ export function crossingCandidates(source, from, to) {
   const leaps = direction ? crossingBridgeLandings(board, from, direction) : [];
   const squares = leaps.length ? leaps : [{ x: to.x, y: to.y, approach: null }];
   const options = [];
+  let landing = null;
   for (const square of squares) {
     const crossing = evaluateCrossing(board, from, square);
     if (!crossing) continue;
-    if (!crossingLandingIsLegal(source, from, square)) continue;
+    landing ??= crossingLandingFacts(source);
+    if (!crossingLandingIsLegal(landing, from, square)) continue;
     options.push(Object.freeze({ ...crossing, approach: square.approach ?? crossing.direction }));
   }
   return Object.freeze(options);
@@ -797,13 +808,15 @@ export function collectCrossingOptions(source, graph) {
     return true;
   };
   const options = new Map();
+  let landing = null;
   for (const anchor of graph.placements) {
     if (graph.allowance - graph.costByCell[cellKey(anchor.x, anchor.y)] < 1) continue;
     for (const target of crossingTargets(board, anchor)) {
       if (walkable(target)) continue;
       const crossing = evaluateCrossing(board, anchor, target);
       if (!crossing) continue;
-      if (!crossingLandingIsLegal(source, anchor, target)) continue;
+      landing ??= crossingLandingFacts(source);
+      if (!crossingLandingIsLegal(landing, anchor, target)) continue;
       const odds = resolveCrossingCheck(crossing, source);
       const option = Object.freeze({
         ...crossing, skillKey: odds.skillKey, chance: odds.chance, band: successChanceBand(odds.chance)

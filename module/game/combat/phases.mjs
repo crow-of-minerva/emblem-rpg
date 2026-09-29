@@ -257,6 +257,34 @@ export function tokenChangeAffectsRoster(changes) {
     && !(key === 'texture' && facingOnly(changes.texture)));
 }
 
+/**
+ * The Actor paths a roster row never reads: a movement plan's bookkeeping (a row reads only whether the turn is
+ * spent) and the document stamp Foundry adds to every write.
+ */
+const ROSTER_INERT_ACTOR_PATHS = Object.freeze([
+  '_id',
+  'system.turn.movementPlanning',
+  'system.turn.movementControllerId',
+  'system.turn.movementAnchorX',
+  'system.turn.movementAnchorY',
+  'system.turn.movementPlanStartedAt'
+]);
+
+/** Whether an Actor write can change what the roster shows. Picking a unit up or putting it down cannot. */
+export function actorChangeAffectsRoster(changes) {
+  const paths = changePaths(changes).filter(path => !path.startsWith('_stats.') && path !== '_stats');
+  if (!paths.some(path => path !== '_id')) return true;
+  return paths.some(path => !ROSTER_INERT_ACTOR_PATHS.includes(path));
+}
+
+/** Every leaf path an expanded or dotted change names. */
+function changePaths(value, prefix = '') {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return prefix ? [prefix] : [];
+  const keys = Object.keys(value);
+  if (!keys.length) return prefix ? [prefix] : [];
+  return keys.flatMap(key => changePaths(value[key], prefix ? `${prefix}.${key}` : key));
+}
+
 /** Whether a texture change only turns the sprite around, as the movement facing write does. */
 function facingOnly(texture) {
   const keys = Object.keys(texture ?? {});

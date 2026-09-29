@@ -818,8 +818,6 @@ function showTargetIndicator(token) {
   const tick = () => {
     const current = canvas.tokens?.get(token.id);
     if (!current) return;
-    // The overlay sits above the vision mask, so it borrows the token's own visibility: a target that walks out
-    // of sight, or a hidden token, must not show its position through the reticle.
     sprite.visible = current.visible === true;
     if (!sprite.visible) return;
     phase += 0.0125;

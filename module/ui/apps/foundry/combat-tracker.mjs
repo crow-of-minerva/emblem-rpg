@@ -5,7 +5,8 @@ import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { UNIT_TYPES } from '../../../game/character/rules.mjs';
 import { deadlineFor, objectiveMarkers } from '../../../game/combat/objectives.mjs';
 import {
-  enemyListingFlipped, enemyListingIncomplete, enemyRowListed, phaseRosterProgress, tokenChangeAffectsRoster
+  actorChangeAffectsRoster, enemyListingFlipped, enemyListingIncomplete, enemyRowListed, phaseRosterProgress,
+  tokenChangeAffectsRoster
 } from '../../../game/combat/phases.mjs';
 import {
   downtimeResetAvailable, energyRestoreAvailable, resolveCommittedEnergy
@@ -216,6 +217,7 @@ export class EmblemCombatTracker extends BaseCombatTracker {
   /** Collapse the burst of renders one document write produces into a single pass over the DOM. */
   async render(options = {}, _options = {}) {
     if (typeof options === 'boolean') options = Object.assign(_options, { force: options });
+    if (rosterRenderHeld > 0 && !options.force && this.state > 0) return this;
     if (options.force || this.state <= 0) {
       this.#dropQueuedRender();
       return super.render(options, _options);
@@ -890,6 +892,26 @@ export function rerenderTracker() {
 /** Re-render for a Token write, unless it touched only the fields no roster row reads. */
 export function rerenderTrackerForTokenChange(changes) {
   if (tokenChangeAffectsRoster(changes)) rerenderTracker();
+}
+
+/** Re-render for an Actor write, unless it touched only the fields no roster row reads. */
+export function rerenderTrackerForActorChange(changes) {
+  if (actorChangeAffectsRoster(changes)) rerenderTracker();
+}
+
+let rosterRenderHeld = 0;
+
+/**
+ * Run `work` with roster renders refused, for Foundry core writes that re-render the tracker regardless of what
+ * changed. A forced render still goes through.
+ */
+export function withRosterRenderHeld(work) {
+  rosterRenderHeld += 1;
+  try {
+    return work();
+  } finally {
+    rosterRenderHeld -= 1;
+  }
 }
 
 /** Re-render for a Token refresh only when its rendered visibility lists or drops an enemy row. */
