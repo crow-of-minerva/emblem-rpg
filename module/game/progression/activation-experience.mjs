@@ -22,7 +22,7 @@ const LEVEL_FACTOR_MAX = 2;
 /**
  * The share of an ally's HP a `damage-based` entry counts as a full heal.
  */
-const FULL_HEAL_HP_SHARE = 0.8;
+const FULL_HEAL_HP_SHARE = 0.9;
 
 /* -------------------------------------------- */
 /*  Table parsing                               */
