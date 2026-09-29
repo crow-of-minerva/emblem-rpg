@@ -577,12 +577,16 @@ export class CharacterSheet extends EmblemSheetMixin(foundry.applications.sheets
    */
   _prepareUnitContext(context) {
     const system = this.document.system;
-    context.unitTypes = UNIT_TYPES.map(unit => ({
-      ...unit,
-      active: Boolean(system.unitType[unit.key]),
-      image: `${context.systemPath}/assets/ui/unit-types/${unit.key}-flat.png`,
-      tooltip: getTooltip(TOOLTIP_IDS.TOGGLE_UNIT_TYPE, unit)
-    }));
+    context.unitTypes = UNIT_TYPES.map(unit => {
+      const active = system.unitType[unit.key] === true;
+      const innate = system.innateUnitType[unit.key] === true;
+      return {
+        ...unit,
+        active,
+        image: `${context.systemPath}/assets/ui/unit-types/${unit.key}-flat.png`,
+        tooltip: getTooltip(TOOLTIP_IDS.TOGGLE_UNIT_TYPE, { ...unit, active, innate })
+      };
+    });
     const classItem = this.document.items.find(item => item.type === 'Class') ?? null;
     const zenith = zenithStats({
       stats: system.stats, caps: system.caps, growthKeys: GROWTH_KEYS,
@@ -753,7 +757,7 @@ export class CharacterSheet extends EmblemSheetMixin(foundry.applications.sheets
         event.preventDefault();
         if (!this.isEditable) return;
         const key = event.currentTarget.dataset.unitType;
-        await this.document.update({ [`system.unitType.${key}`]: !this.document.system.unitType[key] });
+        await this.document.update({ [`system.innateUnitType.${key}`]: !this.document.system.innateUnitType[key] });
       });
     }
     for (const element of this.element.querySelectorAll('[data-skill-editor]')) {
