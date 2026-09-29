@@ -4,7 +4,7 @@
 /*  System configuration                        */
 /* -------------------------------------------- */
 export const SYSTEM_TITLE = 'Emblem RPG';
-export const SYSTEM_VERSION = '1.0.1';
+export const SYSTEM_VERSION = '1.0.2';
 
 /**
  * World schema version stored in the `schemaVersion` setting. `stampWorldSchema` in
