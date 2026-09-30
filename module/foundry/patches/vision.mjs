@@ -465,6 +465,7 @@ function sourceIdOf(source) {
 /*  Shared party sight                          */
 /* -------------------------------------------- */
 /** Make a unit a vision source on this client when it shares the sight pool resolveSightPool chose here. */
+/** Also ensures NPCs with OBSERVER level permissions for players don't add to their vision*/
 function pooledVisionSource(wrapped, ...args) {
   const pool = resolveSightPool(projectSightPoolContext());
   if (pool !== null
@@ -474,6 +475,7 @@ function pooledVisionSource(wrapped, ...args) {
       && sharesPoolSight(pool, projectPartySightFacts(this.actor))) {
     return true;
   }
+  if (!game.user.isGM && !this.actor?.isOwner) return false;
   return wrapped(...args);
 }
 
