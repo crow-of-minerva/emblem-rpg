@@ -1,5 +1,14 @@
 # Changelog
 
+
+## Emblem RPG 1.0.2a HOTFIX
+
+### Hotfix
+
+- Players can no longer see through NPCs token vision while having OBSERVER level permissions (Emblem grants this permission by default so players can inspect an enemy's stats and actor sheet for the purposes of tactical gameplay).
+
+---------------------
+
 ## Emblem RPG 1.0.2
 
 ### Changed

@@ -2,9 +2,9 @@
   "id": "emblem-rpg",
   "title": "Emblem RPG",
   "description": "Emblem RPG for Foundry VTT.",
-  "version": "1.0.2",
+  "version": "1.0.2a",
   "manifest": "https://github.com/crow-of-minerva/emblem-rpg/releases/latest/download/system.json",
-  "download": "https://github.com/crow-of-minerva/emblem-rpg/releases/download/v1.0.2/emblem-rpg.zip",
+  "download": "https://github.com/crow-of-minerva/emblem-rpg/releases/download/v1.0.2a/emblem-rpg.zip",
   "license": "LICENSE",
   "background": "systems/emblem-rpg/assets/title.png",
   "compatibility": {
