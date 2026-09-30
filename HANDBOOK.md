@@ -20,7 +20,7 @@ Chapter 11 of FE Engage is my favorite Fire Emblem map, and probably the most fu
 
 In Emblem RPG, players control a **LORD** character as their primary driver. Their Lord is who they roleplay as and who they fully own. They will additionally own a roster of **RETAINER** characters as well, who, for one story reason or another, have cause to follow the player's Lord into battle. Players work together to form a **Party** (as of right now, PVP is not really supported nor planned). 
 
-The game is designed so that sessions of a campaign in Emblem RPG proceed in cycles of Map Encounter -> Downtime -> Map Encounter -> Downtime, and so on and so on. Think Three Houses: there's some story, then a combat map, then back to the monastary for some downtime and more story, then a combat, then downtime again. This is the play cycle that Emblem RPG is designed for, so rather than DnD where combat and rolepalying is ostensibly intermingled in the same session, here we more or less explicitly expect our players to either be doing one or the other depending on what part of that cycle the table is in. This is, of course, just a suggestion. You know best what works for you and your group.
+The game is designed so that sessions of a campaign in Emblem RPG proceed in cycles of Map Encounter -> Downtime -> Map Encounter -> Downtime, and so on and so on. Think Three Houses: there's some story, then a combat map, then back to the monastary for some downtime and more story, then a combat, then downtime again. This is the play cycle that Emblem RPG is designed for, so rather than DnD where combat and roleplaying is ostensibly intermingled in the same session, here we more or less explicitly expect our players to either be doing one or the other depending on what part of that cycle the table is in. This is, of course, just a suggestion. You know best what works for you and your group.
 
 Map Encounters are the substantive action of the game, and Downtime is like the aftercare. There are Downtime activities in the system player units (Lords and Retainers) can perform to progress in various ways and prepare for the next encounter. But more than that, Downtime is also when the roleplaying part of Emblem RPG can shine. Since every map is (at least theoretically) an intense experience, the question falls on the GM and Players to ask -- "how have the characters been impacted by that experience?" Map encounters aren't just 3 wolves in a forest after all. It's a whole structured event with inherent narrative significance, and that is precisely what a Fire Emblem approach to map and encounter design engenders: grand storytelling with stakes. *Because* the map is so big and *because* an encounter runs the whole session, and *because* so many characters are involved, it naturally creates for us infinite possibilities for storytelling. Again, Chapter 11. It's the player Party saving a town from a whole small army of invaders. It's holding a defense point against impossibly surmounting odds until a fated hour of salvation. It's running for your life against the Big Bad, who stole all your god damn Emblem Rings.
 
@@ -29,7 +29,7 @@ And there's Permadeath. Units can die. Your Lord can die. But this is where the 
 
 ## Part I - The Character Sheet
 
-![A Lord's character sheet](docs/images/character-sheet.png)
+
 
 A lot of the game's mechanics can be learned from understanding the elements of its Character Sheet. 
 
@@ -62,10 +62,10 @@ A lot of the game's mechanics can be learned from understanding the elements of 
 
 Combat stats are derived stats that determine the play by play of combat mechanics.
 
-    - Weight (Wgt). Total equipped item's burden. If this value exceeds the actor's Build (BLD), then the difference is deducted from the actor's Agility.
-    - Range (Rng). The unit's current range of action with their equipped weapon or spell.
-    - Evasion (Eva).
-    - Accuracy (Acc).
+  - Weight (Wgt). Total equipped item's burden. If this value exceeds the actor's Build (BLD), then the difference is deducted from the actor's Agility.
+  - Range (Rng). The unit's current range of action with their equipped weapon or spell.
+  - Evasion (Eva).
+  - Accuracy (Acc).
 
 3. **Portrait**
 4. **Class**
