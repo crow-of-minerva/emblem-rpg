@@ -393,6 +393,27 @@ export function planEncounterAftermath(units = []) {
 }
 
 /**
+ * Plan what a phase's end does to the timed summons on its map, for engine/combat/encounters/phases.mjs: each summon
+ * whose countdown ticks on `closingPhase` loses a phase, and one with none left is removed. A summon without a
+ * countdown lasts until the encounter ends.
+ * @param {ReadonlyArray<object>} units Detached `{tokenUuid, summoned, summonRemaining, summonTicksOn}` facts.
+ * @param {string} closingPhase The phase now ending.
+ * @returns {{expiredTokenUuids: string[], counters: Array<{tokenUuid: string, remaining: number}>}}
+ */
+export function planSummonExpiry(units = [], closingPhase) {
+  const expiredTokenUuids = [];
+  const counters = [];
+  for (const unit of units) {
+    const tokenUuid = String(unit?.tokenUuid ?? '');
+    const remaining = Math.floor(Number(unit?.summonRemaining));
+    if (unit?.summoned !== true || !tokenUuid || !(remaining >= 1) || unit.summonTicksOn !== closingPhase) continue;
+    if (remaining > 1) counters.push({ tokenUuid, remaining: remaining - 1 });
+    else expiredTokenUuids.push(tokenUuid);
+  }
+  return { expiredTokenUuids, counters };
+}
+
+/**
  * The Actors on a map whose record of this map's Rallies must clear, each once, for an encounter's start
  * (beginEncounter in engine/combat/encounters/phases.mjs) and its end (planEncounterAftermath).
  * @param {ReadonlyArray<object>} units Detached `{actorUuid, rallied}` facts, one per placed Token.

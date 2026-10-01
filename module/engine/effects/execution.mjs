@@ -171,13 +171,13 @@ export class EffectExecutionService {
   }
 
   /**
-   * Claim the summoned unit's Actor, then create its Token. The writer records the new Token's id in the run's
-   * operation before creating it.
+   * Claim the summoned unit's Actor, and those the earlier summons it replaces reach, then create its Token. The
+   * writer records the new Token's id in the run's operation before creating it.
    */
   async #spawn(operation, runtime, resources) {
     const spawn = await this.effects.prepareSpawn(operation, runtime);
     if (spawn?.ok !== true) return spawn ?? SPAWN_UNPREPARED;
-    const busy = claimWrites(resources, [spawn.actorUuid]);
+    const busy = claimWrites(resources, [spawn.actorUuid, ...(spawn.replacedActorUuids ?? [])]);
     if (busy) return busy;
     const outcome = await this.effects.createSpawn(spawn, operation, runtime);
     adoptSpawn(runtime, outcome?.spawned);

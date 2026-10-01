@@ -86,6 +86,10 @@ export const ILLUSION_CASTER_FLAG = 'illusionCaster';
  */
 export const SUMMONED_BY_FLAG = 'summonedBy';
 
+/** The Token flags a timed summon carries: the phases it has left, and the phase whose end counts them down. */
+export const SUMMON_REMAINING_FLAG = 'summonRemaining';
+export const SUMMON_TICKS_ON_FLAG = 'summonTicksOn';
+
 export const ENCOUNTER_PHASE_FLAG = 'combatPhase';
 export const ENCOUNTER_ROUND_FLAG = 'emblemRound';
 

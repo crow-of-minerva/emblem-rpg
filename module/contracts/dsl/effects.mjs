@@ -21,7 +21,7 @@ export const STEP_KINDS = Object.freeze([
   'applyEffect', 'removeEffect', 'setFaction',
   'animation', 'floatingText', 'playVoice',
 
-  'moveToken', 'spawnToken', 'despawnToken', 'restoreAction', 'playResist',
+  'moveToken', 'spawnToken', 'restoreAction', 'playResist',
   'refreshPathfinding',
   'unequip',
   'guard',
@@ -147,8 +147,7 @@ const STEP_KEYS_BY_KIND = {
   animation:     new Set([...SHARED_KEYS, 'animation', 'persistent', 'tag', 'attachToEffectName', 'attachTarget', 'await']),
   floatingText:  new Set([...SHARED_KEYS, 'target', 'text', 'color', 'fontSize', 'offsetY', 'durationMs']),
   moveToken:     new Set([...SHARED_KEYS, 'target', 'mode', 'distance', 'location', 'pair', 'dx', 'dy', 'bypassWalls', 'geometry']),
-  spawnToken:    new Set([...SHARED_KEYS, 'actorUuid', 'location', 'name', 'rotation', 'tokenOverrides', 'isFriendly', 'grantOwnership', 'summoningSickness']),
-  despawnToken:  new Set([...SHARED_KEYS, 'filter']),
+  spawnToken:    new Set([...SHARED_KEYS, 'actorUuid', 'location', 'name', 'tokenOverrides', 'isFriendly', 'grantOwnership', 'summoningSickness', 'duration', 'replaceOnRecast']),
   restoreAction: new Set([...SHARED_KEYS, 'target', 'actions']),
   playResist:    new Set([...SHARED_KEYS, 'target']),
   playVoice:     new Set([...SHARED_KEYS, 'target', 'category', 'skipIfSelf']),
@@ -328,10 +327,8 @@ uses as its linkAnimationTag, or attach an effect step to "lastSpawned"`);
         errors.push(`${path}.actorUuid: required`);
       }
       if (step.location === undefined) errors.push(`${path}.location: required`);
-      break;
-    case 'despawnToken':
-      if (!isPlainObject(step.filter) || typeof step.filter.flagPath !== 'string') {
-        errors.push(`${path}.filter: required { flagPath: string, value: literal|{expr} }`);
+      if (step.duration !== undefined && !(Number.isInteger(step.duration) && step.duration >= 0)) {
+        errors.push(`${path}.duration: must be an integer >= 0 (0 lasts until the encounter ends)`);
       }
       break;
     case 'restoreAction':

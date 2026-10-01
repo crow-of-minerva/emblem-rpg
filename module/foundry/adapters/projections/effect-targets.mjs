@@ -1,6 +1,6 @@
 /** @layer foundry/adapters/projections */
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
-import { SUMMONED_BY_FLAG } from '../../../contracts/domains/combat.mjs';
+import { SUMMON_REMAINING_FLAG, SUMMON_TICKS_ON_FLAG, SUMMONED_BY_FLAG } from '../../../contracts/domains/combat.mjs';
 import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
 import { factionGroup } from '../../../game/character/rules.mjs';
 import { resolveTargetKind, TARGET_KINDS } from '../../../game/objects/rules.mjs';
@@ -61,7 +61,6 @@ async function operationReach(step, targets, runtime, guardBonds) {
       const pair = [resolveToken(runtime.self?.tokenUuid), resolveToken(targets[0]?.tokenUuid)];
       return tokensReach(await Promise.all(pair));
     }
-    case 'despawnToken': return tokensReach(despawnedTokens(await resolveScene(runtime.sceneUuid), step));
     case 'terrainEdit': return { actorUuids: [], sceneUuids: [runtime.sceneUuid] };
     default: return {};
   }
@@ -76,12 +75,6 @@ async function movedTokens(step, targets, runtime, guardBonds) {
   const moved = [moving, pair].filter(Boolean);
   const partners = moved.map(token => guardBonds?.bondOf?.(token)).flatMap(bond => [bond?.guarded, bond?.guarder]);
   return [...moved, ...partners];
-}
-
-/** Every Token on a Scene a despawn step's flag filter selects. */
-function despawnedTokens(scene, step) {
-  return collectionValues(scene?.tokens)
-    .filter(token => token.getFlag?.(SYSTEM_ID, step.filter?.flagPath) === step.filter?.value);
 }
 
 function tokensReach(tokens) {
@@ -116,13 +109,18 @@ function distinct(values) {
  * reservation, so every summon gets a fresh random id. The Token is stamped with its summoner under
  * `SUMMONED_BY_FLAG`, beside whatever flags its prototype and the step's overrides carry, which is how an ending
  * encounter finds the summons to remove. No world Actor is created: the Token shows the step's Actor, or an unlinked
- * copy of it that is deleted with the Token.
+ * copy of it that is deleted with the Token. A timed summon also carries its phase countdown. A step that replaces on
+ * recast names the caster's earlier summons of the same Actor, other than those in `placed`, and every actor their
+ * removal writes, for the engine to claim.
  * @param {object} step Prepared spawn step.
  * @param {object} runtime Effect runtime.
- * @param {{reserved?: object|null, randomId: function(): string}} options The recorded reservation and an id source.
+ * @param {{reserved?: object|null, randomId: function(): string, guardBonds?: object|null, placed?: Set<string>}}
+ *   options The recorded reservation, an id source, the bond service, and the Tokens this command already placed.
  * @returns {Promise<Readonly<object>>} The prepared summon, or `{ok: false, code}`.
  */
-export async function prepareEffectSpawn(step, runtime, { reserved = null, randomId }) {
+export async function prepareEffectSpawn(step, runtime, {
+  reserved = null, randomId, guardBonds = null, placed = new Set()
+}) {
   const actor = await resolveActor(step.actorUuid);
   const scene = await resolveScene(runtime.sceneUuid);
   if (!actor || !scene) return SPAWN_SOURCE_MISSING;
@@ -141,10 +139,10 @@ export async function prepareEffectSpawn(step, runtime, { reserved = null, rando
     name: step.name || source?.name,
     actorId: actor.id,
     x: Number(location.x) * grid,
-    y: Number(location.y) * grid,
-    rotation: Number(step.rotation) || 0
+    y: Number(location.y) * grid
   };
-  data.flags = summonFlags(data.flags, runtime.self?.actorUuid);
+  data.flags = summonFlags(data.flags, runtime.self?.actorUuid, await summonTimer(step, runtime));
+  const replaced = step.replaceOnRecast === true ? replacedSummons(scene, actor, runtime, guardBonds, placed) : null;
   const tokenUuid = String(existing?.uuid ?? `${scene.uuid}.Token.${tokenId}`);
   const actorUuid = existing?.actor?.uuid ?? (data.actorLink === true ? actor.uuid : `${tokenUuid}.Actor.${actor.id}`);
   return Object.freeze({
@@ -155,15 +153,36 @@ export async function prepareEffectSpawn(step, runtime, { reserved = null, rando
     actorUuid: String(actorUuid),
     location: Object.freeze({ x: Number(location.x), y: Number(location.y) }),
     existed: Boolean(existing),
+    replacedTokenUuids: Object.freeze(replaced?.tokenUuids ?? []),
+    replacedActorUuids: distinct(replaced?.actorUuids ?? []),
     data
   });
 }
 
-/** A summon's Token flags with its summoner's actor uuid added to this system's scope, copied rather than shared. */
-function summonFlags(flags, casterUuid) {
+/** A summon's Token flags with its summoner's actor uuid and countdown added to this system's scope, copied. */
+function summonFlags(flags, casterUuid, timer) {
   const copied = structuredClone(flags ?? {});
-  copied[SYSTEM_ID] = { ...(copied[SYSTEM_ID] ?? {}), [SUMMONED_BY_FLAG]: String(casterUuid ?? '') };
+  copied[SYSTEM_ID] = { ...(copied[SYSTEM_ID] ?? {}), [SUMMONED_BY_FLAG]: String(casterUuid ?? ''), ...timer };
   return copied;
+}
+
+/** A timed summon's countdown, ticking at the end of its caster's own phase; none when it lasts the encounter. */
+async function summonTimer(step, runtime) {
+  const duration = Math.floor(Number(step.duration) || 0);
+  if (duration < 1) return {};
+  const caster = await resolveActor(runtime.self?.actorUuid);
+  const ticksOn = factionGroup(caster?.system?.faction?.role) === 'enemy' ? 'Enemy' : 'Player';
+  return { [SUMMON_REMAINING_FLAG]: duration, [SUMMON_TICKS_ON_FLAG]: ticksOn };
+}
+
+/** The caster's earlier summons of `actor` on the Scene a recast removes, with the Guard partners each leaves. */
+function replacedSummons(scene, actor, runtime, guardBonds, placed) {
+  const casterUuid = String(runtime.self?.actorUuid ?? '');
+  if (!casterUuid) return null;
+  const tokens = collectionValues(scene.tokens).filter(token => token.actorId === actor.id
+    && token.getFlag?.(SYSTEM_ID, SUMMONED_BY_FLAG) === casterUuid && !placed.has(token.uuid));
+  const partners = tokens.map(token => guardBonds?.bondOf?.(token)).flatMap(bond => [bond?.guarded, bond?.guarder]);
+  return { tokenUuids: tokens.map(token => token.uuid), actorUuids: tokensReach([...tokens, ...partners]).actorUuids };
 }
 
 /* -------------------------------------------- */

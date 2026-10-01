@@ -31,6 +31,7 @@ import { DEFAULT_STATUS_DURATION } from '../../../contracts/domains/characters.m
 import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
 import { ACTIVATION_EXPERIENCE_USES_FLAG } from '../../../contracts/domains/progression.mjs';
 import { applyRallyEffect, recordRallyTarget } from './rallies.mjs';
+import { removeSummons } from './encounters.mjs';
 import { projectActivationExperienceUses } from '../projections/items.mjs';
 import { projectGeometrySight } from '../projections/terrain.mjs';
 import { projectExchangeHealthTarget } from '../projections/combat-exchange.mjs';
@@ -44,6 +45,9 @@ import {
 } from '../projections/effect-targets.mjs';
 
 const effectOptions = () => ({ emblemEffectSettlement: true });
+
+/** The summon Tokens each running command's operation has placed, which a recast in that command leaves standing. */
+const placedSummons = new WeakMap();
 
 /** The only field `FoundryItemActivationSettlement.settleActivation` writes on the Item a use activates. */
 const ACTIVATED_ITEM_PATHS = Object.freeze(['system.uses']);
@@ -120,14 +124,23 @@ export class FoundryEffectRepository {
     return resolveEffectWrites(operation, runtime, { guardBonds: this.guardBonds });
   }
 
-  /** Prepare a summon's Token data and id without creating it (prepareEffectSpawn). */
+  /**
+   * Prepare a summon's Token data and id without creating it (prepareEffectSpawn). A recast never replaces a summon
+   * this command already placed, for another target of the same use or an earlier step.
+   */
   prepareSpawn(operation, runtime) {
-    return prepareEffectSpawn(operation.step, runtime, { reserved: null, randomId: () => this.randomId() });
+    const placed = new Set([...(placedSummons.get(runtime.operation) ?? []), runtime.lastSpawnedTokenUuid]);
+    return prepareEffectSpawn(operation.step, runtime, {
+      reserved: null, randomId: () => this.randomId(), guardBonds: this.guardBonds, placed
+    });
   }
 
-  /** Create a prepared summon, reserving its identity in the run's operation before the Token exists. */
+  /**
+   * Create a prepared summon, reserving its identity in the run's operation before the Token exists, after removing
+   * the earlier summons it replaces.
+   */
   createSpawn(spawn, operation, runtime) {
-    return createEffectSpawn(spawn, operation.step, runtime);
+    return createEffectSpawn(spawn, operation.step, runtime, this.guardBonds);
   }
 
   /** Add the voice clip or linked status only the host can read to a presentation step, or null to skip it. */
@@ -160,7 +173,6 @@ export class FoundryEffectRepository {
       case 'removeEffect': return removeEffects(writes, step, runtime, this);
       case 'setFaction': return setFaction(targets, step, runtime);
       case 'moveToken': return moveTokens(targets, step, runtime, this, choices);
-      case 'despawnToken': return despawnTokens(writes, runtime);
       case 'restoreAction': return restoreActions(targets, step, runtime);
       case 'unequip': return unequip(targets, runtime);
       case 'guard': return guard(targets, runtime, this);
@@ -533,10 +545,16 @@ function placementFill(token, actor) {
 /**
  * Create the reserved summon Token, or adopt the one already standing under its id, then initialize it.
  * A Token this run creates is removed whole if the command fails, so only an adopted one is captured.
+ * The earlier summons it replaces leave first, through the same removal as a timed summon's expiry.
  */
-async function createEffectSpawn(spawn, step, runtime) {
+async function createEffectSpawn(spawn, step, runtime, guardBonds = null) {
   const scene = await resolveScene(spawn.sceneUuid);
   if (!scene) return Object.freeze({ ok: false, code: PRECONDITION.SPAWN_SOURCE_MISSING });
+  const replaced = (await Promise.all((spawn.replacedTokenUuids ?? []).map(uuid => resolveToken(uuid))))
+    .filter(token => token?.parent === scene);
+  if (replaced.length && !await removeSummons(scene, replaced, guardBonds, runtime?.operation ?? null)) {
+    return Object.freeze({ ok: false, code: 'effect.spawn-failed' });
+  }
   let created = scene.tokens.get(spawn.tokenId) ?? null;
   const placedNow = !created;
   if (!created) {
@@ -548,6 +566,10 @@ async function createEffectSpawn(spawn, step, runtime) {
     });
   }
   if (!created) return Object.freeze({ ok: false, code: 'effect.spawn-failed' });
+  if (runtime?.operation) {
+    const placed = placedSummons.get(runtime.operation) ?? new Set();
+    placedSummons.set(runtime.operation, placed.add(String(created.uuid)));
+  }
   const spawnedActor = created.actor;
   if (spawnedActor) {
     const caster = await resolveActor(runtime.self?.actorUuid);
@@ -574,18 +596,6 @@ async function createEffectSpawn(spawn, step, runtime) {
     ok: true,
     spawned: Object.freeze({ actorUuid: String(created.actor?.uuid ?? ''), tokenUuid: String(created.uuid ?? '') })
   });
-}
-
-/** Remove the Tokens the despawn step's filter selected when its writes were resolved. */
-async function despawnTokens(writes, runtime) {
-  const scene = await resolveScene(runtime.sceneUuid);
-  if (!scene) return Object.freeze({ ok: false, code: 'effect.scene-missing' });
-  const tokens = (await Promise.all(writes.tokenUuids.map(tokenUuid => resolveToken(tokenUuid))))
-    .filter(token => token?.parent === scene);
-  if (!tokens.length) return Object.freeze({ ok: true });
-  await runtime?.operation?.capture({ deleting: tokens });
-  await scene.deleteEmbeddedDocuments('Token', tokens.map(token => token.id), effectOptions());
-  return Object.freeze({ ok: true });
 }
 
 /**

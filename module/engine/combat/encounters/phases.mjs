@@ -21,7 +21,8 @@ import {
   phaseRosterProgress,
   planPausedEncounter,
   planPhaseTurnUpdates,
-  planRallyRecordReset
+  planRallyRecordReset,
+  planSummonExpiry
 } from '../../../game/combat/phases.mjs';
 import {
   announceOutcome,
@@ -345,6 +346,7 @@ const TRANSITION_STAGES = Object.freeze([
   checkOutgoingObjectives,
   fireOutgoingSpawns,
   expireOutgoingTerrain,
+  expireOutgoingSummons,
   writeIncomingPhase,
   armIncomingTurns,
   openIncomingPhase,
@@ -375,7 +377,7 @@ async function settlePhaseTransition(context) {
 /**
  * Record the before-images of everything an ordinary phase change writes, in one save: the Scene's phase, round and
  * the terrain entries the expiry sweep will rewrite, plus each participant's turn state. Health, effect, spawn and
- * defeat writers capture what they newly reach right before writing.
+ * defeat writers, and the summon expiry, capture what they newly reach right before writing.
  */
 async function capturePhaseOpening(context) {
   const { services, sceneUuid, snapshot, outgoing } = context;
@@ -454,6 +456,21 @@ async function expireOutgoingTerrain(context) {
   const { sceneUuid, services, outgoing } = context;
   const swept = await services.terrain.expireTimedEdits(sceneUuid, outgoing, services.operation ?? null);
   return swept.ok === true ? TRANSITION_OK : TRANSITION_FAILED;
+}
+
+/**
+ * Count down the timed summons that tick on the outgoing phase and remove those whose time ran out. It runs after
+ * the side's phase-end passives and the objective check, and before the incoming phase is written, so an expired
+ * summon is never armed for the next phase. The writer captures the summons it reaches right before writing.
+ */
+async function expireOutgoingSummons(context) {
+  const { sceneUuid, services, outgoing } = context;
+  const board = await services.encounters.getAftermathSnapshot?.(sceneUuid);
+  const plan = planSummonExpiry(board?.units, outgoing);
+  if (!plan.expiredTokenUuids.length && !plan.counters.length) return TRANSITION_OK;
+  return await services.encounters.expireSummons(sceneUuid, plan, services.operation ?? null)
+    ? TRANSITION_OK
+    : TRANSITION_FAILED;
 }
 
 /* -------------------------------------------- */

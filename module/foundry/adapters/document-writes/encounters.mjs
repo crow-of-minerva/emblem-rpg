@@ -5,7 +5,8 @@ import {
   EXPLORATION_FLAG,
   GUARD_BOND_BREAKS,
   OBJECTIVE_FLAGS,
-  PAUSED_ENCOUNTER_FLAG
+  PAUSED_ENCOUNTER_FLAG,
+  SUMMON_REMAINING_FLAG
 } from '../../../contracts/domains/combat.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { RALLY_RECORD_FLAG } from '../../../contracts/domains/progression.mjs';
@@ -47,6 +48,9 @@ const COMBAT_ACTIVE_PATHS = Object.freeze(['active']);
 
 /** A unit's record of the Rallies it cast this map, which an encounter's start and end both clear. */
 const RALLY_RECORD_PATH = `flags.${SYSTEM_ID}.${RALLY_RECORD_FLAG}`;
+
+/** The phases a timed summon has left, which each phase change that reaches it counts down. */
+const SUMMON_REMAINING_PATH = `flags.${SYSTEM_ID}.${SUMMON_REMAINING_FLAG}`;
 
 /**
  * Saves encounter state for engine/combat/encounters: the Scene's phase and round, units' turn state, effect decay,
@@ -359,6 +363,34 @@ export class FoundryEncounterRepository {
   }
 
   /**
+   * Count down the timed summons an ending phase reaches and remove those whose time ran out, as `planSummonExpiry`
+   * planned it for the phase change in engine/combat/encounters/phases.mjs. Each counter is captured before it is
+   * written, and the removal goes through removeSummons.
+   * @param {string} sceneUuid The map whose phase is ending.
+   * @param {{expiredTokenUuids: string[], counters: Array<{tokenUuid: string, remaining: number}>}} plan
+   * @param {object|null} [operation] The phase change's operation.
+   * @returns {Promise<boolean>} Whether every counter is written and every expired summon is gone.
+   */
+  async expireSummons(sceneUuid, plan, operation = null) {
+    const scene = await resolveScene(sceneUuid);
+    if (!scene) return false;
+    try {
+      const counted = await sceneTokens(scene, plan.counters.map(counter => counter.tokenUuid));
+      await operation?.capture({
+        documents: counted.map(token => ({ document: token, paths: [SUMMON_REMAINING_PATH] }))
+      });
+      for (const token of counted) {
+        const { remaining } = plan.counters.find(counter => counter.tokenUuid === token.uuid);
+        await token.update({ [SUMMON_REMAINING_PATH]: remaining }, encounterOptions());
+      }
+      return await removeSummons(scene, await sceneTokens(scene, plan.expiredTokenUuids), this.guardBonds, operation);
+    } catch (diagnosticError) {
+      reportFoundryError(import.meta.url, diagnosticError, 'expireSummons');
+      return false;
+    }
+  }
+
+  /**
    * Clear the record of the Rallies each named unit cast this map, for a new encounter's start (beginEncounter in
    * engine/combat/encounters/phases.mjs). The records are captured before they are cleared.
    * @param {string[]} actorUuids The Actors `planRallyRecordReset` named.
@@ -579,6 +611,23 @@ async function clearDrivenHold() {
 async function resolveSceneCombat(sceneUuid) {
   const scene = await resolveScene(sceneUuid);
   return scene ? findSceneCombat(scene) : null;
+}
+
+/**
+ * Break the Guard bonds of the summons named and delete their Tokens, capturing both first. A timed summon's expiry
+ * and a recast that replaces earlier summons (document-writes/effect-execution.mjs) both remove summons this way.
+ * @returns {Promise<boolean>} Whether every summon is gone.
+ */
+export async function removeSummons(scene, tokens, guardBonds, operation = null) {
+  if (!tokens.length) return true;
+  const bonds = tokens.map(token => guardBonds?.breakCaptures?.(token) ?? { documents: [], deleting: [] });
+  await operation?.capture({
+    documents: bonds.flatMap(bond => bond.documents),
+    deleting: [...bonds.flatMap(bond => bond.deleting), ...tokens]
+  });
+  for (const token of tokens) await guardBonds?.breakFor(token.uuid, GUARD_BOND_BREAKS.LEFT, { operation });
+  await scene.deleteEmbeddedDocuments('Token', tokens.map(token => String(token.id)), encounterOptions());
+  return tokens.every(token => !scene.tokens.get(token.id));
 }
 
 /** The Tokens a cleanup plan names that still stand on its map. */

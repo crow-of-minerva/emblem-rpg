@@ -10,6 +10,8 @@ import {
   GUARD_BOND_FLAGS,
   OBJECTIVE_FLAGS,
   PAUSED_ENCOUNTER_FLAG,
+  SUMMON_REMAINING_FLAG,
+  SUMMON_TICKS_ON_FLAG,
   SUMMONED_BY_FLAG
 } from '../../../contracts/domains/combat.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
@@ -595,7 +597,8 @@ function projectPhaseEntries(actor) {
  * engine/combat/encounters/objectives.mjs: every placed Token, whether an effect summon placed it, whether it stands
  * in a Guard bond, whether its Actor has Rallied anyone this map, and the effects its Character wears as the
  * detached facts `planEncounterAftermath` classifies. Neutral units are included. An encounter's start reads the
- * same facts to clear the map's Rally records (clearRallyRecords in phases.mjs).
+ * same facts to clear the map's Rally records (clearRallyRecords in phases.mjs), and a phase's end reads a timed
+ * summon's countdown from them (planSummonExpiry).
  * @param {object} scene The map whose encounter is ending or starting.
  * @returns {Readonly<{sceneUuid: string, units: readonly object[]}>}
  */
@@ -617,6 +620,8 @@ function projectAftermathUnit(token) {
     actorUuid: String(actor?.uuid ?? ''),
     linked: Boolean(actor) && actor.isToken !== true,
     summoned: typeof token.getFlag?.(SYSTEM_ID, SUMMONED_BY_FLAG) === 'string',
+    summonRemaining: token.getFlag?.(SYSTEM_ID, SUMMON_REMAINING_FLAG) ?? null,
+    summonTicksOn: token.getFlag?.(SYSTEM_ID, SUMMON_TICKS_ON_FLAG) ?? null,
     guardBonded: Boolean(token.getFlag?.(SYSTEM_ID, GUARD_BOND_FLAGS.GUARDER))
       || collectionValues(actor?.effects).some(effect => Boolean(effect.flags?.[SYSTEM_ID]?.guardRole)),
     rallied: normalizeRallyRecord(actor?.flags?.[SYSTEM_ID]?.[RALLY_RECORD_FLAG]).length > 0,

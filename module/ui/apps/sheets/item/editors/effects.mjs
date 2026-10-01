@@ -2,9 +2,9 @@
 /*
  * The effect editor: one triggered effect on an Item (or an Object), made of a trigger and a list of DSL steps that
  * can nest inside if branches. Cards are read back from the DOM before each edit. FIELDS_BY_KIND drives the ordinary
- * step fields. The few free-form values are kept as JSON text: a custom status, a despawn filter, and an animation
- * step's animation (a hidden field that openAnimationPayloadEditor fills). A step key that no field covers is
- * dropped when the card is read and saved.
+ * step fields. The few free-form values are kept as JSON text: a custom status and an animation step's animation
+ * (a hidden field that openAnimationPayloadEditor fills). A step key that no field covers is dropped when the card
+ * is read and saved.
  */
 import { SYSTEM_ID } from '../../../../../contracts/protocol.mjs';
 import { readSystemJson } from '../../../../../foundry/adapters/services/json-files.mjs';
@@ -85,7 +85,7 @@ export const VOICE_CATEGORIES = Object.freeze([
 export const STEP_KIND_LABELS = Object.freeze({
   damage: 'Damage', heal: 'Heal', modShield: 'Shield', applyEffect: 'Apply status', removeEffect: 'Remove status',
   setFaction: 'Change faction', animation: 'Animation', floatingText: 'Floating text', moveToken: 'Move token',
-  spawnToken: 'Spawn token', despawnToken: 'Despawn tokens', restoreAction: 'Restore actions',
+  spawnToken: 'Spawn token', restoreAction: 'Restore actions',
   playResist: 'Resist popup', playVoice: 'Voice line', refreshPathfinding: 'Refresh pathfinding',
   unequip: 'Unequip weapon', guard: 'Guard', terrainEdit: 'Edit terrain', if: 'If', wait: 'Wait',
   expr: 'Expression'
@@ -106,7 +106,6 @@ const STEP_KIND_MEANINGS = Object.freeze({
   floatingText: 'shows text floating over a unit',
   moveToken: 'pushes, pulls, swaps or teleports a token',
   spawnToken: 'places a new token on the scene',
-  despawnToken: 'removes the tokens matching a flag',
   restoreAction: 'gives a unit its actions back',
   playResist: 'shows the resist popup over a unit',
   playVoice: 'plays one of the unit\'s voice lines',
@@ -127,7 +126,7 @@ const ADD_STEP_GROUPS = Object.freeze([
   { label: 'Combat', kinds: ['damage', 'heal', 'modShield'] },
   { label: 'Statuses', kinds: ['applyEffect', 'removeEffect'] },
   { label: 'Board', kinds: [
-    'moveToken', 'terrainEdit', 'spawnToken', 'despawnToken', 'setFaction', 'restoreAction', 'refreshPathfinding',
+    'moveToken', 'terrainEdit', 'spawnToken', 'setFaction', 'restoreAction', 'refreshPathfinding',
     'unequip'
   ] },
   { label: 'Presentation', kinds: ['animation', 'floatingText', 'playResist', 'playVoice'] },
@@ -515,12 +514,12 @@ const FIELDS_BY_KIND = {
       tooltip: 'editor.spawn.actor' },
     { name: 'location', type: 'select', options: LOCATION_OPTIONS, label: 'where', tooltip: 'editor.spawn.location' },
     { name: 'name', type: 'text', label: 'token name', placeholder: 'Illusion', tooltip: 'editor.spawn.name' },
-    { name: 'rotation', type: 'number', label: 'facing', placeholder: '0', tooltip: 'editor.spawn.rotation' },
+    { name: 'duration', type: 'number', label: 'duration', placeholder: '0', tooltip: 'editor.spawn.duration' },
     { name: 'isFriendly', type: 'checkbox', label: 'friendly to caster', tooltip: 'editor.spawn.friendly' },
     { name: 'grantOwnership', type: 'checkbox', label: 'owned by caster', tooltip: 'editor.spawn.owned' },
-    { name: 'summoningSickness', type: 'checkbox', label: 'summoning sickness', tooltip: 'editor.spawn.sickness' }
+    { name: 'summoningSickness', type: 'checkbox', label: 'summoning sickness', tooltip: 'editor.spawn.sickness' },
+    { name: 'replaceOnRecast', type: 'checkbox', label: 'replace on recast', tooltip: 'editor.spawn.replace' }
   ],
-  despawnToken: [],
   restoreAction: [
     WHO,
     { name: 'standard', type: 'checkbox', label: 'standard action', tooltip: 'editor.restore.standard' },
@@ -1005,7 +1004,6 @@ function stepSummaryText(step) {
     case 'refreshPathfinding': return `refresh pathfinding for ${who}`;
     case 'moveToken':    return moveSummary(step);
     case 'spawnToken':   return `spawn ${step.name || step.actorUuid || '?'} at ${locationSummary(step.location)}`;
-    case 'despawnToken': return `despawn tokens matching ${step.filter?.flagPath || '?'}`;
     case 'restoreAction': {
       const actions = Array.isArray(step.actions) ? step.actions.map(a => RESTORE_WORDS[a] ?? a) : [];
       return `restore ${actions.length ? actions.join(', ') : '?'} for ${who}`;
@@ -1162,15 +1160,6 @@ function statusExtraHtml(step) {
   return `<div class="ed-summary ed-span" data-tooltip="${escapeHtml(description)}">${escapeHtml(description)}</div>`;
 }
 
-/** The filter JSON a despawn card edits. */
-function despawnFilterHtml(step) {
-  const json = jsonFieldText(step, 'filter', () => step.filter ? JSON.stringify(step.filter, null, 2) : '');
-  return `<label class="ed-field ed-field--textarea ed-span">${labelSpan('filter json', 'editor.despawn.filter')}
-      <textarea${jsonFieldMark(step, 'filter')} data-step-field="filter" rows="4"
-        placeholder='{ "flagPath": "illusionCaster", "value": { "expr": "self.uuid" } }'>${escapeHtml(json)}</textarea>
-    </label>`;
-}
-
 /**
  * The value a descriptor shows for a step: restore-action boxes read the actions list, and an area target shows as
  * the `area` choice with its panel beneath.
@@ -1311,7 +1300,6 @@ function stepBodyHtml(step, idx, parentPath, depth) {
     return fieldHtml(field, stepFieldValue(step, f), idPrefix);
   });
   if (step.kind === 'applyEffect') cells.push(statusExtraHtml(step));
-  if (step.kind === 'despawnToken') cells.push(despawnFilterHtml(step));
   const grid = cells.join('') ? `<div class="ed-grid ed-grid--3">${cells.join('')}</div>` : '';
   const area = isAreaTargetStep(step) ? areaPanelHtml(step) : '';
   const terrain = step.kind === 'terrainEdit' ? renderTerrainEditPanel(step) : '';
@@ -1496,11 +1484,6 @@ function readAreaTarget(panel, kind) {
  * @param {object} step          The step read so far, which this completes in place.
  */
 function readStepPanels(cardEl, kind, step) {
-  if (kind === 'despawnToken') {
-    const filter = readStepJson(ownStepField(cardEl, 'filter'), stepCards.state.identify(step), 'filter');
-    if (filter) step.filter = filter.value;
-  }
-
   if (kind === 'terrainEdit') {
     const panel = ownElement(cardEl, '[data-terrain-panel]');
     if (panel) readTerrainEditPanel(panel, step);
@@ -2203,7 +2186,6 @@ function makeStepDefault(kind) {
     case 'floatingText': return { kind, target: 'target', text: '' };
     case 'moveToken':    return { kind, target: 'target', mode: 'push', pair: 'self', distance: '1' };
     case 'spawnToken':   return { kind, actorUuid: '', location: 'targetLocation' };
-    case 'despawnToken': return { kind, filter: { flagPath: 'illusionCaster', value: { expr: 'self.uuid' } } };
     case 'restoreAction': return { kind, target: 'target', actions: ['standard'] };
     case 'playResist':   return { kind, target: 'target' };
     case 'playVoice':    return { kind, target: 'target', category: 'select' };
