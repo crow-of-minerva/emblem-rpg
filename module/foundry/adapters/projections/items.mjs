@@ -1,5 +1,6 @@
 /** @layer foundry/adapters/projections */
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
+import { triggerGroupForItem } from '../../../contracts/dsl/effects.mjs';
 import { ACTIVATION_EXPERIENCE_USES_FLAG, RALLY_RECORD_FLAG } from '../../../contracts/domains/progression.mjs';
 import { activationExperienceEntry, currentAffinityTable } from '../services/json-files.mjs';
 import { activationExperienceKey } from '../../../game/progression/activation-experience.mjs';
@@ -488,7 +489,7 @@ function projectActivationEntries(item) {
 function projectPassiveActivationEntries(actor) {
   const entries = [];
   for (const item of collectionValues(actor.items)) {
-    if (String(item.system?.itemType ?? '') !== 'Passive') continue;
+    if (triggerGroupForItem({ type: item.type, itemType: item.system?.itemType }) !== 'C') continue;
     for (const entry of item.system?.effects ?? []) {
       if (String(entry?.trigger ?? '') !== 'onUseItem') continue;
       entries.push(Object.freeze({

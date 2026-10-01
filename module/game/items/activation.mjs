@@ -41,12 +41,12 @@ import { FORCED_STEP_OUTCOMES } from '../../contracts/domains/terrain.mjs';
 import { ON_CAST_CONDITION, USING_ABILITY_CONDITION } from '../../contracts/domains/tokens.mjs';
 import { cellKeyOf } from '../../lib/core/geometry.mjs';
 import { RESULT_CODES } from '../../contracts/results.mjs';
+import { triggerGroupForItem } from '../../contracts/dsl/effects.mjs';
 
 /* -------------------------------------------- */
 /*  Activation vocabulary                       */
 /* -------------------------------------------- */
 
-const ACTIVATION_SUBTYPES = new Set(['Active', 'Utility', 'Staff (U)', 'Mount']);
 const MOUNT_SUBTYPE = 'Mount';
 const MOUNT_STAT_ROWS = Object.freeze([
   Object.freeze({ key: 'mov', label: 'Mov', attribute: 'mov' }),
@@ -83,10 +83,7 @@ const ACTIVATION_TRIGGER_SET = new Set(ITEM_ACTIVATION_TRIGGERS);
 
 /** Whether an item is used through item activation rather than as an attack: Consumables and activation subtypes. */
 export function isActivationItem(item = {}) {
-  const documentType = String(item.type ?? '');
-  const subtype = String(item.system?.itemType ?? '');
-  if (documentType === CONSUMABLE_DOCUMENT_TYPE) return true;
-  return ACTIVATION_SUBTYPES.has(subtype);
+  return triggerGroupForItem({ type: String(item.type ?? ''), itemType: String(item.system?.itemType ?? '') }) === 'B';
 }
 
 /** The activation trigger set an authored entry must name to run on a use. */

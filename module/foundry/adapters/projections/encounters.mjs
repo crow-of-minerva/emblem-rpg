@@ -15,6 +15,7 @@ import {
   SUMMONED_BY_FLAG
 } from '../../../contracts/domains/combat.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
+import { triggerGroupForItem } from '../../../contracts/dsl/effects.mjs';
 import { DRIVEN_HOLD_SETTING, normalizeDrivenHold } from '../../../contracts/domains/suppression.mjs';
 import {
   isPhaseParticipant,
@@ -567,7 +568,7 @@ function actorHasStatus(actor, statusId) {
 function projectPhaseEntries(actor) {
   const entries = [];
   for (const item of collectionValues(actor.items)) {
-    if (String(item.system?.itemType ?? '') !== 'Passive') continue;
+    if (triggerGroupForItem({ type: item.type, itemType: item.system?.itemType }) !== 'C') continue;
     for (const entry of item.system?.effects ?? []) {
       if (!PHASE_TRIGGERS.includes(String(entry?.trigger ?? ''))) continue;
       entries.push(Object.freeze({

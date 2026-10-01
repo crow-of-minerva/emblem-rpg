@@ -81,6 +81,61 @@ const EFFECT_TRIGGER_KEYS = Object.freeze([
   ])
 ]);
 
+const ACTIVATION_ITEM_SUBTYPES = new Set(['Active', 'Utility', 'Staff (U)', 'Mount']);
+
+export function triggerGroupForItem({ type, itemType } = {}) {
+  if (type === 'Ability' && itemType === 'Passive') return 'C';
+  if (type === 'Consumable') return 'B';
+  if (ACTIVATION_ITEM_SUBTYPES.has(itemType)) return 'B';
+  return 'A';
+}
+
+function triggerGroups(trigger) {
+  const groups = [];
+  if (ATTACK_EFFECT_TRIGGERS.includes(trigger)) groups.push('A');
+  if (ACTIVATION_EFFECT_TRIGGERS.includes(trigger)) groups.push('B');
+  if (PASSIVE_EFFECT_TRIGGERS.includes(trigger)) groups.push('C');
+  return Object.freeze(groups);
+}
+
+const ACTIVATION_CAPABILITIES = {
+  target: 'eachTarget', location: 'aimed', castArea: 'aimed', midExchange: false,
+  targetMayBeSlain: false, selfMayBeSlain: false, repeats: 'perTarget'
+};
+const BLOW_CAPABILITIES = {
+  target: 'opponent', location: 'none', castArea: 'none', midExchange: true,
+  targetMayBeSlain: false, selfMayBeSlain: false, repeats: 'perBlow'
+};
+const PHASE_CAPABILITIES = {
+  target: 'none', location: 'none', castArea: 'none', midExchange: false,
+  targetMayBeSlain: false, selfMayBeSlain: false, repeats: 'perPhase'
+};
+const CAPABILITIES_BY_TRIGGER = {
+  preCombat: { ...BLOW_CAPABILITIES, repeats: 'once' },
+  onHit: BLOW_CAPABILITIES,
+  onCrit: BLOW_CAPABILITIES,
+  onHitOrCrit: BLOW_CAPABILITIES,
+  onMiss: BLOW_CAPABILITIES,
+  onStruck: BLOW_CAPABILITIES,
+  onEvade: BLOW_CAPABILITIES,
+  onKill: { ...BLOW_CAPABILITIES, targetMayBeSlain: true, repeats: 'once' },
+  onDeath: { ...BLOW_CAPABILITIES, selfMayBeSlain: true, repeats: 'once' },
+  postCombat: { ...BLOW_CAPABILITIES, midExchange: false, targetMayBeSlain: true, selfMayBeSlain: true, repeats: 'once' },
+  onActivation: ACTIVATION_CAPABILITIES,
+  onFailedSave: ACTIVATION_CAPABILITIES,
+  onSucceedSave: ACTIVATION_CAPABILITIES,
+  onFailedCheck: ACTIVATION_CAPABILITIES,
+  onSucceedCheck: ACTIVATION_CAPABILITIES,
+  onPhaseBegin: PHASE_CAPABILITIES,
+  onPhaseEnd: PHASE_CAPABILITIES,
+  onUseItem: { ...PHASE_CAPABILITIES, location: 'usedItem', castArea: 'usedItem', repeats: 'once' }
+};
+
+export const TRIGGER_CAPABILITIES = Object.freeze(Object.fromEntries(EFFECT_TRIGGER_KEYS.map(trigger => [
+  trigger,
+  Object.freeze({ group: triggerGroups(trigger), ...CAPABILITIES_BY_TRIGGER[trigger] })
+])));
+
 /* -------------------------------------------- */
 /*  Step outcomes                               */
 /* -------------------------------------------- */

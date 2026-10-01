@@ -18,6 +18,7 @@ import {
 import { openScalingDialog } from './scaling.mjs';
 import { mountConditionTreeBuilder, mountPathPicker, summarizeCondition } from './conditions.mjs';
 import { isEmpty as isConditionEmpty } from '../../../../../contracts/dsl/conditions.mjs';
+import { triggerGroupForItem } from '../../../../../contracts/dsl/effects.mjs';
 import { getTooltip } from '../../../../tooltips.mjs';
 import { capitalize } from '../../../../../lib/dom/html.mjs';
 
@@ -27,12 +28,6 @@ const DAMAGE_CONDITION_TEMPLATE = `systems/emblem-rpg/templates/editors/weapon-d
 
 /** Where an Item keeps its effects. An Object keeps its own at `system.effects`. */
 const DEFAULT_EFFECTS_PATH = 'system.effects';
-
-/**
- * The item types resolved by activation rather than by attacking.
- * @type {Set<string>}
- */
-const GROUP_B_TYPES = new Set(['Active', 'Utility', 'Staff (U)']);
 
 const SKILL_OPTIONS = Object.freeze([
   'None', 'Athletics', 'Finesse', 'Trading', 'Civics', 'Handicraft',
@@ -364,7 +359,8 @@ export function openModifierEditor(subject, index = null, kind = 'standard') {
  */
 export async function openEffectEditor(subject, index = null, { effectsPath = DEFAULT_EFFECTS_PATH } = {}) {
   const itemSheet = itemSheetFor(subject, effectsPath);
-  const group = groupForItem(itemSheet.document);
+  const { type, system } = itemSheet.document;
+  const group = triggerGroupForItem({ type, itemType: system?.itemType });
   if (index !== null && index !== undefined) return openEffectActionEditor(itemSheet, index, { group });
   const created = await createEffectEntry(itemSheet, { group });
   if (created === null || created === undefined) return null;
@@ -389,17 +385,6 @@ export async function openRequirementEditor(subject, index = null) {
 /** Open the Damage Type Conditions dialog for a weapon: one condition per enabled damage type, and the randomizer. */
 export function openDamageConditionsEditor(subject) {
   return openWeaponDmgConditionsDialog(itemSheetFor(subject));
-}
-
-/**
- * Which trigger group an item's effects run in: A for the attack sequence, B for activation, C for passives. An
- * Object's effects (from the Object sheet) fall into A.
- */
-function groupForItem(item) {
-  if (item.type === 'Ability' && item.system.itemType === 'Passive') return 'C';
-  if (item.type === 'Consumable') return 'B';
-  if (GROUP_B_TYPES.has(item.system.itemType)) return 'B';
-  return 'A';
 }
 
 /* -------------------------------------------- */

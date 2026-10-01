@@ -2,6 +2,7 @@
 import { HIT_CHANCE_MODEL_SETTING } from '../../../config/settings.mjs';
 import { HIT_CHANCE_MODELS, KARMA_LEDGER_RESOURCE_KEY } from '../../../contracts/domains/combat.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
+import { triggerGroupForItem } from '../../../contracts/dsl/effects.mjs';
 import { DAMAGE_TYPES } from '../../../contracts/domains/damage.mjs';
 import { sceneCombatActive, sceneExplorationActive } from './encounters.mjs';
 import {
@@ -646,7 +647,7 @@ function projectActiveEffectEntries(weapon, activeItem) {
 function projectPassiveEffectEntries(actor) {
   const entries = [];
   for (const item of collectionValues(actor.items)) {
-    if (String(item.system?.itemType ?? '') !== 'Passive') continue;
+    if (triggerGroupForItem({ type: item.type, itemType: item.system?.itemType }) !== 'C') continue;
     for (const entry of item.system?.effects ?? []) {
       entries.push(Object.freeze({
         ...clone(entry),
