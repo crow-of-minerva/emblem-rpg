@@ -18,7 +18,8 @@ import {
   isPopulated as actionIsPopulated,
   STEP_KINDS,
   TOKEN_REFS,
-  validate as validateAction,
+  effectCarrier,
+  validateEffectEntry,
   ACTIVATION_EFFECT_TRIGGERS,
   ATTACK_EFFECT_TRIGGERS,
   PASSIVE_EFFECT_TRIGGERS
@@ -1593,11 +1594,16 @@ function conditionTemplateOptions() {
  */
 const JSON_STEP_FIELDS = ['customData', 'animation', 'filter'];
 
+/** How each JSON step field is named in the message about text that doesn't parse. */
+const JSON_STEP_FIELD_WORDS = Object.freeze({ customData: 'custom status', animation: 'animation', filter: 'filter' });
+
 /**
  * Everything wrong with the effect as it stands. Malformed JSON is checked first and named by position, since a
  * parse failure would otherwise show up as a confusing structural error about a step the user can't identify. The
  * text itself stays on its card (`readStepJson`), so this keeps naming the same step until the author finishes it.
+ * The entry is checked against the item it sits on, so steps its trigger can't support there are errors too.
  * @param {object} state                  The editor's state, whose source entry the read entry keeps its fields from.
+ * @returns {{errors: string[], warnings: string[]}}
  */
 function collectValidationErrors(dialogEl, state) {
   const errors = [];
@@ -1608,36 +1614,41 @@ function collectValidationErrors(dialogEl, state) {
     if (!JSON_STEP_FIELDS.includes(field)) continue;
     if (!('invalid' in parseCardJson(ta.value))) continue;
     const index = Number(ta.closest(CARD)?.dataset.stepIdx);
-    unparsed.push({ index: Number.isInteger(index) ? index : null, field });
+    unparsed.push({ index: Number.isInteger(index) ? index : null, field: JSON_STEP_FIELD_WORDS[field] });
   }
   errors.push(...unparsedJsonErrors(unparsed, 'step'));
 
-  const entry = readEntryFromDom(dialogEl, state.entry);
-  if (actionIsPopulated(entry.action)) {
-    const r = validateAction(entry.action);
-    if (!r.valid) errors.push(...r.errors);
-  }
-  return errors;
+  const r = validateEntryOnItem(readEntryFromDom(dialogEl, state.entry), state.document);
+  errors.push(...r.errors);
+  return { errors, warnings: r.warnings };
+}
+
+/** Validate an entry against the document it sits on, which supplies the trigger rules' carrier. */
+function validateEntryOnItem(entry, document) {
+  return validateEffectEntry(entry, { carrier: document ? effectCarrier(document) : null });
 }
 
 /**
- * Show the effect's validation errors, and disable Save while there are any, naming the first error in the button's
- * tooltip. A read that fails on a half-finished card counts as an error, so partial edits can't leave Save enabled.
+ * Show the effect's validation errors, then its warnings, and disable Save while there are errors, naming the first
+ * in the button's tooltip. Warnings don't block Save, and already open with `Warning:`. A read that fails on a
+ * half-finished card counts as an error, so partial edits can't leave Save enabled.
  */
 function refreshValidation(dialogEl, state) {
   let errors;
-  try { errors = collectValidationErrors(dialogEl, state); }
+  let warnings = [];
+  try { ({ errors, warnings } = collectValidationErrors(dialogEl, state)); }
   catch (err) {
     reportFoundryProbe(import.meta.url, err, 'refreshValidation', err instanceof SyntaxError);
-    errors = [err.message];
+    errors = ['A step cannot be read yet. Finish filling it in.'];
   }
 
   const bar = dialogEl.querySelector('[data-role="validation"]');
   if (bar) {
-    const shown = errors.slice(0, 4).join(' | ');
-    const extra = errors.length > 4 ? ` (+${errors.length - 4} more)` : '';
-    bar.textContent = shown + extra;
-    bar.hidden = errors.length === 0;
+    const messages = [...errors, ...warnings];
+    const hidden = messages.length - 4;
+    const extra = hidden === 1 ? ' There is 1 more.' : hidden > 1 ? ` There are ${hidden} more.` : '';
+    bar.textContent = messages.slice(0, 4).join(' ') + extra;
+    bar.hidden = messages.length === 0;
   }
 
   const saveBtn = dialogEl.querySelector('button[data-action="save"]');
@@ -1721,12 +1732,22 @@ function attachHandlers(dialogEl, state) {
   attachEntryClipboard(dialogEl, state, repaint);
   attachStepDragAndDrop(dialogEl, state, repaint);
 
+  dialogEl.querySelector('[data-entry-field="trigger"]')
+    ?.addEventListener('change', () => syncItemNamesField(dialogEl));
+
   const revalidate = foundry.utils.debounce(() => refreshValidation(dialogEl, state), 150);
   dialogEl.addEventListener('input', revalidate);
   dialogEl.addEventListener('change', revalidate);
   dialogEl.addEventListener('click', revalidate);
   syncCollapseAllLabel(dialogEl);
   refreshValidation(dialogEl, state);
+}
+
+/** Show the item names box only while the trigger is On Use Item. */
+function syncItemNamesField(dialogEl) {
+  const field = dialogEl.querySelector('[data-role="item-names"]');
+  if (!field) return;
+  field.hidden = dialogEl.querySelector('[data-entry-field="trigger"]')?.value !== 'onUseItem';
 }
 
 /**
@@ -1994,6 +2015,9 @@ function attachEntryClipboard(dialogEl, state, repaint) {
     if (nameEl) nameEl.value = _clipboard.name || '';
     const trigEl = dialogEl.querySelector('[data-entry-field="trigger"]');
     if (trigEl) trigEl.value = _clipboard.trigger || '';
+    const namesEl = dialogEl.querySelector('[data-entry-field="itemNames"]');
+    if (namesEl) namesEl.value = Array.isArray(_clipboard.itemNames) ? _clipboard.itemNames.join('\n') : '';
+    syncItemNamesField(dialogEl);
     const delayEl = dialogEl.querySelector('[data-entry-field="delayMs"]');
     if (delayEl) delayEl.value = Number.isFinite(Number(_clipboard.delayMs)) ? Number(_clipboard.delayMs) : 0;
     const awaitsEl = dialogEl.querySelector('[data-entry-field="tokenAwaits"]');
@@ -2152,7 +2176,7 @@ function readEntryFromDom(dialogEl, source = {}) {
   const delayMs = delayRaw === '' || delayRaw == null ? 0 : (Number(delayRaw) || 0);
   const tokenAwaits = dialogEl.querySelector('[data-entry-field="tokenAwaits"]')?.checked === true;
   const itemNamesEl = dialogEl.querySelector('[data-entry-field="itemNames"]');
-  const itemNames = itemNamesEl
+  const itemNames = itemNamesEl && trigger === 'onUseItem'
     ? itemNamesEl.value.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0)
     : [];
   const entry = {
@@ -2254,11 +2278,12 @@ function effectHeaderHtml(entry, group) {
   const triggerPool = triggerPoolFor(group, entry.trigger);
   const triggerOpts = optionMarkup(triggerPool.map(t => ({ value: t.key, label: t.label })), entry.trigger);
   const itemNamesValue = Array.isArray(entry.itemNames) ? entry.itemNames.join('\n') : '';
-  const itemNamesHtml = entry.trigger === 'onUseItem' ? `
-        <label class="ed-field ed-field--grow ed-field--textarea">
+  const itemNamesHidden = entry.trigger === 'onUseItem' ? '' : ' hidden';
+  const itemNamesHtml = `
+        <label class="ed-field ed-field--grow ed-field--textarea" data-role="item-names"${itemNamesHidden}>
           ${labelSpan('item names', 'editor.effect.item-names')}
           <textarea data-entry-field="itemNames" rows="2">${escapeHtml(itemNamesValue)}</textarea>
-        </label>` : '';
+        </label>`;
   const delay = Number.isFinite(Number(entry.delayMs)) ? Number(entry.delayMs) : 0;
   return `
       <div class="ed-hrow">
@@ -2362,12 +2387,10 @@ export async function openEffectActionEditor(itemSheet, entryIndex, { group = ''
     gather: (root) => {
       const updated = readEntryFromDom(root, state.entry);
 
-      if (actionIsPopulated(updated.action)) {
-        const r = validateAction(updated.action);
-        if (!r.valid) {
-          notify.error(`Effect action is invalid: ${r.errors.join(' | ')}`);
-          return undefined;
-        }
+      const r = validateEntryOnItem(updated, state.document);
+      if (!r.valid) {
+        notify.error(`This effect cannot be saved. ${r.errors.join(' ')}`);
+        return undefined;
       }
 
       return updated;

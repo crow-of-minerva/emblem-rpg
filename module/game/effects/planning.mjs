@@ -3,6 +3,7 @@ import { STATS } from '../../contracts/domains/characters.mjs';
 import { GUARD_BOND_REFUSALS, GUARD_BOND_ROLES } from '../../contracts/domains/combat.mjs';
 import {
   EFFECT_PLAN_ERRORS,
+  effectCarrier,
   isPopulated as actionIsPopulated,
   validateEffectEntry
 } from '../../contracts/dsl/effects.mjs';
@@ -166,12 +167,13 @@ function entryContentText(entry) {
 /**
  * Expand the authored entries that fire for these triggers into ordered operations for engine/effects/execution.mjs.
  * Nothing is written or rolled here. The engine and the Foundry adapters handle writes, dice and presentation.
- * An invalid entry is skipped, and listed as one error carrying all its problems only when its trigger is one being
- * planned, which is the moment it would have fired. A condition that fails to evaluate is listed too, and skips its
- * entry or `if` step.
+ * Each entry is checked against the item it came from (its `sourceItem`), so an entry its trigger can't support there
+ * is invalid too. An invalid entry is skipped, and listed as one error carrying all its problems only when its
+ * trigger is one being planned, which is the moment it would have fired. A valid entry's warnings are listed the same
+ * way, and it still runs. A condition that fails to evaluate is listed too, and skips its entry or `if` step.
  * @param {object} input `entries`, `triggers` (one or a list), `context`, `activatedItem`, and `chanceRolls` (one
  *   number, or draws keyed by chance path).
- * @returns {{entries: object[], operations: object[], errors: object[]}}
+ * @returns {{entries: object[], operations: object[], errors: object[], warnings: object[]}}
  */
 export function planEffectEntries(input = {}) {
   const entries = Array.isArray(input.entries) ? input.entries : [];
@@ -179,16 +181,21 @@ export function planEffectEntries(input = {}) {
   const plannedEntries = [];
   const operations = [];
   const errors = [];
+  const warnings = [];
   const identities = effectEntryIdentities(entries);
 
   entries.forEach((entry, entryIndex) => {
-    const validation = validateEffectEntry(entry, `entries[${entryIndex}]`);
+    const carrier = entry?.sourceItem ? effectCarrier(entry.sourceItem) : null;
+    const validation = validateEffectEntry(entry, { path: `entries[${entryIndex}]`, carrier });
     if (!validation.valid) {
       if (!triggerSet.has(entry?.trigger)) return;
-      errors.push({ code: EFFECT_PLAN_ERRORS.INVALID_ENTRY, entryIndex, message: validation.errors.join('; ') });
+      errors.push({ code: EFFECT_PLAN_ERRORS.INVALID_ENTRY, entryIndex, message: validation.errors.join(' ') });
       return;
     }
     if (!triggerSet.has(entry.trigger) || !actionIsPopulated(entry.action)) return;
+    if (validation.warnings.length) {
+      warnings.push({ code: EFFECT_PLAN_ERRORS.ENTRY_WARNING, entryIndex, message: validation.warnings.join(' ') });
+    }
     if (!passesOutcomeGate(entry, input.context ?? {})) return;
     if (!passesActivatedItemGate(entry, input.activatedItem)) return;
     if (!passesConditionGate(entry.condition, input.context ?? {}, input.chanceRolls,
@@ -212,7 +219,7 @@ export function planEffectEntries(input = {}) {
     operations.push(...actionPlan.operations.map(operation => ({ ...operation, entryIndex })));
   });
 
-  return { entries: plannedEntries, operations, errors };
+  return { entries: plannedEntries, operations, errors, warnings };
 }
 
 /** List chance draws the engine must record before planEffectEntries resolves branches. */

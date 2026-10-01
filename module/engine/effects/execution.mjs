@@ -92,6 +92,9 @@ export class EffectExecutionService {
       const kind = path.startsWith('steps.') ? 'if' : '';
       this.#report({ ...error, path, kind }, entries, identities, context);
     }
+    for (const warning of plan.warnings) {
+      this.#report({ ...warning, path: 'entry', kind: '' }, entries, identities, context, { notify: false });
+    }
     const held = { runtime: executionRuntime, context, resources, audience: noticeAudience(audience), combatContext };
     const outcomes = [];
     for (const entry of plan.entries) {
@@ -395,9 +398,10 @@ export class EffectExecutionService {
    * an invalid entry (`path` is 'entry'), or a condition that threw (`kind` is 'if' when it guards a step). The
    * warning diagnostic raises no toast of its own, so the GM sees the one notice rather than a generic layer error.
    * Per-blow and per-phase triggers repeat the same problem, which the entry's identity, path and code name.
+   * An entry that ran but has validation warnings passes `notify: false`: it is logged and the GM gets no notice.
    * @param {{entryIndex: number, path: string, kind: string, code: string, message?: string}} problem
    */
-  #report({ entryIndex, path, kind, code, message = '' }, entries, identities, context) {
+  #report({ entryIndex, path, kind, code, message = '' }, entries, identities, context, { notify = true } = {}) {
     const key = [identities[entryIndex], path, code].join('|');
     if (this.#reported.has(key)) return;
     this.#reported.add(key);
@@ -413,9 +417,11 @@ export class EffectExecutionService {
       sourcePath: import.meta.url,
       source: DIAGNOSTIC_SOURCES.EFFECTS,
       severity: DIAGNOSTIC_SEVERITIES.WARNING,
-      detail: `Effect ${kind ? 'step' : 'entry'} skipped: ${place}, ${path}${step}: ${code}${why}`,
+      detail: `Effect ${kind ? 'step' : 'entry'} ${notify ? 'skipped' : 'has warnings'}: ${place}, ${path}${step}: `
+        + `${code}${why}`,
       notify: false
     });
+    if (!notify) return;
     try { this.notifyGm(Object.freeze({ itemName, trigger, entryName, stepKind: kind, code })); }
     catch (diagnosticError) {
       recordDiagnostic(this.diagnostics, { sourcePath: import.meta.url, error: diagnosticError, detail: 'notifyGm' });

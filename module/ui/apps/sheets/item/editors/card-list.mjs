@@ -117,16 +117,14 @@ export function parseCardJson(raw) {
 }
 
 /**
- * The validation line a save refusal shows for the JSON fields still unparsed, naming the card each one sits on.
- * @param {Array<{index: number, field: string}>} unparsed   Card positions and field names, in reading order.
+ * The validation sentences a save refusal shows for the JSON fields still unparsed, naming the card each one sits on.
+ * @param {Array<{index: number, field: string}>} unparsed   Card positions and field names in words, in reading order.
  * @param {string} noun                                      What the editor calls one card, such as `step`.
- * @returns {string[]}                                       One line, or none when every field parses.
+ * @returns {string[]}                                       One sentence per field, none when every field parses.
  */
 export function unparsedJsonErrors(unparsed, noun) {
-  if (!unparsed.length) return [];
-  const named = unparsed.map(({ index, field }) =>
-    `${Number.isInteger(index) ? `${noun} ${index + 1}` : noun} ${field}`);
-  return [`invalid JSON in ${named.join(', ')}`];
+  return unparsed.map(({ index, field }) =>
+    `The ${field} box in ${Number.isInteger(index) ? `${noun} ${index + 1}` : `a ${noun}`} is not valid JSON.`);
 }
 
 /* -------------------------------------------- */

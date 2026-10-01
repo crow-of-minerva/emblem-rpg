@@ -1,5 +1,8 @@
 /** @layer contracts/dsl */
 import { isPlainObject } from '../../lib/core/runtime.mjs';
+import { ENGAGEMENT_CHOICES, STATS, STATUS_KEYS, VOCABULARY_BY_NAME } from '../domains/characters.mjs';
+import { STANCE_BREAK_STATUS_ID } from '../domains/damage.mjs';
+import { placeOf, say, warn } from './messages.mjs';
 
 /* -------------------------------------------- */
 /*  Condition vocabulary                        */
@@ -49,63 +52,244 @@ export function isEmpty(tree) {
 }
 
 /* -------------------------------------------- */
+/*  Surfaces and facts                          */
+/* -------------------------------------------- */
+/**
+ * The places a condition tree is authored: an effect entry or `if` step, a standard modifier, an aura modifier, an
+ * activation requirement and a weapon damage-type condition. Only the effect surface has a moment to draw a chance.
+ */
+export const CONDITION_SURFACES = Object.freeze(['effect', 'modifier', 'aura', 'requirement', 'damageType']);
+
+/** Context roots that name a unit. Below them a path reads that unit's facts. */
+const UNIT_ROOTS = Object.freeze(['self', 'target', 'caster', 'actor']);
+
+/** Context roots that hold item or call data rather than unit facts, so any path below them is accepted. */
+const OPEN_ROOTS = Object.freeze([
+  'item', 'activeItem', 'selectedParams', 'targetLocation', 'savingThrowResult', 'skillCheckResult',
+  'casterPlacement', 'targetPlacement'
+]);
+
+/** Unit facts the evaluator's contexts carry beyond the authoring vocabulary. */
+const UNIT_FACT_EXTRAS = Object.freeze([
+  'statuses', 'physicalWeaponTypesCarried', 'hasStealables',
+  ...STATS.map(stat => `stats.${stat.key}.total`),
+  ...['weapon', 'armor', 'shield', 'mount', 'class'].flatMap(slot =>
+    ['name', 'type', 'itemType', 'tier', 'twoHanded', 'wgt'].map(field => `${slot}.${field}`))
+]);
+
+/** Bare names only some contexts add: an effect run's flags, and shorthands such as `targetHp` and `selfMgt`. */
+const CONTEXT_NAMES = new Set([
+  'savingThrowRequired', 'skillCheckRequired', 'slainActorUuids', 'targetId',
+  ...['self', 'caster', 'target'].flatMap(prefix =>
+    ['hp', 'maxHp', 'stn', 'maxStn', 'level', ...STATS.map(stat => stat.key)]
+      .map(key => `${prefix}${key.charAt(0).toUpperCase()}${key.slice(1)}`))
+]);
+
+/** A set of names plus every dotted prefix of each, so `prots` and `stats.mgt` count as known objects. */
+function withPrefixes(names) {
+  const known = new Set();
+  for (const name of names) {
+    const parts = name.split('.');
+    for (let length = 1; length <= parts.length; length++) known.add(parts.slice(0, length).join('.'));
+  }
+  return known;
+}
+
+const BARE_FACTS = withPrefixes([...VOCABULARY_BY_NAME.keys(), ...UNIT_FACT_EXTRAS]);
+const ROOTED_FACTS = withPrefixes([
+  ...[...VOCABULARY_BY_NAME.values()].filter(entry => entry.bareOnly !== true).map(entry => entry.name),
+  ...UNIT_FACT_EXTRAS
+]);
+
+/**
+ * Whether a dotted path names a fact some condition context supplies. A bare name reads the unit itself, a unit root
+ * (`self`, `target`, `caster`, `actor`) reads that unit, and a trailing `length` reads a list's size.
+ */
+export function isKnownFactPath(path) {
+  const segments = String(path ?? '').split('.');
+  if (segments.length > 1 && segments.at(-1) === 'length') segments.pop();
+  const [root] = segments;
+  if (OPEN_ROOTS.includes(root)) return true;
+  if (UNIT_ROOTS.includes(root)) return segments.length === 1 || ROOTED_FACTS.has(segments.slice(1).join('.'));
+  const name = segments.join('.');
+  return BARE_FACTS.has(name) || CONTEXT_NAMES.has(name);
+}
+
+/** Names an expression may use that are not context lookups. */
+const EXPRESSION_KEYWORDS = new Set(['true', 'false', 'null', 'undefined', 'let', 'const', 'var', 'Math']);
+
+/**
+ * The dotted paths an authored expression reads, such as `target.hp` and `maxHp` in `target.hp < maxHp / 2`. String
+ * literals, keywords, `Math`, names the expression declares itself and the method in a call are left out.
+ */
+export function expressionPaths(text) {
+  if (typeof text !== 'string') return [];
+  const source = text.replace(/(['"`])(?:\\.|(?!\1)[^\\])*\1/g, '""');
+  const declared = new Set([...source.matchAll(/\b(?:let|const|var)\s+([A-Za-z_$][\w$]*)/g)].map(match => match[1]));
+  const paths = [];
+  for (const match of source.matchAll(/(?<![\w$.\]])([A-Za-z_$][\w$]*(?:\s*\??\.\s*[A-Za-z_$][\w$]*)*)(\s*\()?/g)) {
+    const segments = match[1].split(/\s*\??\.\s*/);
+    if (match[2]) segments.pop();
+    if (segments.length === 0 || EXPRESSION_KEYWORDS.has(segments[0]) || declared.has(segments[0])) continue;
+    paths.push(segments.join('.'));
+  }
+  return paths;
+}
+
+/** Every fact path a tree reads. A status leaf reads `statuses`, or `target.statuses` on the target side. */
+export function conditionPaths(tree) {
+  if (!isPlainObject(tree)) return [];
+  switch (tree.kind) {
+    case 'group': return (Array.isArray(tree.children) ? tree.children : []).flatMap(conditionPaths);
+    case 'compare': return [...expressionPaths(tree.left), ...expressionPaths(tree.right?.expr)];
+    case 'truthy': return expressionPaths(tree.expr);
+    case 'status': return [tree.side === 'target' ? 'target.statuses' : 'statuses'];
+    default: return [];
+  }
+}
+
+/** Reduce a status name to lower-case letters and digits, the way the evaluator matches statuses. */
+function statusKey(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** The system's own status names: every status key, the airborne status's `Flying` id and Stance Break. */
+const KNOWN_STATUS_KEYS = Object.freeze([...STATUS_KEYS, 'Flying', STANCE_BREAK_STATUS_ID].map(statusKey));
+
+/* -------------------------------------------- */
 /*  Validation                                  */
 /* -------------------------------------------- */
-/** Validate a serializable condition tree and collect every shape error. */
-export function validate(tree, path = '') {
-  const errors = [];
-  if (tree === null || tree === undefined) return { valid: true, errors };
-  if (!isPlainObject(tree)) return { valid: false, errors: [`${path || 'root'}: must be an object`] };
-  if (!NODE_KINDS.includes(tree.kind)) {
-    return { valid: false, errors: [`${path || 'root'}.kind: must be one of ${NODE_KINDS.join('|')}`] };
+/**
+ * Validate a condition tree. With no options, or a path string, only the shape is checked. With a `surface` from
+ * CONDITION_SURFACES the authoring rules for that surface run too, and any status name outside the system's own and
+ * `knownStatuses` is a warning. Each message is a plain sentence that opens with where the condition sits, worked
+ * out from `path` (`the condition in step 2`), or with `place` when the caller names it itself.
+ * @param {object|null} tree
+ * @param {string|{path?: string, place?: string, surface?: string, knownStatuses?: string[]}} [options]
+ * @returns {{valid: boolean, errors: string[], warnings: string[]}}
+ */
+export function validate(tree, options = '') {
+  const settings = typeof options === 'string' ? { path: options } : (options ?? {});
+  const { path = '', surface = null, knownStatuses = [] } = settings;
+  const place = settings.place ?? placeOf(path, 'the condition');
+  const errors = shapeErrors(tree, place);
+  const warnings = [];
+  if (surface !== null && surface !== undefined) {
+    if (!CONDITION_SURFACES.includes(surface)) {
+      errors.push(say(place, 'is checked in a place the system does not know'));
+    } else if (isPlainObject(tree)) {
+      const statuses = new Set([...KNOWN_STATUS_KEYS, ...knownStatuses.map(statusKey)]);
+      surfaceIssues(tree, 0, { place, surface, statuses, errors, warnings });
+    }
   }
+  return { valid: errors.length === 0, errors: [...new Set(errors)], warnings: [...new Set(warnings)] };
+}
+
+/** Collect every shape error in a tree. `place` names the whole condition, as every message opens with it. */
+function shapeErrors(tree, place) {
+  const errors = [];
+  const fail = sentence => errors.push(say(place, sentence));
+  if (tree === null || tree === undefined) return errors;
+  if (!isPlainObject(tree)) return [say(place, 'cannot be read')];
+  if (!NODE_KINDS.includes(tree.kind)) return [say(place, 'has a rule of a kind the system does not know')];
   switch (tree.kind) {
     case 'group':
-      if (!GROUP_OPS.includes(tree.op)) errors.push(`${path}.op: must be 'and' or 'or'`);
-      if (!Array.isArray(tree.children)) errors.push(`${path}.children: must be an array`);
-      else tree.children.forEach((child, index) => errors.push(...validate(child, `${path}.children[${index}]`).errors));
+      if (!GROUP_OPS.includes(tree.op)) fail('has a group that does not say whether all or any of its rules must hold');
+      if (!Array.isArray(tree.children)) fail('has a group whose rules cannot be read');
+      else tree.children.forEach(child => errors.push(...shapeErrors(child, place)));
       break;
     case 'compare':
-      if (typeof tree.left !== 'string' || tree.left.trim() === '') {
-        errors.push(`${path}.left: must be a non-empty string`);
-      }
-      if (!COMPARE_OPS.includes(tree.op)) errors.push(`${path}.op: must be one of ${COMPARE_OPS.join('|')}`);
-      if (!isPlainObject(tree.right)) errors.push(`${path}.right: must be { literal } or { expr }`);
+      if (typeof tree.left !== 'string' || tree.left.trim() === '') fail('has a comparison with nothing on its left');
+      if (!COMPARE_OPS.includes(tree.op)) fail('has a comparison the system does not know how to make');
+      if (!isPlainObject(tree.right)) fail('has a comparison with nothing on its right');
       else if (tree.right.expr === undefined && !('literal' in tree.right)) {
-        errors.push(`${path}.right: must have either 'literal' or 'expr'`);
+        fail('has a comparison with nothing on its right');
       } else if (tree.right.expr !== undefined && typeof tree.right.expr !== 'string') {
-        errors.push(`${path}.right.expr: must be a string`);
+        fail('has a comparison whose right side cannot be read');
       } else if (tree.right.ignoreCase !== undefined) {
-        if (typeof tree.right.ignoreCase !== 'boolean') errors.push(`${path}.right.ignoreCase: must be a boolean`);
-        else if (!CONTAINS_OPS.includes(tree.op) || !('literal' in tree.right)) {
-          errors.push(`${path}.right.ignoreCase: applies only to the literal of a 'contains' comparison`);
+        if (typeof tree.right.ignoreCase !== 'boolean') {
+          fail('has a comparison whose ignore case setting is not on or off');
+        } else if (!CONTAINS_OPS.includes(tree.op) || !('literal' in tree.right)) {
+          fail('ignores letter case on a comparison that does not check whether text contains a value');
         }
       }
       break;
     case 'truthy':
-      if (typeof tree.expr !== 'string' || tree.expr.trim() === '') {
-        errors.push(`${path}.expr: must be a non-empty string`);
-      }
-      errors.push(...validateNegate(tree, path));
+      if (typeof tree.expr !== 'string' || tree.expr.trim() === '') fail('has a check with no expression');
+      errors.push(...validateNegate(tree, place));
       break;
     case 'status':
-      if (typeof tree.name !== 'string' || tree.name.trim() === '') {
-        errors.push(`${path}.name: must be a non-empty string`);
-      }
+      if (typeof tree.name !== 'string' || tree.name.trim() === '') fail('has a status check with no status name');
       if (tree.side !== undefined && !STATUS_SIDES.includes(tree.side)) {
-        errors.push(`${path}.side: must be one of ${STATUS_SIDES.join('|')}`);
+        fail('has a status check on a unit other than self or target');
       }
-      errors.push(...validateNegate(tree, path));
+      errors.push(...validateNegate(tree, place));
       break;
     case 'chance':
       if (typeof tree.percent !== 'number' || tree.percent < 0 || tree.percent > 100) {
-        errors.push(`${path}.percent: must be a number between 0 and 100`);
+        fail('has a chance that is not a number from 0 to 100');
       }
       break;
   }
-  return { valid: errors.length === 0, errors };
+  return errors;
 }
 
-function validateNegate(tree, path) {
-  return tree.negate === undefined || typeof tree.negate === 'boolean' ? [] : [`${path}.negate: must be a boolean`];
+function validateNegate(tree, place) {
+  return tree.negate === undefined || typeof tree.negate === 'boolean'
+    ? []
+    : [say(place, 'has a rule whose negate setting is not on or off')];
+}
+
+/** Collect the surface rules' errors and warnings for one node and everything below it. */
+function surfaceIssues(node, depth, issues) {
+  if (!isPlainObject(node)) return;
+  const { place, surface, errors } = issues;
+  const fail = sentence => errors.push(say(place, sentence));
+  const unknownPaths = text => {
+    for (const fact of expressionPaths(text)) {
+      if (!isKnownFactPath(fact)) fail(`reads ${fact}, which is not a fact the system knows`);
+    }
+  };
+  switch (node.kind) {
+    case 'group':
+      if (depth > 0 && Array.isArray(node.children) && node.children.length === 0) fail('has an empty group');
+      (Array.isArray(node.children) ? node.children : []).forEach(child => surfaceIssues(child, depth + 1, issues));
+      break;
+    case 'chance':
+      if (surface !== 'effect') fail('uses a chance. A chance can only be used on an effect entry or an if step');
+      if (node.percent === 0) fail('has a 0 percent chance, which never happens. Use a value from 1 to 99');
+      if (node.percent === 100) fail('has a 100 percent chance, which always happens. Use a value from 1 to 99');
+      if (node.negate === true) fail('has a negated chance. A chance cannot be negated');
+      break;
+    case 'compare': {
+      if (node.negate === true) fail('has a negated comparison. Flip its operator instead');
+      unknownPaths(node.left);
+      if (!isPlainObject(node.right)) break;
+      unknownPaths(node.right.expr);
+      if (!('literal' in node.right)) break;
+      const literal = node.right.literal;
+      const blank = literal === undefined || (typeof literal === 'string' && literal.trim() === '')
+        || (Array.isArray(literal) && literal.length === 0);
+      if (blank) fail('has a comparison with an empty value');
+      // The evaluator reads 'melee' or 'ranged' against distance as engagement; any other word never matches.
+      const strings = [literal].flat().some(value => typeof value === 'string');
+      const engagementWord = typeof literal === 'string' && ENGAGEMENT_CHOICES.includes(literal);
+      if (strings && !engagementWord && /(^|\.)distance$/.test(String(node.left ?? '').trim())) {
+        fail('compares distance with a word. Distance is a number, or melee or ranged');
+      }
+      if (['includes', 'not-includes'].includes(node.op) && !Array.isArray(literal)) {
+        fail(`checks whether a value ${node.op === 'includes' ? 'is' : 'is not'} one of a list, but gives no list`);
+      }
+      break;
+    }
+    case 'truthy':
+      unknownPaths(node.expr);
+      break;
+    case 'status':
+      if (typeof node.name === 'string' && node.name.trim() && !issues.statuses.has(statusKey(node.name))) {
+        issues.warnings.push(warn(place, `checks for ${node.name.trim()}, which is not a system status. It only `
+          + 'matches a custom status with that name'));
+      }
+      break;
+  }
 }

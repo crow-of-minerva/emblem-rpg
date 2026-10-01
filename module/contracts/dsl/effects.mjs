@@ -3,9 +3,11 @@ import { DAMAGE_TYPES } from '../domains/damage.mjs';
 import { validate as validateAnimation } from './animations.mjs';
 import { DEFAULT_STATUS_DURATION, FACTION_ROLES, REGISTERED_STATUS_KEYS } from '../domains/characters.mjs';
 import { GUARD_BOND_REFUSALS } from '../domains/combat.mjs';
-import { validateGeometry } from './terrain-geometry.mjs';
+import { ITEM_ACTIVATION_SUPPORT } from '../domains/items.mjs';
+import { normalizeGeometry, validateGeometry } from './terrain-geometry.mjs';
 import { isPlainObject } from '../../lib/core/runtime.mjs';
 import { validate as validateConditionTree } from './conditions.mjs';
+import { oneOf, placeOf, say, warn as warnAt } from './messages.mjs';
 
 /* -------------------------------------------- */
 /*  Vocabulary                                  */
@@ -47,6 +49,9 @@ const TERRAIN_EDIT_NUMERIC_KEYS = Object.freeze([
  */
 const MOVE_MODES = Object.freeze(['teleport', 'push', 'pull', 'swap', 'shift', 'terrainGeometry']);
 
+/** How the move modes read in the editor, for the message about a missing one. */
+const MOVE_MODE_WORDS = Object.freeze(['teleport', 'push away', 'pull toward', 'swap', 'shift', 'by rule']);
+
 /** Spent resources a `restoreAction` step may hand back. */
 const RESTORABLE_ACTIONS = Object.freeze(['standard', 'bonus', 'movement', 'turn']);
 
@@ -72,6 +77,27 @@ export const ACTIVATION_EFFECT_TRIGGERS = Object.freeze([
 export const PASSIVE_EFFECT_TRIGGERS = Object.freeze([
   'onPhaseBegin', 'onPhaseEnd', 'onDeath', 'onKill', 'onEvade', 'onUseItem'
 ]);
+
+/** How each step kind reads after its number in a message, as in `Step 3 moves a token`. */
+const STEP_PHRASES = Object.freeze({
+  damage: 'deals damage', heal: 'heals', modShield: 'adds a shield', applyEffect: 'applies a status',
+  removeEffect: 'removes a status', setFaction: 'changes a faction', animation: 'plays an animation',
+  floatingText: 'shows floating text', moveToken: 'moves a token', spawnToken: 'spawns a token',
+  restoreAction: 'restores actions', playResist: 'shows the resist popup', playVoice: 'plays a voice line',
+  refreshPathfinding: 'refreshes pathfinding', unequip: 'unequips a weapon', guard: 'starts a guard',
+  terrainEdit: 'edits terrain', if: 'checks a condition', wait: 'waits', expr: 'runs an expression'
+});
+
+/** How each trigger reads in a message, as in `That is not allowed on an evade trigger`. */
+const TRIGGER_PHRASES = Object.freeze({
+  preCombat: 'a pre-combat trigger', onHit: 'a hit trigger', onCrit: 'a crit trigger',
+  onHitOrCrit: 'a hit or crit trigger', onMiss: 'a miss trigger', onStruck: 'a struck trigger',
+  onEvade: 'an evade trigger', postCombat: 'a post-combat trigger', onKill: 'a kill trigger',
+  onActivation: 'an activation trigger', onFailedSave: 'a failed save trigger',
+  onSucceedSave: 'a passed save trigger', onFailedCheck: 'a failed check trigger',
+  onSucceedCheck: 'a passed check trigger', onPhaseBegin: 'a phase begin trigger',
+  onPhaseEnd: 'a phase end trigger', onDeath: 'a death trigger', onUseItem: 'a use item trigger'
+});
 
 const EFFECT_TRIGGER_KEYS = Object.freeze([
   ...new Set([
@@ -136,6 +162,26 @@ export const TRIGGER_CAPABILITIES = Object.freeze(Object.fromEntries(EFFECT_TRIG
   Object.freeze({ group: triggerGroups(trigger), ...CAPABILITIES_BY_TRIGGER[trigger] })
 ])));
 
+/**
+ * The carrier facts of an Item, or of anything shaped like one (`{type, system}`), for validateEffectEntry.
+ * @param {{type?: string, system?: object}} item
+ * @returns {EffectCarrier}
+ */
+export function effectCarrier(item) {
+  const system = item?.system ?? {};
+  const carrier = { type: String(item?.type ?? ''), itemType: String(system.itemType ?? '') };
+  const data = system.effectData;
+  if (!data || typeof data !== 'object') return carrier;
+  return {
+    ...carrier,
+    targetType: String(data.targetType ?? 'Any'),
+    rngType: String(data.rngType ?? 'Single'),
+    targets: Math.max(1, Math.floor(Number(data.targets ?? 1) || 1)),
+    save: data.savingThrowDC ?? null,
+    check: data.skillCheckDC ?? null
+  };
+}
+
 /* -------------------------------------------- */
 /*  Step outcomes                               */
 /* -------------------------------------------- */
@@ -174,11 +220,13 @@ export function isEffectPreconditionFailure(code) {
 
 /**
  * The codes game/effects/planning.mjs lists in a plan's `errors`: an entry that fails validation, and an entry or
- * `if` condition that throws. Either one is skipped, and engine/effects/execution.mjs reports it to the GM.
+ * `if` condition that throws. Either one is skipped, and engine/effects/execution.mjs reports it to the GM. A plan's
+ * `warnings` use ENTRY_WARNING for an entry that runs but that validation warns about; those are only logged.
  */
 export const EFFECT_PLAN_ERRORS = Object.freeze({
   INVALID_ENTRY: 'invalid-entry',
-  CONDITION_FAILED: 'condition-evaluation-failed'
+  CONDITION_FAILED: 'condition-evaluation-failed',
+  ENTRY_WARNING: 'entry-warning'
 });
 
 /* -------------------------------------------- */
@@ -275,10 +323,10 @@ function isTokenRef(v) {
  */
 export function validate(action) {
   if (action === null || action === undefined) return { valid: true, errors: [] };
-  if (!isPlainObject(action)) return { valid: false, errors: ['root: must be an object'] };
+  if (!isPlainObject(action)) return { valid: false, errors: [say('this effect', 'has steps that cannot be read')] };
   const errors = [];
   if (!Array.isArray(action.steps)) {
-    errors.push('steps: must be an array');
+    errors.push(say('this effect', 'has steps that cannot be read'));
   } else {
     action.steps.forEach((step, i) => errors.push(...validateStep(step, `steps[${i}]`)));
   }
@@ -288,181 +336,169 @@ export function validate(action) {
 /**
  * Validate one step against the rules of its kind, recursing into an `if` step's branches.
  * @param {object} step  Step to validate.
- * @param {string} path  Dotted path used to prefix error messages.
- * @returns {string[]}   Collected error strings, empty when valid.
+ * @param {string} path  Where the step sits, such as `steps[2].then[0]`, which names it in each message.
+ * @returns {string[]}   Collected error sentences, empty when valid.
  */
 function validateStep(step, path) {
+  const at = placeOf(path);
   const errors = [];
-  if (!isPlainObject(step)) return [`${path}: must be an object`];
-  if (!STEP_KINDS.includes(step.kind)) {
-    return [`${path}.kind: must be one of ${STEP_KINDS.join('|')}`];
-  }
+  const fail = sentence => errors.push(say(at, sentence));
+  const needsUnit = () => { if (!isTokenRef(step.target)) fail('does not name a valid unit to act on'); };
+  if (!isPlainObject(step)) return [say(at, 'cannot be read')];
+  if (!STEP_KINDS.includes(step.kind)) return [say(at, 'is a kind of step the system does not know')];
   const allowed = STEP_KEYS_BY_KIND[step.kind];
   for (const key of Object.keys(step)) {
-    if (!allowed.has(key)) errors.push(`${path}: unknown key "${key}" for kind "${step.kind}"`);
+    if (!allowed.has(key)) fail(`has a setting called ${key} that this kind of step does not use`);
   }
   switch (step.kind) {
     case 'damage':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
-      if (typeof step.formula !== 'string' || step.formula.trim() === '') errors.push(`${path}.formula: required`);
-      if (typeof step.dmgType !== 'string' || step.dmgType.trim() === '') errors.push(`${path}.dmgType: required`);
+      needsUnit();
+      if (typeof step.formula !== 'string' || step.formula.trim() === '') fail('has no damage formula');
+      if (typeof step.dmgType !== 'string' || step.dmgType.trim() === '') fail('has no damage type');
       break;
     case 'heal':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
-      if (typeof step.formula !== 'string' || step.formula.trim() === '') errors.push(`${path}.formula: required`);
+      needsUnit();
+      if (typeof step.formula !== 'string' || step.formula.trim() === '') fail('has no heal amount');
       break;
     case 'modShield':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
-      if (typeof step.formula !== 'string' && typeof step.formula !== 'number') errors.push(`${path}.formula: required`);
+      needsUnit();
+      if (typeof step.formula !== 'string' && typeof step.formula !== 'number') fail('has no shield amount');
       break;
     case 'applyEffect':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
-      if (step.preset && !EFFECT_PRESETS.includes(step.preset)) {
-        errors.push(`${path}.preset: must be one of ${EFFECT_PRESETS.join('|')}`);
-      }
+      needsUnit();
+      if (step.preset && !EFFECT_PRESETS.includes(step.preset)) fail('applies a status the system does not know');
       if (step.preset === 'custom' && !isPlainObject(step.customData)) {
-        errors.push(`${path}.customData: required when preset === "custom"`);
+        fail('applies a custom status but has no custom status data');
       }
       if (step.durationPhases !== undefined) {
         const d = Number(step.durationPhases);
         if (!Number.isFinite(d) || d < 1) {
-          errors.push(`${path}.durationPhases: must be a number >= 1 (omit to use ${DEFAULT_STATUS_DURATION})`);
+          const phases = `${DEFAULT_STATUS_DURATION} phase${DEFAULT_STATUS_DURATION === 1 ? '' : 's'}`;
+          fail(`needs a duration of at least 1 phase. Leave it empty to use ${phases}`);
         }
       }
       break;
     case 'setFaction':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
-      if (!ACTOR_TYPES.includes(step.actorType)) {
-        errors.push(`${path}.actorType: must be one of ${ACTOR_TYPES.join('|')}`);
-      }
+      needsUnit();
+      if (!ACTOR_TYPES.includes(step.actorType)) fail(`needs a faction, one of ${oneOf(ACTOR_TYPES)}`);
       break;
     case 'removeEffect':
       // A global removal sweeps the whole Scene, so EffectExecutionService doesn't read a target.
-      if (step.scope !== 'global' && !isTokenRef(step.target)) {
-        errors.push(`${path}.target: must be a TokenRef`);
-      }
+      if (step.scope !== 'global') needsUnit();
       break;
     case 'animation':
       if (!isPlainObject(step.animation)) {
-        errors.push(`${path}.animation: must be an AnimPayload object`);
+        fail('has no animation to play');
       } else {
-        const r = validateAnimation(step.animation);
-        for (const e of r.errors) errors.push(`${path}.animation: ${e}`);
+        for (const e of validateAnimation(step.animation).errors) fail(`plays an animation with a problem. ${e}`);
       }
       if (step.persistent === true
           && !(typeof step.tag === 'string' && step.tag.trim() !== '')
           && !attachesToSpawnedToken(step.animation)) {
-        errors.push(`${path}.tag: required for a persistent animation. Set the tag that a matching applyEffect step \
-uses as its linkAnimationTag, or attach an effect step to "lastSpawned"`);
+        fail('plays a persistent animation with no tag. Give it the tag an apply status step uses as its linked '
+          + 'animation tag, or attach it to the last spawned token');
       }
       break;
     case 'floatingText':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
-      if (typeof step.text !== 'string') errors.push(`${path}.text: required`);
+      needsUnit();
+      if (typeof step.text !== 'string') fail('has no text to show');
       break;
     case 'moveToken':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
-      if (!MOVE_MODES.includes(step.mode)) {
-        errors.push(`${path}.mode: must be one of ${MOVE_MODES.join('|')}`);
-      }
+      needsUnit();
+      if (!MOVE_MODES.includes(step.mode)) fail(`needs a way to move, one of ${oneOf(MOVE_MODE_WORDS)}`);
       if (step.mode === 'terrainGeometry') {
         errors.push(...validateGeometry(step.geometry, { context: 'step', path: `${path}.geometry` }));
       }
-      if (step.mode === 'teleport' && step.location === undefined) {
-        errors.push(`${path}.location: required when mode === "teleport"`);
-      }
+      if (step.mode === 'teleport' && step.location === undefined) fail('teleports but has no place to go');
       if (step.mode === 'shift') {
-        if (step.dx === undefined && step.dy === undefined) {
-          errors.push(`${path}: shift mode requires at least one of dx, dy`);
-        }
+        if (step.dx === undefined && step.dy === undefined) fail('shifts but sets neither dx nor dy');
       }
       break;
     case 'spawnToken':
-      if (typeof step.actorUuid !== 'string' || step.actorUuid.trim() === '') {
-        errors.push(`${path}.actorUuid: required`);
-      }
-      if (step.location === undefined) errors.push(`${path}.location: required`);
+      if (typeof step.actorUuid !== 'string' || step.actorUuid.trim() === '') fail('has no actor to spawn');
+      if (step.location === undefined) fail('has no place to put the token');
       if (step.duration !== undefined && !(Number.isInteger(step.duration) && step.duration >= 0)) {
-        errors.push(`${path}.duration: must be an integer >= 0 (0 lasts until the encounter ends)`);
+        fail('needs a duration that is a whole number, 0 or more. 0 lasts until the encounter ends');
       }
       break;
     case 'restoreAction':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
+      needsUnit();
       if (!Array.isArray(step.actions) || step.actions.length === 0) {
-        errors.push(`${path}.actions: required, non-empty array`);
+        fail('does not say which actions to restore');
       } else {
         for (const a of step.actions) {
           if (!RESTORABLE_ACTIONS.includes(a)) {
-            errors.push(`${path}.actions: "${a}" must be one of ${RESTORABLE_ACTIONS.join('|')}`);
+            fail(`restores ${a}, which is not an action. Use ${oneOf(RESTORABLE_ACTIONS)}`);
           }
         }
       }
       break;
     case 'playResist':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
+      needsUnit();
       break;
     case 'playVoice':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
+      needsUnit();
       if (!VOICE_CATEGORY_KEYS.includes(step.category)) {
-        errors.push(`${path}.category: must be one of ${VOICE_CATEGORY_KEYS.join('|')}`);
+        fail('plays a voice line from a category the system does not know');
       }
       break;
     case 'refreshPathfinding':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
+      needsUnit();
       break;
     case 'unequip':
-      if (!isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
+      needsUnit();
       break;
     case 'guard':
-      if (step.target !== 'target') errors.push(`${path}.target: 'guard' may only run on 'target'`);
+      if (step.target !== 'target') {
+        fail('starts a guard on someone other than the target. A guard only runs on the target');
+      }
       break;
     case 'terrainEdit': {
-      if (step.target !== undefined && !isTokenRef(step.target)) errors.push(`${path}.target: must be a TokenRef`);
+      if (step.target !== undefined) needsUnit();
       if (step.target?.area?.includeCenter !== undefined && typeof step.target.area.includeCenter !== 'boolean') {
-        errors.push(`${path}.target.area.includeCenter: must be a boolean`);
+        fail('has an area whose include center setting is not on or off');
       }
       for (const k of TERRAIN_EDIT_NUMERIC_KEYS) {
         if (step[k] !== undefined && !Number.isFinite(Number(step[k]))) {
-          errors.push(`${path}.${k}: must be a number`);
+          fail(`has a ${k.replace(/([A-Z])/g, ' $1').toLowerCase()} setting that is not a number`);
         }
       }
       if (step.duration !== undefined && Number(step.duration) < 0) {
-        errors.push(`${path}.duration: must be >= 0 (0 = permanent)`);
+        fail('needs a duration of 0 or more. 0 is permanent');
       }
       if (step.effect !== undefined && step.effect !== '' && !TERRAIN_EDIT_HAZARD_TYPES.includes(step.effect)) {
-        errors.push(`${path}.effect: must be one of ${TERRAIN_EDIT_HAZARD_TYPES.join('|')}`);
+        fail('paints a hazard the system does not know');
       }
       if (step.presetTile !== undefined && (typeof step.presetTile !== 'string' || step.presetTile.trim() === '')) {
-        errors.push(`${path}.presetTile: must be a non-empty preset name`);
+        fail('has an empty terrain preset name');
       }
       const hasStat = ['eva', 'def', 'res', 'mov'].some(k => step[k] !== undefined);
       const hasHazard = typeof step.effect === 'string' && step.effect !== '';
       const hasVfx = typeof step.vfxEffect === 'string' && step.vfxEffect.trim() !== '';
       const hasLight = Number(step.lightDim) > 0 || Number(step.lightBright) > 0;
       if (!hasStat && !hasHazard && !hasVfx && !hasLight) {
-        errors.push(`${path}: must set at least one terrain parameter (stat, effect, vfx, or light)`);
+        fail('changes nothing. Set a stat, a hazard, a visual effect or a light');
       }
       break;
     }
     case 'if': {
-      const r = validateConditionTree(step.condition, `${path}.condition`);
-      for (const e of r.errors) errors.push(e);
+      errors.push(...validateConditionTree(step.condition, `${path}.condition`).errors);
       if (!Array.isArray(step.then)) {
-        errors.push(`${path}.then: must be an array of steps`);
+        fail('has then steps that cannot be read');
       } else {
         step.then.forEach((s, i) => errors.push(...validateStep(s, `${path}.then[${i}]`)));
       }
       if (step.else !== undefined) {
-        if (!Array.isArray(step.else)) errors.push(`${path}.else: must be an array of steps`);
+        if (!Array.isArray(step.else)) fail('has else steps that cannot be read');
         else step.else.forEach((s, i) => errors.push(...validateStep(s, `${path}.else[${i}]`)));
       }
       break;
     }
     case 'wait':
-      if (typeof step.ms !== 'number' && typeof step.ms !== 'string') errors.push(`${path}.ms: required`);
+      if (typeof step.ms !== 'number' && typeof step.ms !== 'string') fail('does not say how long to wait');
       break;
     case 'expr':
-      if (typeof step.expr !== 'string' || step.expr.trim() === '') errors.push(`${path}.expr: required`);
+      if (typeof step.expr !== 'string' || step.expr.trim() === '') fail('has no expression to run');
       break;
   }
   return errors;
@@ -474,38 +510,272 @@ uses as its linkAnimationTag, or attach an effect step to "lastSpawned"`);
 
 /**
  * Validate one authored effect entry and its nested action. game/effects/planning.mjs checks every entry with it
- * before planning.
+ * before planning, and the effect editor before saving. Its condition and every `if` condition get the effect
+ * condition rules. With a `carrier`, the entry is also checked against what its trigger supplies on that item. Every
+ * message is a plain sentence naming the step or condition it is about, and the same sentence is never listed twice.
  * @param {*} entry The authored entry.
- * @param {string} [path] Prefix for error messages.
- * @returns {{valid: boolean, errors: string[]}}
+ * @param {string|{path?: string, carrier?: EffectCarrier|null}} [options] Where the entry sits, or the options.
+ * @returns {{valid: boolean, errors: string[], warnings: string[]}}
  */
-export function validateEffectEntry(entry, path = 'entry') {
-  if (!isPlainObject(entry)) return { valid: false, errors: [`${path}: must be an object`] };
+export function validateEffectEntry(entry, options = {}) {
+  const { path = 'entry', carrier = null } = typeof options === 'string' ? { path: options } : options ?? {};
+  if (!isPlainObject(entry)) return { valid: false, errors: [say('this effect', 'cannot be read')], warnings: [] };
   const errors = [];
-  if (!EFFECT_TRIGGER_KEYS.includes(entry.trigger)) {
-    errors.push(`${path}.trigger: must be one of ${EFFECT_TRIGGER_KEYS.join('|')}`);
-  }
-  if (entry.name !== undefined && typeof entry.name !== 'string') {
-    errors.push(`${path}.name: must be a string`);
-  }
-  validateStringList(entry.itemNames, `${path}.itemNames`, errors);
-  validateStringList(entry.itemUuids, `${path}.itemUuids`, errors);
+  const warnings = [];
+  const fail = sentence => errors.push(say('this effect', sentence));
+  if (!EFFECT_TRIGGER_KEYS.includes(entry.trigger)) fail('has no trigger the system knows');
+  if (entry.name !== undefined && typeof entry.name !== 'string') fail('has a name that is not text');
+  validateStringList(entry.itemNames, 'item names', errors);
+  validateStringList(entry.itemUuids, 'item links', errors);
   if (entry.delayMs !== undefined && (!Number.isFinite(Number(entry.delayMs)) || Number(entry.delayMs) < 0)) {
-    errors.push(`${path}.delayMs: must be a number >= 0`);
+    fail('needs a delay of 0 or more');
   }
   if (entry.tokenAwaits !== undefined && typeof entry.tokenAwaits !== 'boolean') {
-    errors.push(`${path}.tokenAwaits: must be boolean`);
+    fail('has a token wait setting that is not on or off');
   }
-  const condition = validateConditionTree(entry.condition, `${path}.condition`);
+  const condition = validateConditionTree(entry.condition, { path: `${path}.condition`, surface: 'effect' });
   errors.push(...condition.errors);
+  warnings.push(...condition.warnings);
   const action = validate(entry.action);
-  errors.push(...action.errors.map(error => `${path}.action.${error}`));
-  return { valid: errors.length === 0, errors };
+  errors.push(...action.errors);
+  // The action check already reports each if condition's shape, so only new messages are added here.
+  walkSteps(entry.action?.steps, `${path}.action.steps`, true, (step, at) => {
+    if (step.kind !== 'if') return;
+    const rules = validateConditionTree(step.condition, { path: `${at}.condition`, surface: 'effect' });
+    errors.push(...rules.errors.filter(error => !errors.includes(error)));
+    warnings.push(...rules.warnings);
+  });
+  if (carrier && EFFECT_TRIGGER_KEYS.includes(entry.trigger)) {
+    validateEntryContext(entry, carrier, path, { errors, warnings });
+  }
+  return { valid: errors.length === 0, errors: [...new Set(errors)], warnings: [...new Set(warnings)] };
 }
 
-function validateStringList(value, path, errors) {
+/* -------------------------------------------- */
+/*  Context rules                               */
+/* -------------------------------------------- */
+
+const SAVE_TRIGGERS = new Set(['onFailedSave', 'onSucceedSave']);
+const CHECK_TRIGGERS = new Set(['onFailedCheck', 'onSucceedCheck']);
+const AIMED_RNG_TYPES = new Set(ITEM_ACTIVATION_SUPPORT.aimedRngTypes);
+/** Step kinds that change a unit, so a slain unit can't take them. */
+const CORPSE_STEPS = new Set(['heal', 'applyEffect', 'moveToken', 'setFaction']);
+/** Step kinds that change who stands where or on which side, which the exchange checked only when it opened. */
+const MID_EXCHANGE_FORBIDDEN = new Set(['moveToken', 'setFaction', 'unequip', 'restoreAction']);
+/** Steps that only show something, so running them once per target is harmless. */
+const DISPLAY_STEPS = new Set([
+  'animation', 'floatingText', 'playVoice', 'playResist', 'refreshPathfinding', 'wait', 'expr'
+]);
+
+/** Run the carrier rules on one entry, adding to `errors` and `warnings`. */
+function validateEntryContext(entry, carrier, path, out) {
+  const trigger = entry.trigger;
+  const cap = TRIGGER_CAPABILITIES[trigger];
+  const group = triggerGroupForItem(carrier);
+  const fail = (at, sentence) => out.errors.push(say(placeOf(at), sentence));
+  const warn = (at, sentence) => out.warnings.push(warnAt(placeOf(at), sentence));
+
+  if (!cap.group.includes(group)) {
+    fail(path, `uses ${TRIGGER_PHRASES[trigger]}, which never fires on this kind of item`);
+  }
+  if (trigger === 'onUseItem' && !listed(entry.itemNames) && !listed(entry.itemUuids)) {
+    fail(path, 'uses a use item trigger but names no item to watch for');
+  }
+  checkOutcomeTrigger(trigger, carrier, path, fail, warn);
+
+  const location = locationSupport(cap, carrier);
+  const ctx = { trigger, cap, location, multiTarget: cap.repeats === 'perTarget' && multiTargetShape(carrier) };
+  walkSteps(entry.action?.steps, `${path}.action.steps`, true, (step, at, topLevel) => {
+    checkStep(step, at, topLevel, ctx, fail, warn);
+  });
+}
+
+/** Whether a list names at least one non-empty string. */
+function listed(value) {
+  return Array.isArray(value) && value.some(entry => typeof entry === 'string' && entry.trim() !== '');
+}
+
+/** Save and check outcome triggers need the item to roll that save or check. */
+function checkOutcomeTrigger(trigger, carrier, at, fail, warn) {
+  const uses = `uses ${TRIGGER_PHRASES[trigger]}`;
+  if (SAVE_TRIGGERS.has(trigger)) {
+    if (carrier.save !== undefined && carrier.save?.required !== true) {
+      fail(at, `${uses}, but the item does not ask for a saving throw`);
+    }
+    if (carrier.targetType === 'Ground' || carrier.targetType === 'Self') {
+      const aim = carrier.targetType === 'Ground' ? 'the ground' : 'its user';
+      fail(at, `${uses}, which never fires on an item that targets ${aim}`);
+    }
+  }
+  if (CHECK_TRIGGERS.has(trigger) && carrier.check !== undefined) {
+    if (carrier.check?.required !== true || String(carrier.check.skill ?? 'None') === 'None') {
+      fail(at, `${uses}, but the item does not ask for a skill check with a skill`);
+    } else if (carrier.save?.required === true) {
+      warn(at, `${uses}, which never fires on a target, because the item rolls its saving throw instead`);
+    }
+  }
+}
+
+/**
+ * Whether the trigger has a clicked square and cast area: 'yes', 'no', or 'borrowed' for onUseItem, which uses the
+ * item being used. An activation has one only when its item is aimed, when the carrier says how it targets.
+ */
+function locationSupport(cap, carrier) {
+  if (cap.location === 'usedItem') return 'borrowed';
+  if (cap.location !== 'aimed') return 'no';
+  if (carrier.rngType === undefined) return 'yes';
+  return AIMED_RNG_TYPES.has(carrier.rngType) || carrier.targetType === 'Ground' ? 'yes' : 'no';
+}
+
+/** Whether one use of the item can catch more than one unit, so per-target entries run several times. */
+function multiTargetShape(carrier) {
+  if (carrier.rngType === undefined || carrier.targetType === 'Ground') return false;
+  if (AIMED_RNG_TYPES.has(carrier.rngType)) return true;
+  if (carrier.targetType === 'Self') return false;
+  if (carrier.rngType === 'Line' || carrier.rngType === 'Area') return true;
+  return carrier.rngType === 'Multiple' && carrier.targets > 1;
+}
+
+/** Call `visit(step, path, topLevel)` on every step, inside `if` branches too. */
+function walkSteps(steps, path, topLevel, visit) {
+  if (!Array.isArray(steps)) return;
+  steps.forEach((step, i) => {
+    if (!isPlainObject(step)) return;
+    const at = `${path}[${i}]`;
+    visit(step, at, topLevel);
+    if (step.kind === 'if') {
+      walkSteps(step.then, `${at}.then`, false, visit);
+      walkSteps(step.else, `${at}.else`, false, visit);
+    }
+  });
+}
+
+/** Whether a token reference names the run's target, directly or as an area's centre. */
+function namesTarget(ref) {
+  return ref === 'target' || (isPlainObject(ref?.area) && ref.area.center === 'target');
+}
+
+/** How a step uses the other unit, by the field that names it, for the message about a trigger that has none. */
+const TARGET_USES = Object.freeze({
+  target: 'targets', pair: 'pairs with', location: 'goes to', 'geometry.anchor': 'is anchored on'
+});
+
+/** How a step that changes a unit reads with that unit as its object, as in `heals the other unit`. */
+const UNIT_CHANGES = Object.freeze({
+  heal: 'heals', applyEffect: 'puts a status on', moveToken: 'moves', setFaction: 'changes the faction of'
+});
+
+/** Run the trigger rules on one step: what the trigger supplies, and what repeats or piles up. */
+function checkStep(step, at, topLevel, { trigger, cap, location, multiTarget }, fail, warn) {
+  const kind = step.kind;
+  const geometry = kind === 'moveToken' && step.mode === 'terrainGeometry' ? normalizeGeometry(step.geometry) : null;
+  const named = TRIGGER_PHRASES[trigger];
+
+  if (cap.target === 'none') {
+    const refs = [['target', step.target], ['pair', step.pair], ['location', step.location]];
+    if (geometry) refs.push(['geometry.anchor', geometry.anchor]);
+    for (const [key, ref] of refs) {
+      if (namesTarget(ref)) {
+        fail(`${at}.${key}`, `${TARGET_USES[key]} the other unit, but ${named} has no other unit. Use self`);
+      }
+    }
+  }
+
+  const locationRefs = [];
+  const placesAt = kind === 'moveToken' || kind === 'spawnToken';
+  if (placesAt && step.location === 'targetLocation') locationRefs.push('location');
+  if (geometry?.anchor === 'targetLocation') locationRefs.push('geometry.anchor');
+  if (kind === 'terrainEdit' && step.target === undefined) locationRefs.push('target');
+  for (const key of locationRefs) {
+    const castArea = key === 'target';
+    if (location === 'no') {
+      fail(`${at}.${key}`, castArea
+        ? `edits the cast area, but ${named} has no cast area here`
+        : `uses the clicked square, but ${named} has no clicked square here`);
+    }
+    if (location === 'borrowed') {
+      warn(`${at}.${key}`, castArea
+        ? 'edits the cast area of the item being used, if it has one'
+        : 'uses the clicked square of the item being used, if it has one');
+    }
+  }
+
+  const turnRefresh = kind === 'restoreAction' && step.target === 'self'
+    && Array.isArray(step.actions) && step.actions.some(a => a === 'turn' || a === 'standard');
+  if (turnRefresh && (cap.repeats === 'perBlow' || trigger === 'preCombat')) {
+    fail(at, `gives its own unit back a turn or standard action. That is not allowed on ${named}`);
+  } else if (cap.midExchange && MID_EXCHANGE_FORBIDDEN.has(kind)
+    && !(kind === 'restoreAction' && trigger === 'onKill')
+    && !(trigger === 'preCombat' && isPredictedPreCombatMove(step, topLevel, geometry))) {
+    fail(at, trigger === 'preCombat' && kind === 'moveToken'
+      ? 'moves a token. On a pre-combat trigger the only move allowed is a top level move of self by rule, '
+        + 'anchored on the other unit'
+      : `${STEP_PHRASES[kind]}. That is not allowed on ${named}`);
+  }
+
+  if (kind === 'guard' && trigger !== 'onActivation') {
+    fail(at, 'starts a guard. That is only allowed on an activation trigger');
+  }
+
+  // postCombat skips slain units when it runs, so only onKill and onDeath refuse steps on a corpse.
+  if (CORPSE_STEPS.has(kind) && trigger !== 'postCombat') {
+    if (cap.targetMayBeSlain && step.target === 'target') {
+      fail(`${at}.target`,
+        `${UNIT_CHANGES[kind]} the other unit, but that unit may already be dead when ${named} fires`);
+    }
+    if (cap.selfMayBeSlain && step.target === 'self') {
+      fail(`${at}.target`,
+        `${UNIT_CHANGES[kind]} its own unit, but that unit may already be dead when ${named} fires`);
+    }
+  }
+
+  if (geometry) {
+    if (geometry.reach === 'path' && geometry.budgetSource === 'rng' && cap.repeats === 'perPhase') {
+      fail(`${at}.geometry.budgetSource`,
+        `moves by rule within item range, but ${named} has no item range, so the move can never go anywhere`);
+    }
+    if (typeof step.target === 'string' && geometry.anchor === step.target) {
+      fail(`${at}.geometry.anchor`, 'moves a unit by rule anchored on that same unit');
+    }
+  }
+
+  const area = isPlainObject(step.target?.area);
+  if (cap.midExchange && kind === 'damage' && area) {
+    warn(`${at}.target`, `deals area damage. On ${named} that ends the exchange if it defeats a bystander`);
+  }
+  if (multiTarget) {
+    const onSelf = step.target === 'self' && !DISPLAY_STEPS.has(kind);
+    const castArea = kind === 'terrainEdit' && step.target === undefined;
+    if (onSelf || area || kind === 'spawnToken' || castArea) {
+      warn(at, 'runs once for every unit the item catches');
+    }
+  }
+  if (cap.repeats === 'perBlow' || cap.repeats === 'perPhase') {
+    const every = cap.repeats === 'perBlow' ? 'blow' : 'phase';
+    if (kind === 'spawnToken' && step.replaceOnRecast !== true) {
+      warn(at, `spawns a token every ${every}, so they pile up`);
+    }
+    if (kind === 'modShield' && (step.cap === undefined || step.cap === null || step.cap === '')) {
+      warn(at, `adds a shield with no cap, so it grows every ${every}`);
+    }
+    if (kind === 'terrainEdit' && Math.floor(Number(step.duration) || 0) === 0) {
+      warn(at, `makes a permanent terrain edit every ${every}, so they pile up`);
+    }
+    if (kind === 'applyEffect' && step.durationStacks === true) {
+      warn(at, `stacks a status duration, so it grows every ${every}`);
+    }
+  }
+}
+
+/** The one preCombat move the attack preview predicts: a top-level move of self next to the target. */
+function isPredictedPreCombatMove(step, topLevel, geometry) {
+  return step.kind === 'moveToken' && topLevel && step.target === 'self' && geometry?.anchor === 'target';
+}
+
+/** A list of item names or links must be a list of text. `words` names it in the message. */
+function validateStringList(value, words, errors) {
   if (value === undefined) return;
   if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) {
-    errors.push(`${path}: must be an array of strings`);
+    errors.push(say('this effect', `has ${words} that cannot be read`));
   }
 }

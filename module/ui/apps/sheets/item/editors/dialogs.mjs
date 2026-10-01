@@ -17,7 +17,9 @@ import {
 } from './condition-editors.mjs';
 import { openScalingDialog } from './scaling.mjs';
 import { mountConditionTreeBuilder, mountPathPicker, summarizeCondition } from './conditions.mjs';
-import { isEmpty as isConditionEmpty } from '../../../../../contracts/dsl/conditions.mjs';
+import { isEmpty as isConditionEmpty, validate as validateCondition } from '../../../../../contracts/dsl/conditions.mjs';
+import { createItemEditorNotifier } from '../../../../../presentation/interface/notifications.mjs';
+import { FoundryDiagnostics } from '../../../../../foundry/adapters/services/diagnostics.mjs';
 import { triggerGroupForItem } from '../../../../../contracts/dsl/effects.mjs';
 import { getTooltip } from '../../../../tooltips.mjs';
 import { capitalize } from '../../../../../lib/dom/html.mjs';
@@ -25,6 +27,8 @@ import { capitalize } from '../../../../../lib/dom/html.mjs';
 const TARGET_PARAMETERS_TEMPLATE = `systems/emblem-rpg/templates/editors/target-params.hbs`;
 const EFFECT_PARAMETERS_TEMPLATE = `systems/emblem-rpg/templates/editors/effect-params.hbs`;
 const DAMAGE_CONDITION_TEMPLATE = `systems/emblem-rpg/templates/editors/weapon-dmg-conditions.hbs`;
+
+const notify = createItemEditorNotifier({ sourcePath: import.meta.url, diagnostics: new FoundryDiagnostics() });
 
 /** Where an Item keeps its effects. An Object keeps its own at `system.effects`. */
 const DEFAULT_EFFECTS_PATH = 'system.effects';
@@ -391,6 +395,7 @@ export function openDamageConditionsEditor(subject) {
 /*  Weapon Damage Conditions                    */
 /* -------------------------------------------- */
 
+/** Edit a weapon's damage-type conditions. On save, errors block it and warnings are shown. */
 async function openWeaponDmgConditionsDialog(itemSheet) {
   const damageData = itemSheet.document.system.weapon.dmgTypes;
   const enabledDmgTypes = DAMAGE_TYPES.filter(type => damageData[type]).map(type => {
@@ -418,12 +423,23 @@ async function openWeaponDmgConditionsDialog(itemSheet) {
     content,
     gather: root => {
       const update = {};
+      const errors = [];
+      const warnings = [];
       const randomize = root.querySelector('#randomize-checkbox');
       if (randomize) update['system.weapon.dmgTypes.randomize'] = randomize.checked;
       for (const [type, builder] of builders) {
-        update[`system.weapon.dmgTypes.${type}ConditionTree`] = builder.getTree();
+        const tree = builder.getTree();
+        const r = validateCondition(tree, { place: `the ${type} condition`, surface: 'damageType' });
+        errors.push(...r.errors);
+        warnings.push(...r.warnings);
+        update[`system.weapon.dmgTypes.${type}ConditionTree`] = tree;
         update[`system.weapon.dmgTypes.${type}Condition`] = '';
       }
+      if (errors.length) {
+        notify.error(`These damage type conditions cannot be saved. ${errors.join(' ')}`);
+        return undefined;
+      }
+      if (warnings.length) notify.warn(warnings.join(' '));
       return update;
     },
     apply: update => itemSheet.document.update(update),
@@ -440,6 +456,7 @@ function wireDamageConditionBuilders(root, damageData, builders) {
     const initial = damageData[`${type}ConditionTree`];
     const builder = mountConditionTreeBuilder(container, {
       initialTree: initial?.kind ? initial : null,
+      surface: 'damageType',
       scopeEl: block,
       summaryEls: { summary: block.querySelector('.dmg-cond-state') }
     });

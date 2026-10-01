@@ -1,5 +1,6 @@
 /** @layer contracts/dsl */
 import { isPlainObject } from '../../lib/core/runtime.mjs';
+import { placeOf, say } from './messages.mjs';
 
 /* -------------------------------------------- */
 /*  Vocabulary                                  */
@@ -127,61 +128,58 @@ function pickEnum(value, allowed, fallback) {
  * @param {*} raw                                Stored geometry data.
  * @param {object} [opts={}]
  * @param {'requirement'|'step'} [opts.context='requirement']    Where the spec is used.
- * @param {string} [opts.path='geometry']        Dotted path used to prefix error messages.
- * @returns {string[]}                           Collected error strings, empty when valid.
+ * @param {string} [opts.path='geometry']        Where the spec sits, which names the step or requirement in each
+ *                                               message.
+ * @returns {string[]}                           Collected error sentences, empty when valid.
  */
 export function validateGeometry(raw, { context = 'requirement', path = 'geometry' } = {}) {
+  const place = placeOf(path, context === 'step' ? 'this step' : 'this requirement');
   const errors = [];
-  if (!isPlainObject(raw)) return [`${path}: must be an object`];
+  const fail = sentence => errors.push(say(place, sentence));
+  if (!isPlainObject(raw)) return [say(place, 'has placement settings that cannot be read')];
   const g = raw;
-  if (!GEOMETRY_ANCHORS.includes(g.anchor)) {
-    errors.push(`${path}.anchor: must be one of ${GEOMETRY_ANCHORS.join('|')}`);
-  }
+  if (!GEOMETRY_ANCHORS.includes(g.anchor)) fail('is anchored on something the system does not know');
   if (context === 'requirement') {
-    if (!GEOMETRY_MOVERS.includes(g.mover)) {
-      errors.push(`${path}.mover: must be one of ${GEOMETRY_MOVERS.join('|')}`);
-    }
+    if (!GEOMETRY_MOVERS.includes(g.mover)) fail('places a token the system does not know');
     if (g.mover === 'custom') {
       for (const k of ['moverWidth', 'moverHeight']) {
         const n = Number(g[k]);
         if (!Number.isInteger(n) || n < 1 || n > MAX_FOOTPRINT_SIDE) {
-          errors.push(`${path}.${k}: must be an integer 1-${MAX_FOOTPRINT_SIDE}`);
+          fail(`needs a footprint ${k === 'moverWidth' ? 'width' : 'height'} from 1 to ${MAX_FOOTPRINT_SIDE} squares`);
         }
       }
     }
     if (g.minCount !== undefined) {
       const n = Number(g.minCount);
-      if (!Number.isInteger(n) || n < 1) errors.push(`${path}.minCount: must be an integer >= 1`);
+      if (!Number.isInteger(n) || n < 1) fail('needs a count of 1 or more');
     }
   }
   const minD = Number(g.minDistance);
   const maxD = Number(g.maxDistance);
-  if (!Number.isInteger(minD) || minD < 1) errors.push(`${path}.minDistance: must be an integer >= 1`);
-  if (!Number.isInteger(maxD) || maxD < 1) errors.push(`${path}.maxDistance: must be an integer >= 1`);
+  if (!Number.isInteger(minD) || minD < 1) fail('needs a minimum distance that is a whole number, 1 or more');
+  if (!Number.isInteger(maxD) || maxD < 1) fail('needs a maximum distance that is a whole number, 1 or more');
   if (Number.isInteger(minD) && Number.isInteger(maxD) && maxD < minD) {
-    errors.push(`${path}.maxDistance: must be >= minDistance`);
+    fail('has a maximum distance below its minimum distance');
   }
-  if (!GEOMETRY_METRICS.includes(g.metric)) errors.push(`${path}.metric: must be one of ${GEOMETRY_METRICS.join('|')}`);
-  if (!GEOMETRY_REACHES.includes(g.reach)) errors.push(`${path}.reach: must be one of ${GEOMETRY_REACHES.join('|')}`);
+  if (!GEOMETRY_METRICS.includes(g.metric)) fail('measures distance in a way the system does not know');
+  if (!GEOMETRY_REACHES.includes(g.reach)) fail('reaches its square in a way the system does not know');
   if (g.reach === 'path') {
     if (!GEOMETRY_BUDGET_SOURCES.includes(g.budgetSource)) {
-      errors.push(`${path}.budgetSource: must be one of ${GEOMETRY_BUDGET_SOURCES.join('|')}`);
+      fail('takes its movement budget from a source the system does not know');
     }
     if (g.budgetSource === 'custom') {
       const v = g.budgetValue;
-      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
-        errors.push(`${path}.budgetValue: a custom budget needs a number of squares, 0 or more`);
-      }
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) fail('needs a custom budget of 0 squares or more');
     }
   }
   if (g.elevation !== undefined && !GEOMETRY_ELEVATION_RULES.includes(g.elevation)) {
-    errors.push(`${path}.elevation: must be one of ${GEOMETRY_ELEVATION_RULES.join('|')}`);
+    fail('has an elevation rule the system does not know');
   }
   if (g.lineOfSight !== undefined && typeof g.lineOfSight !== 'boolean') {
-    errors.push(`${path}.lineOfSight: must be a boolean`);
+    fail('has a line of sight setting that is not on or off');
   }
   if (context === 'step' && g.pick !== undefined && !GEOMETRY_PICKS.includes(g.pick)) {
-    errors.push(`${path}.pick: must be one of ${GEOMETRY_PICKS.join('|')}`);
+    fail('picks its square in a way the system does not know');
   }
   return errors;
 }

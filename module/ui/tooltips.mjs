@@ -562,7 +562,7 @@ const TOOLTIPS = Object.freeze({
   'editor.card.duplicate': 'Duplicate this step below it',
   'editor.card.delete': 'Delete this step',
   'editor.card.kind': ({ kind }) => `Step kind: ${kind}`,
-  'editor.save-disabled': ({ error }) => (error ? `Fix this before saving: ${error}` : 'Nothing to save yet'),
+  'editor.save-disabled': ({ error }) => (error ? `Fix this before saving. ${error}` : 'Nothing to save yet'),
   'editor.effect.trigger': 'When this effect runs',
   'editor.effect.name': 'Optional label shown on the item sheet and in the window title',
   'editor.effect.hold-pose': "Keep the caster's cast pose until every step here has finished",

@@ -19,7 +19,7 @@ import { AnimationDispatcher } from '../../../../../external/sequencer/animation
 import { openEditor } from '../../../../dialogs.mjs';
 import { getTooltip } from '../../../../tooltips.mjs';
 import { createCardList, parseCardJson, unparsedJsonErrors } from './card-list.mjs';
-import { capitalize, escapeHtml } from '../../../../../lib/dom/html.mjs';
+import { escapeHtml } from '../../../../../lib/dom/html.mjs';
 import { renderField, readField } from './fields.mjs';
 import { createItemEditorNotifier } from '../../../../../presentation/interface/notifications.mjs';
 import { SYSTEM_ID } from '../../../../../contracts/protocol.mjs';
@@ -395,20 +395,21 @@ function unparsedStepJson(paneEl) {
   const cards = paneEl.querySelector('.ed-list')?.querySelectorAll(':scope > .ed-card') ?? [];
   cards.forEach((card, index) => {
     const { invalid } = parseCardJson(card.querySelector('[data-step-json]')?.value);
-    if (invalid !== undefined) unparsed.push({ index, field: 'advanced json', text: invalid });
+    if (invalid !== undefined) unparsed.push({ index, field: 'Advanced JSON', text: invalid });
   });
   return unparsed;
 }
 
 /**
  * The refusal line for one pane's unparsed Advanced JSON. Steps are numbered per pane, so a tab of the slot editor
- * is named by its label, with its slot in front where two tabs share the label, as "Attack Adjacent" and
- * "Activation Adjacent" do.
+ * is named by its label, with its slot in front where two tabs share the label, as attack Adjacent and activation
+ * Adjacent do. Brackets in a label are dropped so the sentence stays plain.
  */
 function stepJsonErrors(paneEl) {
   const tab = TAB_DEFINITIONS[paneEl.dataset.animPane];
   const labelRepeats = Object.values(TAB_DEFINITIONS).filter(other => other.label === tab?.label).length > 1;
-  const name = labelRepeats ? `${capitalize(tab.slot)} ${tab.label}` : tab?.label;
+  const label = tab?.label.replace(/[()]/g, '');
+  const name = labelRepeats ? `${tab.slot} ${label}` : label;
   return unparsedJsonErrors(unparsedStepJson(paneEl), name ? `${name} step` : 'step');
 }
 
@@ -431,7 +432,7 @@ function warnUnparsedStepJson(paneEl) {
  */
 function unparsedJsonRefused(panes) {
   const errors = panes.flatMap(stepJsonErrors);
-  if (errors.length) notify.error(`Animation is invalid: ${errors.join(' | ')}`);
+  if (errors.length) notify.error(`This animation cannot be saved. ${errors.join(' ')}`);
   return errors.length > 0;
 }
 
@@ -1000,7 +1001,7 @@ export async function openAnimationEditorDialog(item) {
       for (const [slot, slotData] of Object.entries(anim)) {
         const r = validateSlot(slotData);
         if (!r.valid) {
-          notify.error(`Animation "${slot}" is invalid: ${r.errors.join(' | ')}`);
+          notify.error(`The ${slot} animation cannot be saved. ${r.errors.join(' ')}`);
           return undefined;
         }
       }
@@ -1065,7 +1066,7 @@ export async function openAnimationPayloadEditor(payload, { title = 'Edit Animat
 
       const r = validate(out);
       if (!r.valid) {
-        notify.error(`Animation is invalid: ${r.errors.join(' | ')}`);
+        notify.error(`This animation cannot be saved. ${r.errors.join(' ')}`);
         return undefined;
       }
       return out;

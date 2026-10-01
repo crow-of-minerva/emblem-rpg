@@ -596,11 +596,14 @@ async function applyConditionEdit(tree, action, nodeId, btn) {
  * @param {object} [options.summaryEls]           Summary and JSON elements the builder keeps current.
  * @param {string} [options.rootActionsHtml]      Markup placed first in the root group's action cluster, repainted
  *                                                with the tree. The caller handles its events.
+ * @param {string} [options.surface]              Which surface the tree belongs to, for the pasted-JSON check. An
+ *                                                opener that doesn't say is the effect editor.
  * @returns {{getTree: Function, isEmpty: Function, setTree: Function, repaint: Function}}
  */
 export function mountConditionTreeBuilder(containerEl, options = {}) {
   const summaryEls = options.summaryEls || null;
   const scopeEl = options.scopeEl || containerEl;
+  const surface = options.surface || 'effect';
 
   const state = {
     tree: options.initialTree
@@ -655,16 +658,17 @@ export function mountConditionTreeBuilder(containerEl, options = {}) {
       if (summaryEls.json.value.trim() === '') return;
       try {
         const parsed = JSON.parse(summaryEls.json.value);
-        const r = validateTree(parsed);
+        const r = validateTree(parsed, { surface });
         if (!r.valid) {
-          notify.warn(`Condition tree is invalid: ${r.errors.join(' | ')}`);
+          notify.warn(`This condition was not applied. ${r.errors.join(' ')}`);
           return;
         }
+        if (r.warnings.length) notify.warn(r.warnings.join(' '));
         state.tree = parsed;
         assignIds(state.tree);
         repaint();
       } catch (err) {
-        notify.warn('Malformed condition JSON.');
+        notify.warn('This condition was not applied. Its text is not valid JSON.');
       }
     });
   }
@@ -829,8 +833,8 @@ const truthy = (expr) => ({ kind: 'truthy', expr });
 export const CONDITION_TEMPLATES = [
   { key: '',                        label: 'template',         group: '',                  tree: null },
 
-  { key: 'distMelee',               label: 'Distance: melee (adjacent, within 1 level)', group: 'Distance', tree: cmp('distance', '===', ENGAGEMENT_KINDS.MELEE) },
-  { key: 'distRangedEngagement',    label: 'Distance: ranged (further, or over a drop)', group: 'Distance', tree: cmp('distance', '===', ENGAGEMENT_KINDS.RANGED) },
+  { key: 'distMelee',               label: 'Distance: melee (adjacent, within 1 level)', group: 'Distance', tree: cmp('engagement', '===', ENGAGEMENT_KINDS.MELEE) },
+  { key: 'distRangedEngagement',    label: 'Distance: ranged (further, or over a drop)', group: 'Distance', tree: cmp('engagement', '===', ENGAGEMENT_KINDS.RANGED) },
   { key: 'distAdjacent',            label: 'Distance: exactly 1 sq',      group: 'Distance',          tree: cmp('distance', '===', 1) },
   { key: 'distRanged',              label: 'Distance: >1 sq',             group: 'Distance',          tree: cmp('distance', '>', 1) },
   { key: 'distAtLeast2',            label: 'Distance: ≥2 sq',             group: 'Distance',          tree: cmp('distance', '>=', 2) },
@@ -843,7 +847,10 @@ export const CONDITION_TEMPLATES = [
   { key: 'hasAction',               label: 'Owner has unspent action',    group: 'Owner state',       tree: truthy('hasAction') },
   { key: 'hasMoved',                label: 'Owner has moved this phase',  group: 'Owner state',       tree: truthy('hasMoved') },
   { key: 'firstAttack',             label: 'First attack of round (attackIndex === 0)', group: 'Owner state', tree: cmp('attackIndex', '===', 0) },
-  { key: 'isActiveItem',            label: 'This is the active ability',   group: 'Owner state',       tree: cmp('activeItem', '===', 'item', true) },
+  { key: 'isActiveItem',            label: 'This is the active ability',   group: 'Owner state',       tree: andOf([
+                                                                            truthy('activeItem'),
+                                                                            cmp('activeItem.uuid', '===', 'item.uuid', true)
+                                                                          ]) },
 
   { key: 'hpFull',                  label: 'Owner at full HP',            group: 'Owner HP',          tree: cmp('hp', '>=', 'maxHp', true) },
   { key: 'hpBelowHalf',             label: 'Owner below half HP',         group: 'Owner HP',          tree: cmp('hp', '<', 'maxHp / 2', true) },

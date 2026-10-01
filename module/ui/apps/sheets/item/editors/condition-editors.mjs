@@ -7,6 +7,7 @@
 import { SYSTEM_ID } from '../../../../../contracts/protocol.mjs';
 import { openEditor } from '../../../../dialogs.mjs';
 import { validate as validateTree } from '../../../../../contracts/dsl/conditions.mjs';
+import { validateModifier } from '../../../../../contracts/dsl/modifiers.mjs';
 import { createItemEditorNotifier } from '../../../../../presentation/interface/notifications.mjs';
 import {
   getConditionClipboard,
@@ -141,8 +142,9 @@ function buildModifierPayload(dialogEl, tree, original) {
 /* -------------------------------------------- */
 
 /**
- * Open the modifier editor. The condition tree is validated before saving. The copy and paste buttons share the
- * condition clipboard with the other editors, and pasting over a non-empty tree asks first.
+ * Open the modifier editor. The modifier is validated before saving: errors block the save and warnings are shown.
+ * The copy and paste buttons share the condition clipboard with the other editors, and pasting over a non-empty tree
+ * asks first.
  */
 async function openModifierDialog(itemSheet, index, modifier) {
   const sourceTree = modifier.conditionTree && typeof modifier.conditionTree === 'object'
@@ -164,14 +166,15 @@ async function openModifierDialog(itemSheet, index, modifier) {
     content,
     gather: (root) => {
       const tree = builder ? builder.getTree() : null;
-      if (tree) {
-        const r = validateTree(tree);
-        if (!r.valid) {
-          notify.error(`Condition tree is invalid: ${r.errors.join(' | ')}`);
-          return undefined;
-        }
+      const payload = buildModifierPayload(root, tree, modifier);
+      const item = itemSheet.document;
+      const r = validateModifier(payload, { itemType: item.system.itemType || item.type });
+      if (!r.valid) {
+        notify.error(`This modifier cannot be saved. ${r.errors.join(' ')}`);
+        return undefined;
       }
-      return buildModifierPayload(root, tree, modifier);
+      if (r.warnings.length) notify.warn(r.warnings.join(' '));
+      return payload;
     },
     apply: async (updated) => {
       const modifiers = [...itemSheet.document.system.modifiers];
@@ -189,6 +192,7 @@ async function openModifierDialog(itemSheet, index, modifier) {
 
       builder = mountConditionTreeBuilder(el.querySelector('.mod-tree-contents'), {
         initialTree: sourceTree,
+        surface: isAura ? 'aura' : 'modifier',
         summaryEls: {
           summary: el.querySelector('.mod-condition-summary'),
           json: el.querySelector('.mod-advanced-json')
@@ -363,6 +367,7 @@ function paintRequirementBody(bodyEl, state) {
   const tree = predicate.tree;
   state.builder = mountConditionTreeBuilder(card.querySelector('[data-tree-container]'), {
     initialTree: tree && typeof tree === 'object' && tree.kind ? tree : null,
+    surface: 'requirement',
     summaryEls: {
       summary: card.querySelector('[data-pred-summary]'),
       json: card.querySelector('.mod-advanced-json')
@@ -449,8 +454,9 @@ function attachHandlers(dialogEl, state) {
 /* -------------------------------------------- */
 
 /**
- * Edit one requirement, validating it with the requirement contract before writing the Item. With `isNew` the entry
- * is the blank one `createRequirementEntry` just added, and it is removed again unless the editor saves it.
+ * Edit one requirement, validating it with the requirement contract and the requirement condition rules before
+ * writing the Item. With `isNew` the entry is the blank one `createRequirementEntry` just added, and it is removed
+ * again unless the editor saves it.
  * @param {ItemSheet} itemSheet           The sheet it was opened from.
  * @param {number} entryIndex             Which requirement.
  * @param {object} [options]
@@ -474,10 +480,14 @@ export async function openRequirementEditor(itemSheet, entryIndex, { isNew = fal
     gather: (root) => {
       const updated = readRequirement(root, state);
       const r = validateRequirement(updated);
-      if (!r.valid) {
-        notify.error(`Requirement is invalid: ${r.errors.join(' | ')}`);
+      const tree = updated.type === 'condition' ? updated.predicates[0]?.tree ?? null : null;
+      const rules = validateTree(tree, { path: 'predicates[0].tree', surface: 'requirement' });
+      const errors = [...new Set([...r.errors, ...rules.errors])];
+      if (errors.length) {
+        notify.error(`This requirement cannot be saved. ${errors.join(' ')}`);
         return undefined;
       }
+      if (rules.warnings.length) notify.warn(rules.warnings.join(' '));
       return updated;
     },
     apply: async (updated) => {
