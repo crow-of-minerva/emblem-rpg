@@ -6,7 +6,9 @@ import {
   normalizeCombatExchangeIntent
 } from '../../../contracts/domains/combat.mjs';
 import { COMMAND_IDS } from '../../../contracts/commands.mjs';
-import { resolveCombatContinuation, resolveCombatContinuationChoice } from '../../../game/combat/exchange.mjs';
+import {
+  keptTurnSlots, resolveCombatContinuation, resolveCombatContinuationChoice
+} from '../../../game/combat/exchange.mjs';
 import { resolveSettledStanding, resolveStandingDestination } from '../../../game/movement/pathfinding.mjs';
 import { addUse, drawnExchangeReads, objectDelay, proficiencyUpdates, runCombatSequence } from './blows.mjs';
 import { CombatPersistenceError, StaleCombatError } from '../../recovery/errors.mjs';
@@ -14,10 +16,12 @@ import { cardRequester, presentSafely, runSafely, runSafelyAsync } from '../../f
 import { requireOpeningExchangeSnapshot, requireSettlementSnapshot, validateSnapshot } from './gates.mjs';
 import { endMessage, rankUpMessage, startMessage, weaponArtMessage } from './receipts.mjs';
 import {
+  collectRestores,
   eventsAfterCommit,
   publishCombatExperience,
   publishStanceBreaks,
   recordStanceBreak,
+  exchangeSlain,
   revalidateEffectDefeats,
   runActiveTriggers,
   settleCombatExperience,
@@ -87,6 +91,7 @@ function createExchangeState(snapshot, intent, context) {
     modifierChances: null,
     proficiencyAwards: new Map(),
     effectHealth: [],
+    restores: [],
     brokenItems: new Set(),
     stanceBreaks: [],
     preCombatEffectIndex: 0,
@@ -133,7 +138,7 @@ async function openExchange(services, exchange) {
   exchange.preCombatEffectIndex = exchange.effectHealth.length;
   if (objectDelay(snapshot)) return;
   await runActiveTriggers(
-    services.effects, snapshot.source, snapshot.target, snapshot, ['preCombat'],
+    services, snapshot.source, snapshot.target, snapshot, ['preCombat'],
     boardFacts(snapshot), exchange.effectHealth
   );
   await revalidateEffectDefeats(services, exchange.effectHealth, exchange.preCombatEffectIndex, exchange.operation);
@@ -147,7 +152,9 @@ async function openExchange(services, exchange) {
 /** Settle uses, proficiency, experience, continuation and post-combat triggers under the command's operation. */
 async function commitExchange(services, exchange) {
   const { intent, context } = exchange;
-  const reads = drawnExchangeReads(services.combatState, exchange.modifierChances, exchange.operation, context.userId);
+  const reads = drawnExchangeReads(
+    services.combatState, exchange.modifierChances, exchange.operation, context.userId, true
+  );
   let snapshot = await requireSettlementSnapshot(reads, intent);
   await services.settlement.commitItemUses(exchange.useLedger, exchange.operation);
   const proficiency = proficiencyUpdates(exchange.proficiencyAwards);
@@ -175,7 +182,8 @@ async function commitExchange(services, exchange) {
     extraActionsRemaining: snapshot.source.extraActionsRemaining,
     extraActionUsed: snapshot.source.extraActionUsed,
     hasCanter: snapshot.source.hasCanter,
-    movementRemaining: Math.max(0, snapshot.movement.allowance - movementResolution.cost)
+    movementRemaining: Math.max(0, snapshot.movement.allowance - movementResolution.cost),
+    turnRefreshed: keptTurnSlots(exchange.restores, snapshot.sourceActorUuid)?.action === true
   });
   if (!await services.settlement.settleSourceContinuation(
     snapshot, movementResolution, continuation, context.requestId, { cantersAfter: true }
@@ -184,8 +192,11 @@ async function commitExchange(services, exchange) {
   const postCombatSnapshot = await requireSettlementSnapshot(reads, intent);
   const postCombatEffectIndex = exchange.effectHealth.length;
   if (!objectDelay(snapshot)) {
-    await runActiveTriggers(services.effects, postCombatSnapshot.source, postCombatSnapshot.target,
-      postCombatSnapshot, ['postCombat'], { targetSlain: attackDefeat.targetDefeated }, exchange.effectHealth);
+    collectRestores(await runActiveTriggers(services, postCombatSnapshot.source, postCombatSnapshot.target,
+      postCombatSnapshot, ['postCombat'], {
+        targetSlain: attackDefeat.targetDefeated,
+        slainActorUuids: exchangeSlain(exchange.transcript, exchange.effectHealth)
+      }, exchange.effectHealth), exchange.restores);
     await revalidateEffectDefeats(services, exchange.effectHealth, postCombatEffectIndex, exchange.operation);
   }
   const finalSnapshot = await requireSettlementSnapshot(reads, intent);
@@ -205,7 +216,11 @@ function exchangeOutcome(exchange, snapshot, finalSnapshot, movementResolution, 
     sequence: Object.freeze(exchange.transcript),
     effectHealth: Object.freeze(exchange.effectHealth),
     movementCost: movementResolution.cost,
-    continuation: Object.freeze({ ...continuation, exchangeRequestId: context.requestId }),
+    continuation: Object.freeze({
+      ...continuation,
+      exchangeRequestId: context.requestId,
+      keptSlots: keptTurnSlots(exchange.restores, snapshot.sourceActorUuid)
+    }),
     sourceDefeated: finalSnapshot.source.hp.value <= 0,
     targetDefeated: finalSnapshot.target.hp.value <= 0,
     requestId: context.requestId,

@@ -11,60 +11,52 @@ import {
   STANCE_BREAK_PRESENTATION_KIND,
   STANCE_BREAK_STATUS_ID
 } from '../../../contracts/domains/damage.mjs';
-import { resolveStanceBreak } from '../../../game/combat/damage.mjs';
+import { defeatEndsExchange, isConfirmedKill, resolveStanceBreak } from '../../../game/combat/damage.mjs';
 import { settleClaimedDefeat } from '../defeat.mjs';
 import { computeAttackExperience, earnsCharacterExperience } from '../../../game/progression/rules.mjs';
 import { CombatPersistenceError, StaleCombatError } from '../../recovery/errors.mjs';
 import { effectContext, effectRuntime } from '../../effects/request.mjs';
 import { presentSafely } from '../../feedback.mjs';
 import { MAX_SETTLEMENT_ATTEMPTS } from '../../../contracts/commands.mjs';
+import { DIAGNOSTIC_SEVERITIES, recordDiagnostic } from '../../../contracts/protocol.mjs';
 
 /* -------------------------------------------- */
 /*  Trigger sequencing                          */
 /* -------------------------------------------- */
 
 /** Run `self`'s item effects for the named triggers (onHit, onMiss and so on) against `target`. */
-export async function runActiveTriggers(effects, self, target, snapshot, triggers, context = {}, effectHealth = null) {
-  return runGroupedEffects(effects, self.effects, self, target, snapshot, triggers, context, effectHealth);
+export async function runActiveTriggers(services, self, target, snapshot, triggers, context = {}, effectHealth = null) {
+  return runGroupedEffects(services, self.effects, self, target, snapshot, triggers, context, effectHealth);
 }
 
 /**
  * Run the landed-blow trigger family and return the defeat status the blow ends with.
- * A killing blow still fires the striker's hit triggers, so a heal or buff aimed at a living unit lands, but every
- * step spares the slain unit. The slain unit's own On Struck does not fire.
+ * The striker's hit triggers run first, then the struck unit's On Struck. A unit the blow defeated is only pending
+ * then, so either side's steps still reach it and a heal can save it.
+ * A claimed defeat is then re-checked. A confirmed kill fires the victim's On Death and the striker's On Kill, each
+ * sparing the corpse, and On Kill's restored slots go to `restores`. A saved unit fires nothing more.
  * Every condition in the family reads the struck unit as the blow left it: struckAfterBlow overlays the HP and
  * stance that settleLandedBlow in blows.mjs wrote, so "puts the target into Stance Break" reads `targetStn <= 0`.
  */
-export async function runHitTriggers(services, acting, defending, snapshot, blow, effectHealth) {
-  const effects = services.effects;
+export async function runHitTriggers(services, acting, defending, snapshot, blow, effectHealth, restores = null) {
   const struck = struckAfterBlow(defending, blow);
   const activeTriggers = blow.critical ? ['onCrit', 'onHitOrCrit'] : ['onHit', 'onHitOrCrit'];
   const context = { dmg: blow.rolledDamage, isCrit: blow.critical, combat: blow };
-  const slain = blow.defeatStatus === DEFEAT_STATUSES.CLAIMED;
-  await runActiveTriggers(effects, acting, struck, snapshot, activeTriggers,
-    slain ? { ...context, slainActorUuids: [struck.actorUuid] } : context, effectHealth);
-  if (!slain) {
-    await runActiveTriggers(effects, struck, acting, snapshot, ['onStruck'], context, effectHealth);
-  }
-  if (blow.defeatStatus === DEFEAT_STATUSES.CLAIMED) {
-    await runGroupedEffects(
-      effects, struck.passiveEffects, struck, acting, snapshot, ['onDeath'], context, effectHealth
-    );
-  }
-  let finalStatus = blow.defeatStatus ?? null;
-  if (blow.defeatStatus === DEFEAT_STATUSES.CLAIMED) {
-    const status = await services.settlement.defeatStatus(struck.actorUuid, struck.tokenUuid,
-      { operation: snapshot.operation });
-    finalStatus = status?.status ?? DEFEAT_STATUSES.SURVIVED;
-  }
-  if ([DEFEAT_STATUSES.CLAIMED, DEFEAT_STATUSES.SURVIVED, DEFEAT_STATUSES.EXTRA_LIFE].includes(finalStatus)) {
-    await runActiveTriggers(effects, acting, struck, snapshot, ['onKill'], context, effectHealth);
-  }
-  if (finalStatus === DEFEAT_STATUSES.CLAIMED) {
-    await runGroupedEffects(
-      effects, acting.passiveEffects, acting, struck, snapshot, ['onKill'], context, effectHealth
-    );
-  }
+  await runActiveTriggers(services, acting, struck, snapshot, activeTriggers, context, effectHealth);
+  await runActiveTriggers(services, struck, acting, snapshot, ['onStruck'], context, effectHealth);
+  if (blow.defeatStatus !== DEFEAT_STATUSES.CLAIMED) return blow.defeatStatus ?? null;
+  const finalStatus = await recheckDefeat(services, struck.actorUuid, struck.tokenUuid, snapshot.operation);
+  if (!isConfirmedKill(finalStatus)) return finalStatus;
+  const slainContext = { ...context, slainActorUuids: [struck.actorUuid] };
+  await runGroupedEffects(
+    services, struck.passiveEffects, struck, acting, snapshot, ['onDeath'], slainContext, effectHealth
+  );
+  collectRestores(
+    await runActiveTriggers(services, acting, struck, snapshot, ['onKill'], slainContext, effectHealth), restores
+  );
+  collectRestores(await runGroupedEffects(
+    services, acting.passiveEffects, acting, struck, snapshot, ['onKill'], slainContext, effectHealth
+  ), restores);
   return finalStatus;
 }
 
@@ -101,11 +93,11 @@ function finiteOrNull(value) {
 }
 
 /** Run the missed-blow trigger family: the swinging side's miss, then the struck-at side's evasion. */
-export async function runMissTriggers(effects, acting, defending, snapshot, check, effectHealth) {
-  await runActiveTriggers(effects, acting, defending, snapshot, ['onMiss'], { check }, effectHealth);
-  await runActiveTriggers(effects, defending, acting, snapshot, ['onEvade'], { check }, effectHealth);
+export async function runMissTriggers(services, acting, defending, snapshot, check, effectHealth) {
+  await runActiveTriggers(services, acting, defending, snapshot, ['onMiss'], { check }, effectHealth);
+  await runActiveTriggers(services, defending, acting, snapshot, ['onEvade'], { check }, effectHealth);
   await runGroupedEffects(
-    effects, defending.passiveEffects, defending, acting, snapshot, ['onEvade'], { check }, effectHealth
+    services, defending.passiveEffects, defending, acting, snapshot, ['onEvade'], { check }, effectHealth
   );
 }
 
@@ -130,7 +122,7 @@ function effectRequest(entries, self, target, snapshot, triggers, context = {}, 
       targetLocation: context.targetLocation ?? null,
       effectTiles: context.effectTiles ?? null,
       prePickedPlacement: context.prePickedPlacement ?? null,
-      effectRange: selfActor?.system?.stats?.rng?.total,
+      effectRange: self.tokenUuid === snapshot.sourceTokenUuid ? snapshot.effectRange : 0,
       healEchoes: self.healEchoes,
       activatedItemUuid: activatedItem?.uuid,
       slainActorUuids: context.slainActorUuids ?? null
@@ -142,18 +134,18 @@ function effectRequest(entries, self, target, snapshot, triggers, context = {}, 
 }
 
 async function runGroupedEffects(
-  effects, entries, self, target, snapshot, triggers, context, effectHealth, deathClaims = new Set()
+  services, entries, self, target, snapshot, triggers, context, effectHealth, deathClaims = new Set()
 ) {
   const results = [];
   for (const group of groupEntriesByItem(entries)) {
     const firstHealthIndex = Array.isArray(effectHealth) ? effectHealth.length : 0;
     results.push(await runEffects(
-      effects,
+      services.effects,
       effectRequest(group.entries, self, target, snapshot, triggers, context, group.item),
       effectHealth
     ));
     await runEffectDeathTriggers(
-      effects,
+      services,
       Array.isArray(effectHealth) ? effectHealth.slice(firstHealthIndex) : [],
       self, target, snapshot, context, effectHealth, deathClaims
     );
@@ -161,8 +153,9 @@ async function runGroupedEffects(
   return results;
 }
 
+/** Fire On Death for each unit an effect step killed, once a re-check confirms the kill. The run spares the corpse. */
 async function runEffectDeathTriggers(
-  effects, consequences, self, target, snapshot, context, effectHealth, deathClaims
+  services, consequences, self, target, snapshot, context, effectHealth, deathClaims
 ) {
   for (const consequence of consequences) {
     if (consequence.defeatStatus !== DEFEAT_STATUSES.CLAIMED) continue;
@@ -170,9 +163,12 @@ async function runEffectDeathTriggers(
       : consequence.targetActorUuid === target.actorUuid ? target : null;
     if (!victim || deathClaims.has(victim.actorUuid)) continue;
     deathClaims.add(victim.actorUuid);
+    if (!isConfirmedKill(await recheckDefeat(services, victim.actorUuid, consequence.targetTokenUuid,
+      snapshot.operation))) continue;
     const other = victim.actorUuid === self.actorUuid ? target : self;
+    const slainContext = { ...context, slainActorUuids: [...(context.slainActorUuids ?? []), victim.actorUuid] };
     await runGroupedEffects(
-      effects, victim.passiveEffects, victim, other, snapshot, ['onDeath'], context, effectHealth, deathClaims
+      services, victim.passiveEffects, victim, other, snapshot, ['onDeath'], slainContext, effectHealth, deathClaims
     );
   }
 }
@@ -185,28 +181,51 @@ export async function revalidateEffectDefeats(services, consequences, startIndex
   for (let index = Math.max(0, startIndex); index < consequences.length; index += 1) {
     const consequence = consequences[index];
     if (consequence.defeatStatus !== DEFEAT_STATUSES.CLAIMED) continue;
-    const status = await services.settlement.defeatStatus(
-      consequence.targetActorUuid,
-      consequence.targetTokenUuid,
-      { operation }
-    );
     consequences[index] = Object.freeze({
       ...consequence,
-      defeatStatus: status?.status ?? DEFEAT_STATUSES.SURVIVED
+      defeatStatus: await recheckDefeat(services, consequence.targetActorUuid, consequence.targetTokenUuid, operation)
     });
   }
 }
 
 /**
- * Whether effect damage recorded after `startIndex` ended the exchange: a unit was defeated, spent an Extra Life
- * or survived a lethal hit.
+ * Re-read one claimed defeat. SURVIVED means a heal brought the unit back above 0 HP. A failed re-check logs a
+ * warning and also counts as SURVIVED.
  */
+async function recheckDefeat(services, actorUuid, tokenUuid, operation = null) {
+  const status = await services.settlement.defeatStatus(actorUuid, tokenUuid, { operation });
+  if (status?.ok === true && status.status) return status.status;
+  recordDiagnostic(services.diagnostics, {
+    sourcePath: import.meta.url,
+    severity: DIAGNOSTIC_SEVERITIES.WARNING,
+    detail: `Defeat re-check for ${actorUuid} failed (${status?.code ?? 'no status'}); counted as survived`,
+    notify: false
+  });
+  return DEFEAT_STATUSES.SURVIVED;
+}
+
+/** Add the turn slots each restoreAction step in `results` gave back to `restores`. */
+export function collectRestores(results, restores) {
+  if (!Array.isArray(restores)) return;
+  const collect = outcomes => {
+    for (const outcome of outcomes) {
+      if (Array.isArray(outcome?.refreshed)) restores.push(...outcome.refreshed);
+      if (Array.isArray(outcome?.outcomes)) collect(outcome.outcomes);
+    }
+  };
+  for (const result of results ?? []) collect(result?.outcomes ?? []);
+}
+
+/** The units the exchange's blows and effects killed, after each defeat's re-check. postCombat effects spare them. */
+export function exchangeSlain(transcript, effectHealth) {
+  return [...new Set([...transcript, ...effectHealth]
+    .filter(record => isConfirmedKill(record.defeatStatus))
+    .map(record => record.targetActorUuid))];
+}
+
+/** Whether effect damage recorded after `startIndex` ended the exchange: a unit was defeated or spent an Extra Life. */
 export function effectEndedExchange(consequences, startIndex) {
-  return consequences.slice(Math.max(0, startIndex)).some(consequence => [
-    DEFEAT_STATUSES.CLAIMED,
-    DEFEAT_STATUSES.EXTRA_LIFE,
-    DEFEAT_STATUSES.SURVIVED
-  ].includes(consequence.defeatStatus));
+  return consequences.slice(Math.max(0, startIndex)).some(consequence => defeatEndsExchange(consequence.defeatStatus));
 }
 
 function groupEntriesByItem(entries = []) {

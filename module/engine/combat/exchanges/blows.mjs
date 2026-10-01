@@ -8,6 +8,7 @@ import {
   resolveCombatBlow,
   sideDown
 } from '../../../game/combat/exchange.mjs';
+import { defeatEndsExchange } from '../../../game/combat/damage.mjs';
 import { earnsCharacterExperience, resolveWeaponExperience } from '../../../game/progression/rules.mjs';
 import { CombatPersistenceError, StaleCombatError } from '../../recovery/errors.mjs';
 import { cardRequester, presentSafely } from '../../feedback.mjs';
@@ -36,10 +37,13 @@ import {
 /** Run resolveExchange's ordered strikes, refreshing both combat projections before each one. */
 export async function runCombatSequence(services, exchange) {
   const { intent, context } = exchange;
-  const reads = drawnExchangeReads(services.combatState, exchange.modifierChances, exchange.operation, context.userId);
+  const reads = drawnExchangeReads(
+    services.combatState, exchange.modifierChances, exchange.operation, context.userId, true
+  );
   let snapshot = await requireActiveExchangeSnapshot(reads, intent, context.userId);
   exchange.defenderCouldCounterAtStart = snapshot.defenderCanRespond;
-  let remaining = effectEndedExchange(exchange.effectHealth, exchange.preCombatEffectIndex)
+  // No blows when a pre-combat effect ended the exchange or left the attacker out of range.
+  let remaining = effectEndedExchange(exchange.effectHealth, exchange.preCombatEffectIndex) || !snapshot.sourceInRange
     ? [] : [...buildCombatSequence(snapshot.source, snapshot.target, snapshot.defenderCanRespond)];
   const completed = { A: 0, D: 0 };
   while (remaining.length) {
@@ -63,7 +67,7 @@ export async function runCombatSequence(services, exchange) {
       { landed: blow.result !== 'miss', operation: exchange.operation });
     exchange.transcript.push(blow);
     remaining = await pruneBrokenWeapon(services, exchange, rolled, remaining);
-    if (blow.defeatStatus || effectEndedExchange(exchange.effectHealth, blowEffectIndex)) break;
+    if (defeatEndsExchange(blow.defeatStatus) || effectEndedExchange(exchange.effectHealth, blowEffectIndex)) break;
 
     await services.wait(delayBeforeNextBlow(snapshot, remaining, rolled.side));
     snapshot = await requireActiveExchangeSnapshot(reads, intent, context.userId);
@@ -79,12 +83,15 @@ export async function runCombatSequence(services, exchange) {
  * @param {object|null} modifierChances The exchange's drawn rolls, by Actor uuid.
  * @param {object|null} operation The dispatcher operation the exchange writes under.
  * @param {string} [requesterUserId] The user who started the exchange, the audience for its effect notices.
+ * @param {boolean} [afterPreCombat] Whether the pre-combat effects have already run.
  * @returns {{getSnapshot: Function}}
  */
-export function drawnExchangeReads(combatState, modifierChances, operation = null, requesterUserId = '') {
+export function drawnExchangeReads(
+  combatState, modifierChances, operation = null, requesterUserId = '', afterPreCombat = false
+) {
   const audience = Object.freeze(requesterUserId ? [String(requesterUserId)] : []);
   return { getSnapshot: async intent => {
-    const snapshot = await combatState.getSnapshot(intent, { modifierChances });
+    const snapshot = await combatState.getSnapshot(intent, { modifierChances, afterPreCombat });
     return snapshot ? Object.freeze({ ...snapshot, operation, audience }) : snapshot;
   } };
 }
@@ -156,7 +163,7 @@ async function settleMissedBlow(services, exchange, snapshot, rolled, blow) {
   }
   addProficiencyAward(exchange.proficiencyAwards, acting, false);
   await presentSafely(services, impactMessage(blow, acting, defending, null, cardRequester(exchange.context)));
-  await runMissTriggers(services.effects, acting, defending, snapshot, blow.check, exchange.effectHealth);
+  await runMissTriggers(services, acting, defending, snapshot, blow.check, exchange.effectHealth);
   return blow;
 }
 
@@ -202,7 +209,8 @@ async function settleLandedBlow(services, exchange, snapshot, rolled, blow) {
   await presentCombatImpact(services, exchange.stanceBreaks, stanceBreak, impactMessage(landed, acting, defending,
     damageMessage(defending, resolved.resolution, persisted, resolved.critical), cardRequester(exchange.context)));
   if (landed.defeatStatus) await services.wait(DEFEAT_PRESENTATION_TIMING.continuationDelay);
-  const defeatStatus = await runHitTriggers(services, acting, defending, snapshot, landed, exchange.effectHealth);
+  const defeatStatus = await runHitTriggers(services, acting, defending, snapshot, landed, exchange.effectHealth,
+    exchange.restores);
   if (defeatStatus && defeatStatus !== landed.defeatStatus) {
     landed = Object.freeze({ ...landed, defeatStatus });
   }

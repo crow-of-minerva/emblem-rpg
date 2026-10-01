@@ -25,7 +25,7 @@ import {
 } from '../../../game/character/rules.mjs';
 import { selectAnimationRange } from '../../../game/effects/animation-planning.mjs';
 import { resolveStandingMovementSpent } from '../../../game/movement/input-policy.mjs';
-import { airborneBeyondMelee, rangeReachesEngagement } from '../../../game/targeting/attack-grid.mjs';
+import { airborneBeyondMelee, parseAttackRange, rangeReachesEngagement } from '../../../game/targeting/attack-grid.mjs';
 import {
   boardFlanking,
   isAirborneActor,
@@ -45,6 +45,7 @@ import {
   projectPreCombatApproach,
   projectProficiency,
   projectProficiencyTotals,
+  projectWeapon,
   projectWieldedArmament,
   tauntedByActorUuid,
   tokenCells,
@@ -142,16 +143,20 @@ export class FoundryCombatStateRepository {
    * and every validity fact the exchange checks, with a fingerprint over them. The exchange commands call it on
    * the host, and the targeting controls call it on the acting client for the previews. Given `modifierChances`,
    * it replays the action's drawn rolls. Without them no chance modifier fires, even while an action holds draws.
+   * After the pre-combat effects (`afterPreCombat`), the distance is the board's, with no predicted move.
    * @param {object} intent The normalized exchange intent.
-   * @param {{modifierChances?: object|null}} [options] The action's drawn rolls, by Actor uuid.
+   * @param {{modifierChances?: object|null, afterPreCombat?: boolean}} [options] The drawn rolls, by Actor uuid,
+   *   and whether pre-combat effects have run.
    */
-  async getSnapshot(intent, { modifierChances = null } = {}) {
-    if (!modifierChances) return withUndrawnModifierChances(null, () => this.#projectSnapshot(intent, null));
-    return this.#projectSnapshot(intent, modifierChances);
+  async getSnapshot(intent, { modifierChances = null, afterPreCombat = false } = {}) {
+    if (!modifierChances) {
+      return withUndrawnModifierChances(null, () => this.#projectSnapshot(intent, null, afterPreCombat));
+    }
+    return this.#projectSnapshot(intent, modifierChances, afterPreCombat);
   }
 
   /** Build one exchange's snapshot, replaying the drawn rolls it is given (see getSnapshot). */
-  async #projectSnapshot(intent, modifierChances) {
+  async #projectSnapshot(intent, modifierChances, afterPreCombat) {
     const sourceToken = await resolveToken(intent.sourceTokenUuid);
     let targetToken = await resolveToken(intent.targetTokenUuid);
     targetToken = redirectFoundryHostileToken(targetToken);
@@ -176,10 +181,12 @@ export class FoundryCombatStateRepository {
     const movementSpent = resolveStandingMovementSpent(movement);
     const sourceChanceRolls = modifierChances?.[sourceToken.actor.uuid] ?? null;
     const targetChanceRolls = modifierChances?.[targetToken.actor.uuid] ?? null;
+    // How far a range-priced effect step reaches: the attack's maximum range.
+    const effectRange = parseAttackRange(projectWeapon(sourceToken.actor, sourceItem).range)?.maxRange ?? 0;
     const approach = projectPreCombatApproach({
       sourceToken, targetToken, targetItem, movement, movementSpent, gridSize,
-      activatedItem: objectTarget ? null : sourceArt ?? sourceItem,
-      sourceChanceRolls, targetChanceRolls
+      activatedItem: objectTarget || afterPreCombat ? null : sourceArt ?? sourceItem,
+      sourceChanceRolls, targetChanceRolls, effectRange
     });
     const { distance, engagement, inMeleeRange } = approach;
     const combatContext = recordCombatContext({ intent, sourceToken, targetToken, targetItem }, {
@@ -215,7 +222,7 @@ export class FoundryCombatStateRepository {
     });
     const requirements = projectAttackRequirements({
       item: sourceArt ?? sourceItem, source, target: objectTarget ? null : target, sourceToken, targetToken,
-      movement, targetMovement: () => projectMovementSnapshot(targetToken), gridSize
+      movement, targetMovement: () => projectMovementSnapshot(targetToken), gridSize, effectRange
     });
     const snapshot = {
       sceneUuid: String(sourceToken.parent?.uuid ?? ''),
@@ -236,6 +243,7 @@ export class FoundryCombatStateRepository {
       engagement,
       boardDistance: approach.boardDistance,
       boardEngagement: approach.boardEngagement,
+      effectRange,
       lineOfSightBlocked: sightBlocked(sourceToken, targetToken, sourceItem) === true,
       sourceInRange: rangeReachesEngagement(
         source.weapon.range, approach.boardDistance, approach.boardEngagement, source.airborne

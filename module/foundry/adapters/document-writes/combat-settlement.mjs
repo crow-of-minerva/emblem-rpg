@@ -1,5 +1,6 @@
 /** @layer foundry/adapters/document-writes */
 import { COMBAT_CONTINUATIONS } from '../../../contracts/domains/combat.mjs';
+import { TURN_REFRESH } from '../../../game/combat/phases.mjs';
 import { KARMA_LEDGER_SETTING, USER_LOCK_SETTING } from '../../../config/settings.mjs';
 import { bookKarmaSequence } from '../dice/karma.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
@@ -267,7 +268,8 @@ export class FoundryCombatSettlementRepository {
   /**
    * Settle a follow-up saved as pending, once the player has chosen or the presentation it waited for has played. An
    * Extra Action spends one from the pool, gives the Action and Bonus Action back, and adds one square to the
-   * movement the turn has left (`movementBonus`).
+   * movement the turn has left (`movementBonus`). An end of turn keeps the slots effects gave the attacker during
+   * the exchange (`keptSlots`).
    */
   async settlePendingContinuation(snapshot, continuation, operation = null) {
     const owner = operation ?? snapshot.operation ?? null;
@@ -301,10 +303,12 @@ export class FoundryCombatSettlementRepository {
     if (continuation.kind !== COMBAT_CONTINUATIONS.END_TURN) return false;
     if (snapshot.continuationPending === COMBAT_CONTINUATIONS.END_TURN
       && snapshot.movement?.movementPlanning !== true) {
+      const kept = continuation.keptSlots ?? {};
       await writeCombatActor(owner, actor, {
-        'system.turn.actionAvailable': false,
-        'system.turn.bonusActionAvailable': false,
-        'system.turn.movementAvailable': false,
+        'system.turn.actionAvailable': kept.action === true,
+        'system.turn.bonusActionAvailable': kept.bonus === true,
+        'system.turn.movementAvailable': kept.movement === true,
+        ...(kept.turn === true ? TURN_REFRESH : {}),
         'system.turn.continuationPending': '',
         'system.turn.continuationRequestId': ''
       });

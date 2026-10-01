@@ -634,7 +634,7 @@ const TOOLTIPS = Object.freeze({
   'editor.spawn.friendly': 'The spawned unit joins the caster\'s side',
   'editor.spawn.owned': 'The caster\'s player also owns the spawned unit',
   'editor.spawn.sickness': 'The spawned unit cannot act until the next phase',
-  'editor.spawn.duration': 'Phases the summon stays. Empty or 0 lasts until the encounter ends.',
+  'editor.spawn.duration': 'If # is not 0, summoned token expires after # phases.',
   'editor.spawn.replace': 'Removes the caster\'s earlier summons of this unit before placing the new one.',
   'editor.restore.standard': 'Give the unit its standard action back',
   'editor.restore.bonus': 'Give the unit its bonus action back',

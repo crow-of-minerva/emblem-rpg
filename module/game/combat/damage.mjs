@@ -1,5 +1,7 @@
 /** @layer game/combat */
-import { DAMAGE_POLICIES, isDamagePolicy, MAGICAL_DAMAGE_TYPES, PHYSICAL_DAMAGE_TYPES, STANCE_BREAK_OUTCOMES } from '../../contracts/domains/damage.mjs';
+import {
+  DAMAGE_POLICIES, DEFEAT_STATUSES, isDamagePolicy, MAGICAL_DAMAGE_TYPES, PHYSICAL_DAMAGE_TYPES, STANCE_BREAK_OUTCOMES
+} from '../../contracts/domains/damage.mjs';
 import { OWNED_UNIT_FACTIONS } from '../../contracts/domains/characters.mjs';
 import { CRITICAL_MULTIPLIER_BASE } from '../character/rules.mjs';
 import { finite, finite as finiteNumber, roundToHalf, whole } from '../../lib/core/runtime.mjs';
@@ -10,6 +12,16 @@ import { finite, finite as finiteNumber, roundToHalf, whole } from '../../lib/co
 const PHYSICAL_TYPES = new Set(PHYSICAL_DAMAGE_TYPES);
 const MAGICAL_TYPES = new Set(MAGICAL_DAMAGE_TYPES);
 const PLAYER_UNIT_TYPES = new Set(OWNED_UNIT_FACTIONS);
+
+/** A defeat that stood after its re-check: only this fires onKill and onDeath and counts the unit as slain. */
+export function isConfirmedKill(defeatStatus) {
+  return defeatStatus === DEFEAT_STATUSES.CLAIMED;
+}
+
+/** Whether a defeat ends its exchange: a kill, an Extra Life spent, or a unit already gone. A healed one does not. */
+export function defeatEndsExchange(defeatStatus) {
+  return [DEFEAT_STATUSES.CLAIMED, DEFEAT_STATUSES.EXTRA_LIFE, DEFEAT_STATUSES.ALREADY_DEFEATED].includes(defeatStatus);
+}
 
 /* -------------------------------------------- */
 /*  Rule constants                              */

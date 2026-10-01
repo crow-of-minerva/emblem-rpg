@@ -10,8 +10,9 @@ const TARGET_ROOT = /(^|[^.\w$])target\b/;
 /*  Condition evaluation                        */
 /* -------------------------------------------- */
 /**
- * Whether a condition tree (contracts/dsl/conditions.mjs) holds in `context`. `chanceRoll` supplies the d100 draws
- * for chance nodes: one number for all of them, an object keyed by node path, or a function of the path.
+ * Whether a condition tree (contracts/dsl/conditions.mjs) holds in `context`. `chanceRoll` supplies the draws in
+ * [0, 100) for chance nodes: one number for all of them, an object keyed by node path, or a function of the path. A
+ * node holds when its draw is below its percent.
  */
 export function evaluate(tree, context, chanceRoll = 100, path = 'root') {
   if (isEmpty(tree)) return true;

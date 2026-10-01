@@ -203,11 +203,13 @@ export function resolveCombatBlow({ attacker, defender, side, check, rolledDamag
 
 /**
  * What the attacker's turn does after an exchange: end, return to exploration, Multiattack, offer an Extra Action,
- * or Canter. Called by engine/combat/exchanges/resolution.mjs.
+ * or Canter. A turn whose Action an effect gave back (`turnRefreshed`) ends, keeping the restored slots. Called by
+ * engine/combat/exchanges/resolution.mjs.
  */
 export function resolveCombatContinuation(input = {}) {
   if (input.sourceDefeated === true) return turnContinuation(COMBAT_CONTINUATIONS.END_TURN);
   if (input.explorationActive === true) return turnContinuation(COMBAT_CONTINUATIONS.EXPLORATION);
+  if (input.turnRefreshed === true) return turnContinuation(COMBAT_CONTINUATIONS.END_TURN);
   if (input.hasMultiAttack === true && input.bonusAvailable === true) {
     return turnContinuation(COMBAT_CONTINUATIONS.MULTIATTACK);
   }
@@ -237,6 +239,21 @@ export function resolveCombatContinuationChoice(input = {}) {
     return turnContinuation(COMBAT_CONTINUATIONS.CANTER);
   }
   return turnContinuation(COMBAT_CONTINUATIONS.END_TURN);
+}
+
+/**
+ * The turn slots effects restored to the attacker during the exchange, which its end of turn keeps. A `turn` restore
+ * keeps all of them; null when none were restored.
+ * @param {object[]} restores The restored slots, one record per unit.
+ * @param {string} actorUuid The attacker.
+ * @returns {{action: boolean, bonus: boolean, movement: boolean, turn: boolean}|null}
+ */
+export function keptTurnSlots(restores, actorUuid) {
+  const own = (restores ?? []).filter(record => record?.actorUuid === actorUuid);
+  if (!own.length) return null;
+  const turn = own.some(record => record.turn === true);
+  const kept = slot => turn || own.some(record => record[slot] === true);
+  return Object.freeze({ action: kept('action'), bonus: kept('bonus'), movement: kept('movement'), turn });
 }
 
 /** Build the continuation flags read by the engine and movement UI. */

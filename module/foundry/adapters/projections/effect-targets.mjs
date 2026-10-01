@@ -166,12 +166,12 @@ function summonFlags(flags, casterUuid, timer) {
   return copied;
 }
 
-/** A timed summon's countdown, ticking at the end of its caster's own phase; none when it lasts the encounter. */
+/** A timed summon's countdown, ticking at the end of the opposing side's phase; none when it lasts the encounter. */
 async function summonTimer(step, runtime) {
   const duration = Math.floor(Number(step.duration) || 0);
   if (duration < 1) return {};
   const caster = await resolveActor(runtime.self?.actorUuid);
-  const ticksOn = factionGroup(caster?.system?.faction?.role) === 'enemy' ? 'Enemy' : 'Player';
+  const ticksOn = factionGroup(caster?.system?.faction?.role) === 'enemy' ? 'Player' : 'Enemy';
   return { [SUMMON_REMAINING_FLAG]: duration, [SUMMON_TICKS_ON_FLAG]: ticksOn };
 }
 

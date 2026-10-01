@@ -7,6 +7,7 @@ import {
 import { resolveForcedStep } from '../../../game/movement/pathfinding.mjs';
 import { normalizeGeometry } from '../../../contracts/dsl/terrain-geometry.mjs';
 import { factionGroup } from '../../../game/character/rules.mjs';
+import { TURN_REFRESH } from '../../../game/combat/phases.mjs';
 import { planGuardBond, resolveGuardBond } from '../../../game/effects/planning.mjs';
 import { generateAreaCells, geometryPlacementBudget, resolveGeometryPlacements } from '../../../game/targeting/shapes.mjs';
 import {
@@ -77,7 +78,8 @@ export class FoundryEffectRepository {
     this.wait = wait;
   }
 
-  randomPercent() { return Math.floor(Math.random() * 100) + 1; }
+  /** One percentile drawn in [0, 100), for a chance node. */
+  randomPercent() { return Math.random() * 100; }
 
   /** One index drawn uniformly below `count`, for a random pick among that many squares. */
   randomIndex(count) { return Math.floor(Math.random() * Math.max(0, Math.floor(Number(count) || 0))); }
@@ -318,18 +320,14 @@ const RESTORABLE_TURN_SLOTS = Object.freeze([
   'system.turn.actionAvailable', 'system.turn.bonusActionAvailable', 'system.turn.movementAvailable'
 ]);
 
+/** Hand back the step's turn slots. `refreshed` lists the slots each unit got, for a combat exchange to keep. */
 async function restoreActions(targets, step, runtime) {
   const changes = {};
   if (step.actions?.includes('standard')) changes['system.turn.actionAvailable'] = true;
   if (step.actions?.includes('bonus')) changes['system.turn.bonusActionAvailable'] = true;
   if (step.actions?.includes('movement')) changes['system.turn.movementAvailable'] = true;
   if (step.actions?.includes('turn')) {
-    changes['system.turn.actionAvailable'] = true;
-    changes['system.turn.bonusActionAvailable'] = true;
-    changes['system.turn.movementAvailable'] = true;
-    changes['system.turn.movementSpent'] = 0;
-    changes['system.stats.mov.penalty'] = 0;
-    changes['system.turn.extraActionUsed'] = false;
+    Object.assign(changes, TURN_REFRESH);
     changes['system.turn.continuationPending'] = '';
     changes['system.turn.continuationRequestId'] = '';
   }
@@ -337,9 +335,19 @@ async function restoreActions(targets, step, runtime) {
   const restored = actors.filter(actor => RESTORABLE_TURN_SLOTS
     .some(path => path in changes && foundry.utils.getProperty(actor._source, path) === false))
     .map(actor => actor.uuid);
+  const slots = {
+    action: changes['system.turn.actionAvailable'] === true,
+    bonus: changes['system.turn.bonusActionAvailable'] === true,
+    movement: changes['system.turn.movementAvailable'] === true,
+    turn: step.actions?.includes('turn') === true
+  };
   await captureDocuments(runtime, actors);
   for (const actor of actors) await actor.update(changes, effectOptions());
-  return Object.freeze({ ok: true, restored: Object.freeze(restored) });
+  return Object.freeze({
+    ok: true,
+    restored: Object.freeze(restored),
+    refreshed: Object.freeze(actors.map(actor => Object.freeze({ actorUuid: actor.uuid, ...slots })))
+  });
 }
 
 async function unequip(targets, runtime) {

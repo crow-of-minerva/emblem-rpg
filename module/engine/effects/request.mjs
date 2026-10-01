@@ -8,7 +8,7 @@ import { effectAttributeShorthands } from '../../game/effects/planning.mjs';
  * `operation` is the dispatcher operation the calling command holds (`context.operation`). Every effect writer in
  * foundry/adapters/document-writes/effect-execution.mjs captures through it before it changes anything.
  *
- * `slainActorUuids` names the units a killing blow has just claimed. EffectExecutionService spares them every write.
+ * `slainActorUuids` names the units killed so far in the exchange. EffectExecutionService spares them every write.
  * @param {object} input Scene, both sides, and the placement facts an authored step may read.
  * @returns {Readonly<object>}
  */

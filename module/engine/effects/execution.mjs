@@ -236,12 +236,15 @@ export class EffectExecutionService {
    * Settle one damage or heal step on each living unit it names. Each amount resolves against the snapshot's
    * `ruleTarget`, which the effect host reads under `combatContext` when an exchange fired the run, and commits
    * against the snapshot as it was read. Each unit's outcome lists its `impacts` (see `unitImpact`). A heal echo
-   * lists none, because it is the caster's passive reacting to the heal rather than the step's own work.
+   * lists none, because it is the caster's passive reacting to the heal rather than the step's own work. A heal
+   * skips slain units.
    */
   async #settleHealth(operation, runtime, context, resources = null, combatContext = null) {
     const step = operation.step;
-    const targets = livingTargets(await this.effects.resolveTargets(step.target, runtime), runtime);
-    const outcomes = [];
+    const named = await this.effects.resolveTargets(step.target, runtime);
+    const targets = livingTargets(named, runtime);
+    const outcomes = step.kind !== 'heal' ? [] : named.filter(target => !targets.includes(target))
+      .map(target => slainOutcome({ actorUuid: target.actorUuid, tokenUuid: target.tokenUuid }));
     if (targets.length === 0) return { ok: true, outcomes };
     const echoed = step.kind === 'heal' && (runtime.healEchoes ?? []).length > 0 ? [runtime.self?.actorUuid] : [];
     const busy = claimWrites(resources, [...targets.map(target => target.actorUuid), ...echoed]);

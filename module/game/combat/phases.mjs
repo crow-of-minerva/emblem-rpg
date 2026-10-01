@@ -39,6 +39,16 @@ const TURN_ACTIVE = Object.freeze({
   'system.turn.continuationCanters': false
 });
 
+/** What a restoreAction `turn` restore writes: every slot back, with movement spent and its penalty cleared. */
+export const TURN_REFRESH = Object.freeze({
+  'system.turn.actionAvailable': true,
+  'system.turn.bonusActionAvailable': true,
+  'system.turn.movementAvailable': true,
+  'system.turn.movementSpent': 0,
+  'system.stats.mov.penalty': 0,
+  'system.turn.extraActionUsed': false
+});
+
 const TURN_INACTIVE = Object.freeze({
   'system.turn.actionAvailable': false,
   'system.turn.bonusActionAvailable': false,

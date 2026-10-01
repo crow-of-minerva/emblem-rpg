@@ -402,12 +402,13 @@ function movesBeforeCombat(item) {
  * @param {number} input.gridSize Pixels per grid square.
  * @param {object|null} [input.sourceChanceRolls] The attacker's drawn chance-modifier rolls, when an action drew them.
  * @param {object|null} [input.targetChanceRolls] The defender's, likewise.
+ * @param {number} [input.effectRange] The attack's maximum range.
  * @returns {object} `boardDistance`, `boardEngagement`, the fought `distance`, `engagement` and
  *   `inMeleeRange`, and `moved`.
  */
 export function projectPreCombatApproach({
   sourceToken, targetToken, activatedItem, targetItem, movement, movementSpent = null, gridSize,
-  sourceChanceRolls = null, targetChanceRolls = null
+  sourceChanceRolls = null, targetChanceRolls = null, effectRange = 0
 }) {
   const sourceActor = sourceToken?.actor ?? null;
   const targetActor = targetToken?.actor ?? null;
@@ -446,7 +447,7 @@ export function projectPreCombatApproach({
     movement,
     anchorRect,
     context: projectFoundryCombatActorContext(sourceActor),
-    budgetFacts: { totalMovement: movement.totalMovement, effectRange: sourceActor.system?.stats?.rng?.total }
+    budgetFacts: { totalMovement: movement.totalMovement, effectRange }
   }));
   if (!approach.moved) return board;
   const landing = { ...approach.position, width: sourceRect.width, height: sourceRect.height };
@@ -474,6 +475,7 @@ export function projectPreCombatApproach({
  * @param {object|null} input.movement The attacker's movement snapshot.
  * @param {Function} [input.targetMovement] Lazily projects the defender's movement snapshot for a target mover.
  * @param {number} input.gridSize Pixels per grid square.
+ * @param {number|string} [input.effectRange] The attacker's range; its weapon's when not given.
  * @returns {Readonly<{ok: boolean, code: string, names: readonly string[]}>}
  */
 export function projectAttackRequirements(input) {
@@ -494,7 +496,8 @@ export function projectAttackRequirements(input) {
  * @returns {object} The input `validateActivationRequirements`, `checkCaster` and `checkTargets` all read.
  */
 export function projectRequirementFacts({
-  item, source, target, sourceToken, targetToken, movement, targetMovement = null, gridSize
+  item, source, target, sourceToken, targetToken, movement, targetMovement = null, gridSize,
+  effectRange = source?.weapon?.range ?? ''
 }) {
   const sourceRect = tokenGridRect(sourceToken, gridSize);
   const targetRect = tokenGridRect(targetToken, gridSize);
@@ -506,7 +509,7 @@ export function projectRequirementFacts({
       return targetBoard;
     },
     sight: projectGeometrySight,
-    effectRange: source?.weapon?.range ?? '',
+    effectRange,
     targetEffectRange: target?.weapon?.range ?? ''
   });
   const unit = (side, rect) => (side ? {
