@@ -144,8 +144,7 @@ async function deliverActivatedItem(context, services, snapshot, intent, unlocke
 
     const shared = await rollSharedSkillCheck(services, snapshot, context);
     deliveries.push(...await deliverActivation(services, snapshot, intent, context, shared, { claims, impacts }));
-    const landed = deliveries.some(delivery => delivery.landed === true);
-    if (await settleActivationCosts(services, snapshot, landed, context) !== true) {
+    if (await settleActivationCosts(services, snapshot, deliveries, context) !== true) {
       throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
     }
     await settleRallySupport(services, snapshot, deliveries, context);
@@ -331,8 +330,8 @@ async function deliverRally(services, snapshot, target, impacts) {
 }
 
 /**
- * Write one Rally and add it to the caster's count of Rallies on this map, which limits how often each unit can be
- * rallied (rallyTargetBlocker).
+ * Write one Rally. settleActivationCosts adds it to the caster's count of Rallies on this map, which limits how often
+ * each unit can be rallied (rallyTargetBlocker), in the same write as the use's action spend.
  */
 async function settleRally(services, snapshot, target) {
   const caster = rallyCasterFacts(snapshot.source);
@@ -343,8 +342,7 @@ async function settleRally(services, snapshot, target) {
   const rank = rallyRankFor(caster, identity);
   const intent = planRallyEffect({ table: snapshot.affinities, caster, target: { actorUuid: target.actorUuid }, rank });
   if (!intent) return false;
-  if (await services.settlement.applyRally(target.actorUuid, intent, snapshot) !== true
-    || await services.settlement.recordRally(snapshot, target.actorUuid) !== true) {
+  if (await services.settlement.applyRally(target.actorUuid, intent, snapshot) !== true) {
     throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
   }
   return true;
@@ -612,11 +610,19 @@ async function settleMountToggle(services, snapshot) {
   if (toggled?.ok !== true) throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
 }
 
-async function settleActivationCosts(services, snapshot, landed, context) {
+/**
+ * Spend the use's charge and action, and count each ally it Rallied in the caster's record of this map's Rallies, in
+ * the order they were Rallied so several targets each add their own.
+ */
+async function settleActivationCosts(services, snapshot, deliveries, context) {
+  const landed = deliveries.some(delivery => delivery.landed === true);
   const consumption = resolveActivationConsumption({ envelope: snapshot.envelope, landed });
   return services.settlement.settleActivation(snapshot, {
     consumption,
     actionSpend: resolveActivationActionSpend(snapshot.envelope.actionType),
+    ralliedActorUuids: deliveries
+      .filter(delivery => delivery.delivery === 'rally' && delivery.landed === true)
+      .map(delivery => delivery.targetActorUuid),
     requestId: context.requestId
   });
 }

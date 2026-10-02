@@ -3,7 +3,9 @@ import {
   BG3_HUD_CORE_ID, BG3_HUD_LAYOUT_REVISION_FLAG, BG3_HUD_MAX_ROWS, HOTBAR_LAYOUT_OUTCOMES, bg3HudCellGroups,
   pruneForeignHudCells
 } from '../../contracts/domains/bg3-hud.mjs';
+import { MOVEMENT_PLAN_PATHS } from '../../contracts/domains/characters.mjs';
 import { SYSTEM_ID } from '../../contracts/protocol.mjs';
+import { changeLeafPaths } from '../../lib/core/runtime.mjs';
 import { isActiveGm, readSetting } from '../../foundry/adapters/services/host.mjs';
 import {
   reportFoundryError, reportFoundryNotice, reportFoundryProbe
@@ -603,18 +605,37 @@ export async function onCreateSceneBg3Hud(scene, _options, userId) {
   }
 }
 
-/** Refresh stats, passives, effects, and cells after a displayed Actor document changes. */
-export function onBg3HudDocumentChanged(document) {
+/**
+ * Refresh stats, passives, effects, and cells after a displayed Actor document changes. An Actor update that only
+ * writes the movement-plan fields (picking the unit up or putting it down) skips the effect and passive strips,
+ * which never read them, and only redecorates. A skipped render stays owed until the next timer runs.
+ * @param {object} document The changed Actor, or an Item or ActiveEffect on it.
+ * @param {object} [changes] The updateActor hook's changes; only read when `document` is an Actor.
+ */
+export function onBg3HudDocumentChanged(document, changes = null) {
   const actor = document?.documentName === 'Actor' ? document : document?.actor ?? document?.parent;
   const app = ui.BG3HUD_APP;
   if (!app?.rendered || !sameActor(app.currentActor, actor)) return;
+  const planOnly = document?.documentName === 'Actor' && movementPlanOnlyChange(changes);
+  if (!planOnly) app._emblemBg3StripsOwed = true;
   clearTimeout(app._emblemBg3DecorationTimer);
   app._emblemBg3DecorationTimer = setTimeout(async () => {
-    await app.components?.hotbar?.activeEffectsContainer?.render?.();
-    await app.components?.hotbar?.passivesContainer?.render?.();
-    await app.components?.passives?.render?.();
+    const renderStrips = app._emblemBg3StripsOwed === true;
+    app._emblemBg3StripsOwed = false;
+    if (renderStrips) {
+      await app.components?.hotbar?.activeEffectsContainer?.render?.();
+      await app.components?.hotbar?.passivesContainer?.render?.();
+      await app.components?.passives?.render?.();
+    }
     Hooks.callAll('emblemRpg.bg3HudDecorate', app);
   }, 80);
+}
+
+/** Whether an Actor update wrote nothing but the movement-plan fields, apart from `_id` and `_stats`. */
+function movementPlanOnlyChange(changes) {
+  const paths = changeLeafPaths(changes)
+    .filter(path => path !== '_id' && path !== '_stats' && !path.startsWith('_stats.'));
+  return paths.length > 0 && paths.every(path => MOVEMENT_PLAN_PATHS.includes(path));
 }
 
 /** Refresh the displayed Actor after an embedded Item lifecycle change. */

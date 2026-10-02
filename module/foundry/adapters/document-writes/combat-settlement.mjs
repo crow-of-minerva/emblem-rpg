@@ -25,6 +25,12 @@ const ITEM_USE_PATHS = Object.freeze(['system.uses']);
 const ARMAMENT_DURABILITY_PATHS = Object.freeze(['system.armament.durability']);
 
 /**
+ * The Flanked effect ids captureExchange saved in each exchange's undo record (`operation`), by Actor uuid, so
+ * prepareExchange creates each effect under the id already saved.
+ */
+const reservedFlankedIds = new WeakMap();
+
+/**
  * Saves the results of a combat exchange for engine/combat/exchanges (resolution.mjs, blows.mjs, settlement.mjs).
  *
  * Each write first saves the old values on the command's operation (its undo record), which the engine passes in.
@@ -46,9 +52,10 @@ export class FoundryCombatSettlementRepository {
   /**
    * Save for undo, in one call, the old values of everything an exchange always touches: both units' Actors and
    * Tokens whole, the uses of the Items the blows spend and of each side's worn armor, the durability of the
-   * armament Actor behind a rack weapon, and the two world settings. resolveExchange (exchanges/resolution.mjs)
-   * calls this before its first write. Later writes save only what this leaves out, such as other fields of these
-   * Items.
+   * armament Actor behind a rack weapon, and the two world settings. It also saves what prepareExchange changes
+   * next (the effects it removes and the id of each Flanked effect it creates) and each stacked effect a landed
+   * blow may thin. resolveExchange (exchanges/resolution.mjs) calls this before its first write. Later writes save
+   * only what this leaves out, such as other fields of these Items.
    * @param {object} snapshot The exchange's starting state, read again just before the exchange.
    * @param {object|null} operation The dispatcher operation (the command's undo record), or null outside a command.
    */
@@ -61,7 +68,10 @@ export class FoundryCombatSettlementRepository {
       seen.add(document);
       documents.push(paths ? { document, paths } : document);
     };
-    for (const uuid of [snapshot.sourceActorUuid, snapshot.targetActorUuid]) add(await resolveActor(uuid));
+    const sourceActor = await resolveActor(snapshot.sourceActorUuid);
+    const targetActor = await resolveActor(snapshot.targetActorUuid);
+    add(sourceActor);
+    add(targetActor);
     for (const uuid of [snapshot.sourceTokenUuid, snapshot.targetTokenUuid]) add(await resolveToken(uuid));
     for (const uuid of [snapshot.sourceItemUuid, snapshot.sourceWeaponArtUuid, snapshot.targetItemUuid,
       snapshot.source?.healthSnapshot?.armor?.itemUuid, snapshot.target?.healthSnapshot?.armor?.itemUuid]) {
@@ -70,7 +80,25 @@ export class FoundryCombatSettlementRepository {
       if (item) add(item, ITEM_USE_PATHS);
       else add(await resolveArmamentActor(uuid), ARMAMENT_DURABILITY_PATHS);
     }
-    await operation.capture({ documents, settings: EXCHANGE_SETTINGS });
+    // Saved in the order prepareExchange removes them, which is the order an undo recreates them in.
+    const deleting = [
+      ...existingEffects(sourceActor, preparedSourceEffectIds(snapshot)),
+      ...existingEffects(targetActor, preparedTargetEffectIds(snapshot))
+    ];
+    const creating = [];
+    const flankedIds = new Map();
+    for (const [side, actorUuid, actor] of [
+      [snapshot.source, snapshot.sourceActorUuid, sourceActor],
+      [snapshot.target, snapshot.targetActorUuid, targetActor]
+    ]) {
+      for (const effect of thinnedStacks(actor)) if (!deleting.includes(effect)) add(effect);
+      if (!side?.exchangeFlanked || !actor || hasFlanked(actor)) continue;
+      const id = documentId();
+      creating.push({ parent: actor, documentName: 'ActiveEffect', ids: [id] });
+      flankedIds.set(actorUuid, id);
+    }
+    reservedFlankedIds.set(operation, flankedIds);
+    await operation.capture({ documents, deleting, creating, settings: EXCHANGE_SETTINGS });
     return true;
   }
 
@@ -88,14 +116,16 @@ export class FoundryCombatSettlementRepository {
    * on a hostile action, and the target's effects that end when targeted. Then apply Flanked to each flanked side.
    */
   async prepareExchange(snapshot, operation = null) {
-    await removeActorEffects(operation, snapshot.sourceActorUuid, [
-      snapshot.source.effectLifecycle?.sanctuaryEffectId,
-      ...(snapshot.source.effectLifecycle?.hostileActionEffectIds ?? [])
-    ]);
-    await removeActorEffects(operation, snapshot.targetActorUuid,
-      snapshot.target.effectLifecycle?.hostileTargetedEffectIds);
-    if (snapshot.source.exchangeFlanked) await applyFlankedEffect(operation, snapshot.sourceActorUuid);
-    if (snapshot.target.exchangeFlanked) await applyFlankedEffect(operation, snapshot.targetActorUuid);
+    await removeActorEffects(operation, snapshot.sourceActorUuid, preparedSourceEffectIds(snapshot));
+    await removeActorEffects(operation, snapshot.targetActorUuid, preparedTargetEffectIds(snapshot));
+    const flankedIds = (operation && reservedFlankedIds.get(operation)) ?? new Map();
+    if (operation) reservedFlankedIds.delete(operation);
+    if (snapshot.source.exchangeFlanked) {
+      await applyFlankedEffect(operation, snapshot.sourceActorUuid, flankedIds.get(snapshot.sourceActorUuid));
+    }
+    if (snapshot.target.exchangeFlanked) {
+      await applyFlankedEffect(operation, snapshot.targetActorUuid, flankedIds.get(snapshot.targetActorUuid));
+    }
     return true;
   }
 
@@ -359,10 +389,11 @@ async function removeActorEffects(operation, actorUuid, effectIds = []) {
   await actor.deleteEmbeddedDocuments('ActiveEffect', ids, settlementOptions());
 }
 
-async function applyFlankedEffect(operation, actorUuid) {
+/** Create the Flanked effect on a unit that lacks one, under the id captureExchange saved for it when it did. */
+async function applyFlankedEffect(operation, actorUuid, reservedId = null) {
   const actor = await resolveActor(actorUuid);
-  if (!actor || collectionValues(actor.effects).some(effect => String(effect.name ?? '') === 'Flanked')) return;
-  const id = documentId();
+  if (!actor || hasFlanked(actor)) return;
+  const id = reservedId ?? documentId();
   await operation?.capture({ creating: [{ parent: actor, documentName: 'ActiveEffect', ids: [id] }] });
   const created = await actor.createEmbeddedDocuments('ActiveEffect', [{
     _id: id,
@@ -453,4 +484,36 @@ async function switchAdaptiveWeapon(operation, actorUuid) {
 
 function documentId() {
   return foundry.utils.randomID();
+}
+
+function hasFlanked(actor) {
+  return collectionValues(actor.effects).some(effect => String(effect.name ?? '') === 'Flanked');
+}
+
+/** The attacker's effects prepareExchange removes: its Sanctuary and its effects that end on a hostile action. */
+function preparedSourceEffectIds(snapshot) {
+  return [
+    snapshot.source.effectLifecycle?.sanctuaryEffectId,
+    ...(snapshot.source.effectLifecycle?.hostileActionEffectIds ?? [])
+  ];
+}
+
+/** The target's effects prepareExchange removes: those that end when it is targeted. */
+function preparedTargetEffectIds(snapshot) {
+  return [...(snapshot.target.effectLifecycle?.hostileTargetedEffectIds ?? [])];
+}
+
+/** The effects of `actor` that removeActorEffects would delete for `effectIds`, in the same order. */
+function existingEffects(actor, effectIds) {
+  const ids = [...new Set(effectIds.map(String).filter(id => id && actor?.effects.get(id)))];
+  return ids.map(id => actor.effects.get(id));
+}
+
+/** The stacked effects a landed blow thins rather than removes, as removeEffectStacks decides it. */
+function thinnedStacks(actor) {
+  return collectionValues(actor?.effects).filter(effect => {
+    const flags = effect.flags?.[SYSTEM_ID] ?? {};
+    return flags.removeStackWhenHit === true && flags.stackable === true
+      && Math.max(1, Math.floor(finite(flags.stackCount) || 1)) > 1;
+  });
 }

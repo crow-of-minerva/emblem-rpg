@@ -24,8 +24,8 @@ import { projectFoundryMovementInput } from '../projections/board.mjs';
 import { projectDrivenHold } from '../projections/encounters.mjs';
 import {
   closeMovementPlan, lockIsStale, movementActorCapture, movementLockNow, movementRestoreOptions, normalizeLock,
-  planEndCaptures, sameLock, samePosition, settlePlanEnd, settleTeleportHop, snapshotStillCurrent, teleportOutcome,
-  turnChangesLanded
+  planEndCaptures, releaseLockAndSettlePlanEnd, sameLock, samePosition, settleTeleportHop,
+  snapshotStillCurrent, teleportOutcome, turnChangesLanded
 } from './movement-settlements.mjs';
 import { reportFoundryError , FoundryDiagnostics } from '../services/diagnostics.mjs';
 
@@ -130,10 +130,14 @@ export class FoundryMovementRepository {
     return projectDrivenHold();
   }
 
-  /** Resolve a Token UUID into the plain data required by pure pathfinding. */
-  async getSnapshot(tokenUuid) {
+  /**
+   * Resolve a Token UUID into the plain data required by pure pathfinding. The hostile markers are built only on
+   * request (`hints: true`), because only the client's plan overlay draws them; api.movement.getPlan asks for them,
+   * and every engine, settlement and combat read leaves them out.
+   */
+  async getSnapshot(tokenUuid, { hints = false } = {}) {
     const token = await resolveToken(tokenUuid);
-    return token ? projectMovementSnapshot(token) : null;
+    return token ? projectMovementSnapshot(token, { hints }) : null;
   }
 
   /** Measure the squares one unit can reach, synchronously, for a planner deciding where to send it. */
@@ -389,8 +393,7 @@ export class FoundryMovementRepository {
     };
     await actor.update({ ...changes }, {});
     if (!turnChangesLanded(actor, changes)) throw new Error('movement.cancel-write-refused');
-    await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
-    await settlePlanEnd(actor, token, { cancelled: true, guardBonds: this.guardBonds, operation });
+    await releaseLockAndSettlePlanEnd(actor, token, { cancelled: true, guardBonds: this.guardBonds, operation });
     return true;
   }
 
@@ -475,8 +478,7 @@ export class FoundryMovementRepository {
     });
     await actor.update({ ...changes }, {});
     if (!turnChangesLanded(actor, changes)) return false;
-    await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
-    await settlePlanEnd(actor, token, { guardBonds: this.guardBonds, operation });
+    await releaseLockAndSettlePlanEnd(actor, token, { guardBonds: this.guardBonds, operation });
     return true;
   }
 
@@ -579,9 +581,11 @@ export class FoundryMovementRepository {
       await actor.update({ ...changes }, {});
       if (!turnChangesLanded(actor, changes)) throw new Error('movement.stale-release-refused');
     }
-    await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
-    if (!cancels) return;
-    await settlePlanEnd(actor, token, { cancelled: true, guardBonds: this.guardBonds, operation });
+    if (!cancels) {
+      await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
+      return;
+    }
+    await releaseLockAndSettlePlanEnd(actor, token, { cancelled: true, guardBonds: this.guardBonds, operation });
   }
 
   /**

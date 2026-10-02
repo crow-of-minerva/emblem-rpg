@@ -126,7 +126,7 @@ async function toggleFlight(context, movements, events, services) {
     landingBlocked: landingBlocked(snapshot.current, snapshot.footprint, snapshot.terrainOcclusionCells)
   });
   if (!plan.ok) return refuse(plan.code);
-  const graph = buildMovementGraph(snapshot);
+  const graph = buildMovementGraph(snapshot, { attackReach: false, keyboardDiagonals: false });
   const resolution = resolveMovementDestination(graph, snapshot.current);
   if (!resolution) return refuse(RESULT_CODES.MOVEMENT_DESTINATION_INVALID);
   if (!await movements.setGrounded(snapshot, plan.grounded, context.operation)) {
@@ -301,7 +301,7 @@ async function commitMovement(context, movements, events, objects, services) {
   if (!snapshot.movementAvailable && (settlement.resume || !standsAtAnchor(snapshot))) {
     return refuse(RESULT_CODES.MOVEMENT_UNAVAILABLE);
   }
-  const graph = buildMovementGraph(snapshot);
+  const graph = buildMovementGraph(snapshot, { attackReach: false, keyboardDiagonals: false });
   const resolution = resolveMovementDestination(graph, snapshot.current);
   if (!resolution) return refuse(RESULT_CODES.MOVEMENT_DESTINATION_INVALID);
   if (!await movements.commit(snapshot, resolution, { ...settlement, operation: context.operation })) {
@@ -427,7 +427,10 @@ async function driveMovement(context, movements, events, objects, services) {
 async function settleDrivenWalk(context, movements, intent, events, objects, services, { moved = true } = {}) {
   const fresh = await movements.getSnapshot(intent.tokenUuid);
   if (!fresh) return refuse(RESULT_CODES.MOVEMENT_TOKEN_NOT_FOUND);
-  const resolution = resolveMovementDestination(buildMovementGraph(fresh), fresh.current);
+  const resolution = resolveMovementDestination(
+    buildMovementGraph(fresh, { attackReach: false, keyboardDiagonals: false }),
+    fresh.current
+  );
   if (!resolution) return refuse(RESULT_CODES.MOVEMENT_STATE_STALE);
   const settlement = drivenSettlement(intent.then);
   if (!await movements.commit(fresh, resolution, { ...settlement, operation: context.operation })) {
@@ -476,7 +479,7 @@ async function driveWithoutWalking(context, movements, snapshot, intent, events,
 
 /** Whether the whole walked route is one legal chain of steps ending on a square the unit may stand on. */
 function drivenRouteIsLegal(snapshot, path) {
-  const graph = buildMovementGraph(snapshot, { teleports: false });
+  const graph = buildMovementGraph(snapshot, { teleports: false, attackReach: false, keyboardDiagonals: false });
   if (!movementPathIsTraversable(graph, [snapshot.current, ...path])) return false;
   return resolveMovementDestination(graph, path.at(-1)) !== null;
 }
@@ -527,7 +530,7 @@ async function useTeleport(context, movements, events, objects, services) {
   if (!checked.ok) return checked.result;
   const snapshot = checked.snapshot;
   if (movementStranded(snapshot)) return refuse(RESULT_CODES.MOVEMENT_STRANDED);
-  const graph = buildMovementGraph(snapshot);
+  const graph = buildMovementGraph(snapshot, { attackReach: false, keyboardDiagonals: false });
   const resolution = resolveMovementDestination(graph, snapshot.current);
   if (!resolution) return refuse(RESULT_CODES.MOVEMENT_DESTINATION_INVALID);
   const pad = teleportPadAt(snapshot.terrainTeleports, snapshot.current);
@@ -620,7 +623,10 @@ async function crossTerrain(context, movements, services) {
   const checked = await validateOwnedSnapshot(context, movements, snapshot.movement, { requirePlan: true });
   if (!checked.ok) return checked.result;
 
-  const standing = resolveMovementDestination(buildMovementGraph(snapshot.movement), snapshot.movement.current);
+  const standing = resolveMovementDestination(
+    buildMovementGraph(snapshot.movement, { attackReach: false, keyboardDiagonals: false }),
+    snapshot.movement.current
+  );
   if (!standing) return refuse(RESULT_CODES.MOVEMENT_DESTINATION_INVALID);
   const eligibility = planCrossingAttempt({
     exploring: snapshot.movement.exploring,

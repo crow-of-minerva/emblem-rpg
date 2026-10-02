@@ -174,9 +174,12 @@ export class FoundryItemActivationRepository {
     if (!actor || !scene || actor.type !== 'Character') return null;
 
     const item = await resolveItem(intent.itemUuid);
-    if (!item || itemActor(item)?.uuid !== actor.uuid || !isActivationItem(projectItemFacts(item))) return null;
+    if (!item || itemActor(item)?.uuid !== actor.uuid) return null;
+    // One frozen copy serves both reads, which run in the same tick and so see the same Item.
+    const itemFacts = frozenItemFacts(item);
+    if (!isActivationItem(itemFacts)) return null;
     const envelope = deriveActivationEnvelope({
-      item: projectItemFacts(item),
+      item: itemFacts,
       ownerSystem: actor.system,
       ownerFreeTargeting: unitIgnoresLineOfSight(actor.flags?.[SYSTEM_ID])
     });
@@ -473,31 +476,37 @@ function selectActivationAnimation(item, engagement, source, envelope) {
   return isPopulated(payload) ? payload : null;
 }
 
+/** The Item's activation entries. They share one frozen copy of the Item, read in this same synchronous pass. */
 function projectActivationEntries(item) {
   const entries = [];
+  let sourceItem = null;
   for (const entry of item.system?.effects ?? []) {
     if (!ITEM_ACTIVATION_TRIGGERS.includes(String(entry?.trigger ?? ''))) continue;
+    sourceItem ??= frozenItemFacts(item);
     entries.push(Object.freeze({
       ...clone(entry),
       sourceItemUuid: String(item.uuid ?? ''),
       sourceItemName: String(item.name ?? ''),
-      sourceItem: projectItemFacts(item)
+      sourceItem
     }));
   }
   return Object.freeze(entries);
 }
 
+/** Every Passive's onUseItem entries. A Passive's entries share one frozen copy of it, read in this same pass. */
 function projectPassiveActivationEntries(actor) {
   const entries = [];
   for (const item of collectionValues(actor.items)) {
     if (triggerGroupForItem({ type: item.type, itemType: item.system?.itemType }) !== 'C') continue;
+    let sourceItem = null;
     for (const entry of item.system?.effects ?? []) {
       if (String(entry?.trigger ?? '') !== 'onUseItem') continue;
+      sourceItem ??= frozenItemFacts(item);
       entries.push(Object.freeze({
         ...clone(entry),
         sourceItemUuid: String(item.uuid ?? ''),
         sourceItemName: String(item.name ?? ''),
-        sourceItem: projectItemFacts(item)
+        sourceItem
       }));
     }
   }
@@ -527,6 +536,22 @@ function projectItemFacts(item) {
     innateGrant: String(item?.flags?.[SYSTEM_ID]?.[INNATE_GRANT_FLAG] ?? ''),
     system
   });
+}
+
+/**
+ * projectItemFacts, frozen all the way down, for a copy several readers share. Nothing that reads item facts writes
+ * into them; the freeze keeps it that way.
+ */
+function frozenItemFacts(item) {
+  return deepFreeze(projectItemFacts(item));
+}
+
+/** Freeze a plain-data value and everything inside it. */
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object') return value;
+  Object.freeze(value);
+  for (const child of Object.values(value)) deepFreeze(child);
+  return value;
 }
 
 /**

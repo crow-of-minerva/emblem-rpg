@@ -39,6 +39,34 @@ export function readPartyState() {
   }
 }
 
+/** The copy readSharedPartyState handed out in the current task, with the stored setting value it was made from. */
+let taskPartyState = null;
+
+/**
+ * The stored party configuration for callers that only read it, one copy per synchronous task. Foundry's vision code
+ * asks for it for every token, and again for every selected token, each time vision sources are rebuilt, so sharing
+ * the copy saves a settings read and a deep clone per question.
+ *
+ * A microtask drops the copy, so no later task sees it. It is also made again whenever the stored setting value has
+ * been replaced, which Foundry does each time the setting is saved. Callers must not change the result; one that
+ * edits the state reads its own copy with readPartyState.
+ * @returns {PartyState}
+ */
+export function readSharedPartyState() {
+  let stored = null;
+  try {
+    stored = globalThis.game?.settings?.get?.(SYSTEM_ID, CAMPAIGN_PARTIES_SETTING, { document: true }) ?? null;
+  } catch {
+    stored = null;
+  }
+  if (!stored) return readPartyState();
+  const source = stored._source?.value;
+  if (taskPartyState && taskPartyState.source === source) return taskPartyState.state;
+  if (!taskPartyState) queueMicrotask(() => { taskPartyState = null; });
+  taskPartyState = { source, state: normalizePartyState(stored.value) };
+  return taskPartyState.state;
+}
+
 /* -------------------------------------------- */
 /*  Membership                                  */
 /* -------------------------------------------- */
@@ -79,10 +107,15 @@ export function projectActorPartyId(actor, state = readPartyState()) {
   return null;
 }
 
-/** The id of the party a user is assigned to, or null. */
-export function projectUserPartyId(userId) {
+/**
+ * The id of the party a user is assigned to, or null.
+ * @param {string} userId The user.
+ * @param {PartyState} [state] Party state already read, so a caller that also checks units reads the setting once.
+ * @returns {string|null}
+ */
+export function projectUserPartyId(userId, state = readPartyState()) {
   if (!userId) return null;
-  const { parties, membership } = readPartyState();
+  const { parties, membership } = state;
   const party = parties.find(entry => entry.id === membership[userId]);
   return party ? String(party.id) : null;
 }

@@ -12,7 +12,7 @@ import { resolveActor } from '../services/host.mjs';
 /** Rally's writes carry the same option as the rest of an item use's effect writes. */
 const rallyOptions = () => ({ emblemEffectSettlement: true });
 
-/** The caster's record of this map's Rallies, which recordRallyTarget counts in. */
+/** The caster's record of this map's Rallies, which rallyRecordUpdate counts in. */
 const RALLY_RECORD_PATH = `flags.${SYSTEM_ID}.${RALLY_RECORD_FLAG}`;
 
 /**
@@ -34,21 +34,22 @@ export async function applyRallyEffect(actorUuid, intent, operation = null) {
 }
 
 /**
- * Count one more Rally on a unit in the caster's record of this map's Rallies (RALLY_RECORD_FLAG), read fresh so
- * several targets in one use each add their own. The record is a list, not a map keyed by uuid, because Foundry
- * would expand the dots in a uuid key.
- * @param {string} casterUuid The caster's Actor.
- * @param {string} targetActorUuid The unit just Rallied.
+ * The update fragment that counts one more Rally on each unit in the caster's record of this map's Rallies
+ * (RALLY_RECORD_FLAG), after recording that path for undo. The record is read fresh and each target is folded in
+ * turn, so several targets in one use each add their own, as one write per target would. The record is a list, not
+ * a map keyed by uuid, because Foundry would expand the dots in a uuid key. The caller writes the fragment, with
+ * rallyOptions' flag, in its own update of the caster.
+ * @param {Actor} actor The caster's Actor.
+ * @param {string[]} targetActorUuids The units this use Rallied, in the order they were Rallied.
  * @param {object|null} [operation] The item use's undo record.
- * @returns {Promise<boolean>} False when the caster is gone.
+ * @returns {Promise<object>} The fragment, empty when no unit was Rallied.
  */
-export async function recordRallyTarget(casterUuid, targetActorUuid, operation = null) {
-  const actor = await resolveActor(casterUuid);
-  if (!actor) return false;
-  const rallies = planRallyCount(actor.flags?.[SYSTEM_ID]?.[RALLY_RECORD_FLAG], targetActorUuid);
+export async function rallyRecordUpdate(actor, targetActorUuids, operation = null) {
+  if (!targetActorUuids.length) return {};
+  let rallies = actor.flags?.[SYSTEM_ID]?.[RALLY_RECORD_FLAG];
+  for (const targetActorUuid of targetActorUuids) rallies = planRallyCount(rallies, targetActorUuid);
   await operation?.capture({ documents: [{ document: actor, paths: [RALLY_RECORD_PATH] }] });
-  await actor.update({ [RALLY_RECORD_PATH]: rallies }, rallyOptions());
-  return true;
+  return { [RALLY_RECORD_PATH]: rallies };
 }
 
 /** The ActiveEffect data for a Rally that planRallyEffect planned. */

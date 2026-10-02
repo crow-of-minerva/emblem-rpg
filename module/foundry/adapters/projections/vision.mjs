@@ -3,7 +3,7 @@ import { doorSightBlocked, doorSightLine } from '../../../game/objects/rules.mjs
 import { DOOR_WALL_FLAG } from '../../../contracts/domains/objects.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { collectionValues } from '../../../lib/core/runtime.mjs';
-import { projectActorPartyId, projectUserPartyId } from './parties.mjs';
+import { projectActorPartyId, projectUserPartyId, readSharedPartyState } from './parties.mjs';
 import { projectActorStatusKeys } from './combat-context.mjs';
 import { sceneExplorationActive } from './encounters.mjs';
 import { resolveSync, tokenFootprintCells } from '../services/host.mjs';
@@ -57,35 +57,61 @@ export function projectDoorVisibilityByUuid(sourceTokenUuid, doorTokenUuid) {
 /**
  * One unit's faction and party, used by foundry/patches/vision.mjs to decide which tokens share vision with the
  * player's party.
+ * @param {Actor} actor The unit.
+ * @param {PartyState} [partyState] Party state already read; by default the copy shared within this task.
  * @returns {{actorType: string, partyId: string|null}}
  */
-export function projectPartySightFacts(actor) {
+export function projectPartySightFacts(actor, partyState = readSharedPartyState()) {
   const system = actor?.system ?? {};
   return {
     actorType: String(system.faction?.role ?? ''),
-    partyId: projectActorPartyId(actor)
+    partyId: projectActorPartyId(actor, partyState)
   };
 }
 
 /**
  * Whether the local user is a GM, their party, and the faction and party of each token they have selected, used by
  * foundry/patches/vision.mjs to decide which tokens share vision with the player's party.
+ *
+ * Worked out afresh on every call: Foundry rebuilds every token's vision source between releasing one token and
+ * selecting the next, so the selection can change within one task.
  * @returns {{isGM: boolean, userPartyId: string|null, controlled: object[]}}
  */
 export function projectSightPoolContext() {
+  const partyState = readSharedPartyState();
   const controlled = (globalThis.canvas?.tokens?.controlled ?? [])
-    .map(token => projectPartySightFacts(token?.actor));
+    .map(token => projectPartySightFacts(token?.actor, partyState));
   return {
     isGM: game.user?.isGM === true,
-    userPartyId: projectUserPartyId(String(game.user?.id ?? '')),
+    userPartyId: projectUserPartyId(String(game.user?.id ?? ''), partyState),
     controlled
   };
 }
 
-/** Whether an actor is blinded, by an effect's status or by its compiled `system.statuses.blinded`. */
+/** Each actor's Blinded answer in the current task, with the prepared `system` it was read from. */
+let taskBlinded = null;
+
+/**
+ * Whether an actor is blinded, by an effect's status or by its compiled `system.statuses.blinded`.
+ *
+ * Foundry's range test asks this for every vision source, target and test point, so the answer is kept for the rest
+ * of the synchronous task and dropped by a microtask. Every change to an actor's effects or statuses re-prepares
+ * it, and preparing gives it a new `system` object, so a kept answer is used only while `system` is unchanged. That
+ * covers the synchronous re-preparation of withFoundryCombatContext and a server update applied in the same task.
+ */
 export function projectSightBlinded(actor) {
   if (!actor) return false;
-  return projectActorStatusKeys(actor).has('blinded') || actor.system?.statuses?.blinded === true;
+  const system = actor.system;
+  const kept = taskBlinded?.get(actor);
+  if (kept && kept.system === system) return kept.blinded;
+  const blinded = projectActorStatusKeys(actor).has('blinded') || system?.statuses?.blinded === true;
+  if (!system || typeof system !== 'object') return blinded;
+  if (!taskBlinded) {
+    taskBlinded = new Map();
+    queueMicrotask(() => { taskBlinded = null; });
+  }
+  taskBlinded.set(actor, { system, blinded });
+  return blinded;
 }
 
 /** The extra sight range an actor's modifiers grant, in squares. */

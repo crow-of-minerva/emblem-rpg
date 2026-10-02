@@ -487,8 +487,17 @@ export function terrainHeightOccludes(
 /* -------------------------------------------- */
 /*  Heightmap helpers                           */
 /* -------------------------------------------- */
+/**
+ * Report whether any cell has an authored elevation, stopping at the first own key instead of copying them all.
+ * @param {Map<string, number>|Record<string, number>} elevations Floor elevation by cell.
+ * @returns {boolean}
+ */
 function hasElevations(elevations) {
-  return elevations instanceof Map ? elevations.size > 0 : Object.keys(elevations ?? {}).length > 0;
+  if (elevations instanceof Map) return elevations.size > 0;
+  for (const key in elevations) {
+    if (Object.hasOwn(elevations, key)) return true;
+  }
+  return false;
 }
 
 /**

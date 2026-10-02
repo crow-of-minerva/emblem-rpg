@@ -219,11 +219,12 @@ function rectilinearSightShape(source) {
 }
 
 /**
- * The cell scan and outline behind rectilinearSightShape, done once per line-of-sight polygon.
+ * The cell scan and outline behind rectilinearSightShape, kept per Token and reused while its inputs are unchanged.
  *
- * Foundry's PointVisionSource#_createShapes builds a fresh `los`, then asks for the light polygon and the restricted
- * polygon from it. Both overrides here need the same scan, so the second reuses the first. The inputs are part of
- * the key as well, so a later call against the same `los` with a changed range or footprint scans again.
+ * Foundry's PointVisionSource#_createShapes builds a fresh `los` each time, and Token#_onControl and #_onRelease
+ * re-initialise every token's vision, so the scan can't be keyed by the `los` object. It is reused only when the
+ * range, footprint, padding and sight-gate counter match and `los` has exactly the same points and bounds, which are
+ * all `los.contains` reads, so the result is the one a fresh scan would give.
  * @returns {{key: string, cells: Set<string>, points: number[]|null, bounds: object|null}}
  */
 function sightTrace(source, tokenDocument, los) {
@@ -236,14 +237,36 @@ function sightTrace(source, tokenDocument, los) {
   const { tc, tr, tw, th } = sourceFootprint(source, tokenDocument, g);
   const padded = Boolean(globalThis.canvas?.performance?.lightSoftEdges) && !source.isPreview;
   const key = [g, R, tc, tr, tw, th, padded].join('|');
-  const kept = sightTraces.get(los);
-  if (kept?.key === key) return kept;
+  const owner = source.object;
+  const kept = sightTraces.get(owner);
+  if (kept && kept.key === key && kept.invalidation === sightInvalidation && sameLosShape(kept.los, los)) {
+    return kept.trace;
+  }
   const cells = selectVisibleCells(footprintCells(tc, tr, tw, th, R), (x, y) => los.contains(x, y), g);
   const traced = traceCellBoundary(cells, g);
   const points = traced.length < 6 ? null : paddedStaircase(traced, source, g);
   const trace = { key, cells, points, bounds: points ? boundsFromPoints(points) : null };
-  sightTraces.set(los, trace);
+  sightTraces.set(owner, { key, invalidation: sightInvalidation, los: copyLosShape(los), trace });
   return trace;
+}
+
+/** A copy of the points and bounds of a line-of-sight polygon, the two things its `contains` reads. */
+function copyLosShape(los) {
+  const b = los.bounds;
+  return { points: Array.from(los.points), bounds: b ? [b.x, b.y, b.width, b.height] : null };
+}
+
+/** Whether a line-of-sight polygon has exactly the points and bounds saved by copyLosShape. */
+function sameLosShape(saved, los) {
+  const points = los.points;
+  if (saved.points.length !== points.length) return false;
+  for (let i = 0; i < points.length; i += 1) {
+    if (saved.points[i] !== points[i]) return false;
+  }
+  const b = los.bounds;
+  if (!b || !saved.bounds) return !b && !saved.bounds;
+  const [x, y, width, height] = saved.bounds;
+  return b.x === x && b.y === y && b.width === width && b.height === height;
 }
 
 /**

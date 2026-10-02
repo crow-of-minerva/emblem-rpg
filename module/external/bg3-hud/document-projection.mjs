@@ -24,6 +24,7 @@ import { STEAL_ABILITY_NAME } from '../../contracts/domains/economy.mjs';
 import { CHARACTER_EXPERIENCE_THRESHOLD } from '../../contracts/domains/progression.mjs';
 import { statModifierDeltas } from '../../game/character/modifier-deltas.mjs';
 import { reportFoundryError } from '../../foundry/adapters/services/diagnostics.mjs';
+import { structurallyEqual } from '../../lib/core/runtime.mjs';
 
 const STATS = Object.freeze(['atk', 'brk', 'spd', 'acc', 'crit', 'eva', 'def', 'res']);
 const STAT_LABELS = Object.freeze(Object.fromEntries(
@@ -87,8 +88,8 @@ export async function hydrateBg3Cell(cellData) {
 
 /**
  * Collect what decorateEmblemBg3Hud (presentation/interface/bg3-hud.mjs) needs to style the HUD for its current
- * actor: read-only state, the active item, a copy of the actor's system data, the rows that explain each stat's
- * modifier, and what the Ascend/Land button and the counterattack toggle need. init/system.mjs pairs the two in
+ * actor: read-only state, the active item, a copy of the stat totals the stats bar prints, the rows that explain
+ * each stat's modifier, and what the Ascend/Land button and the counterattack toggle need. init/system.mjs pairs the two in
  * decorateHud. The result is plain frozen data, never the live actor, and decorateEmblemBg3Hud keeps parts of it
  * between refreshes.
  * @param {object} app The BG3 HUD application.
@@ -112,7 +113,7 @@ export function projectBg3HudView(app, ports = {}) {
       colorName: activeTargetingColorName(actor.activeItem)
     }) : null,
     actor: Object.freeze({
-      system: foundry.utils.deepClone(actor.system ?? {}),
+      system: projectHudStatTotals(actor),
       modifierDeltas: deltas,
       modifierRows: Object.freeze(Object.fromEntries(
         STATS.map(key => [key, projectBg3ModifierRows(actor, key, auras, deltas ? deltas[key] ?? 0 : undefined)])
@@ -123,11 +124,37 @@ export function projectBg3HudView(app, ports = {}) {
   });
 }
 
-/** How far each stat sits from the unit's own build (statModifierDeltas). null when no characterSource was given. */
+/**
+ * The part of the actor's system data the stats bar prints: `stats.<key>.total` for the eight HUD stats. A stat
+ * the actor lacks is left out, so the bar shows `--` for it as it would for the full data.
+ */
+function projectHudStatTotals(actor) {
+  const stats = {};
+  for (const key of STATS) {
+    const node = actor.system?.stats?.[key];
+    if (node !== undefined && node !== null) stats[key] = { total: foundry.utils.deepClone(node.total) };
+  }
+  return { stats };
+}
+
+/** Per actor, the last compile source measured (a deep copy) and its deltas. */
+const lastStatDeltas = new WeakMap();
+
+/**
+ * How far each stat sits from the unit's own build (statModifierDeltas). null when no characterSource was given.
+ * statModifierDeltas reads nothing but its source, so a source equal in every value to the last one measured for
+ * this actor reuses that result instead of compiling the unit twice again.
+ */
 function measureHudStatDeltas(actor, characterSource) {
   if (typeof characterSource !== 'function') return null;
   try {
-    return statModifierDeltas(characterSource(actor), STATS) ?? Object.freeze({});
+    const source = characterSource(actor);
+    const last = lastStatDeltas.get(actor);
+    if (last && structurallyEqual(last.source, source)) return last.deltas;
+    const copy = foundry.utils.deepClone(source);
+    const deltas = statModifierDeltas(source, STATS) ?? Object.freeze({});
+    lastStatDeltas.set(actor, { source: copy, deltas });
+    return deltas;
   } catch (error) {
     reportFoundryError(import.meta.url, error, 'Emblem RPG | Stat modifier measurement failed');
     return null;

@@ -238,6 +238,8 @@ const DEFAULT_IMAGE = 'icons/svg/mystery-man.svg';
 const DEFAULT_WEAPON_IMAGE = `systems/${SYSTEM_ID}/assets/ui/dmg-types/none.png`;
 const REFERENCE_IMAGE_HEIGHT = 180;
 const originalImageHeights = new Map();
+/** The data URLs trimCharacterSprites has put on a preview's sprites. */
+const croppedSprites = new Set();
 const notifications = new NotificationService({ diagnostics: new FoundryDiagnostics() });
 
 /* -------------------------------------------- */
@@ -699,7 +701,13 @@ function originalImageHeight(source) {
 
 function trimCharacterSprites(root) {
   for (const image of root.querySelectorAll('.atk-img, .def-img')) {
-    const trim = () => trimPngAlpha(image).then(source => { if (source) image.src = source; });
+    // A re-rendered body keeps the crop already shown (applyImageStates). A crop has no transparent edge to trim.
+    if (croppedSprites.has(image.src)) continue;
+    const trim = () => trimPngAlpha(image).then(source => {
+      if (!source) return;
+      croppedSprites.add(source);
+      image.src = source;
+    });
     if (image.complete && image.naturalWidth) void trim();
     else image.addEventListener('load', trim, { once: true });
   }

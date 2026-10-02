@@ -117,14 +117,16 @@ export class FoundryEncounterRepository {
     return true;
   }
 
-  /** Stamp the acting faction and round onto the Scene. */
+  /** Stamp the acting faction and round onto the Scene in one write, so `updateScene` sees both change together. */
   async setPhase(sceneUuid, phase, round, operation = null) {
     const scene = await resolveScene(sceneUuid);
     if (!scene) return false;
     try {
       await operation?.capture({ documents: [{ document: scene, paths: PHASE_SCENE_PATHS }] });
-      await scene.setFlag(SYSTEM_ID, ENCOUNTER_PHASE_FLAG, String(phase));
-      await scene.setFlag(SYSTEM_ID, ENCOUNTER_ROUND_FLAG, Math.max(1, Math.floor(Number(round) || 1)));
+      await scene.update({
+        [`flags.${SYSTEM_ID}.${ENCOUNTER_PHASE_FLAG}`]: String(phase),
+        [`flags.${SYSTEM_ID}.${ENCOUNTER_ROUND_FLAG}`]: Math.max(1, Math.floor(Number(round) || 1))
+      });
       return true;
     } catch (diagnosticError) {
       reportFoundryError(import.meta.url, diagnosticError, 'setPhase');
@@ -132,14 +134,16 @@ export class FoundryEncounterRepository {
     }
   }
 
-  /** Clear the Scene's phase and round without touching any unit's turn state. */
+  /** Clear the Scene's phase and round, in one write, without touching any unit's turn state. */
   async clearPhase(sceneUuid, operation = null) {
     const scene = await resolveScene(sceneUuid);
     if (!scene) return false;
     try {
       await operation?.capture({ documents: [{ document: scene, paths: PHASE_SCENE_PATHS }] });
-      await scene.unsetFlag(SYSTEM_ID, ENCOUNTER_PHASE_FLAG);
-      await scene.unsetFlag(SYSTEM_ID, ENCOUNTER_ROUND_FLAG);
+      await scene.update({
+        ...forcedDeletion(`flags.${SYSTEM_ID}.${ENCOUNTER_PHASE_FLAG}`),
+        ...forcedDeletion(`flags.${SYSTEM_ID}.${ENCOUNTER_ROUND_FLAG}`)
+      });
       return true;
     } catch (diagnosticError) {
       reportFoundryError(import.meta.url, diagnosticError, 'clearPhase');
@@ -147,7 +151,10 @@ export class FoundryEncounterRepository {
     }
   }
 
-  /** Write every participating unit's opening turn state in one pass, recording their turn state first. */
+  /**
+   * Write every participating unit's opening turn state, recording their turn state first. Neighbouring world Actors
+   * share one write; see turnUpdateBatches.
+   */
   async applyTurnUpdates(sceneUuid, plan = [], operation = null) {
     const actors = [];
     for (const entry of plan) {
@@ -157,7 +164,14 @@ export class FoundryEncounterRepository {
     if (!actors.length) return true;
     try {
       await operation?.capture({ documents: actors.map(entry => ({ document: entry.actor, paths: TURN_PATHS })) });
-      for (const entry of actors) await entry.actor.update({ ...entry.updates }, encounterOptions());
+      for (const batch of turnUpdateBatches(actors)) {
+        if (batch.length === 1) await batch[0].actor.update({ ...batch[0].updates }, encounterOptions());
+        else {
+          await getDocumentClass('Actor').updateDocuments(
+            batch.map(entry => ({ ...entry.updates, _id: entry.actor.id })), encounterOptions()
+          );
+        }
+      }
       return true;
     } catch (diagnosticError) {
       reportFoundryError(import.meta.url, diagnosticError, 'applyTurnUpdates');
@@ -368,8 +382,8 @@ export class FoundryEncounterRepository {
 
   /**
    * Count down the timed summons an ending phase reaches and remove those whose time ran out, as `planSummonExpiry`
-   * planned it for the phase change in engine/combat/encounters/phases.mjs. Each counter is recorded before it is
-   * written, and the removal goes through removeSummons.
+   * planned it for the phase change in engine/combat/encounters/phases.mjs. The counters are recorded, then written
+   * in one Token update, and the removal goes through removeSummons.
    * @param {string} sceneUuid The map whose phase is ending.
    * @param {{expiredTokenUuids: string[], counters: Array<{tokenUuid: string, remaining: number}>}} plan
    * @param {object|null} [operation] The phase change's undo record.
@@ -383,10 +397,12 @@ export class FoundryEncounterRepository {
       await operation?.capture({
         documents: counted.map(token => ({ document: token, paths: [SUMMON_REMAINING_PATH] }))
       });
+      const counters = new Map();
       for (const token of counted) {
         const { remaining } = plan.counters.find(counter => counter.tokenUuid === token.uuid);
-        await token.update({ [SUMMON_REMAINING_PATH]: remaining }, encounterOptions());
+        if (!counters.has(token.id)) counters.set(token.id, { _id: token.id, [SUMMON_REMAINING_PATH]: remaining });
       }
+      if (counters.size) await scene.updateEmbeddedDocuments('Token', [...counters.values()], encounterOptions());
       return await removeSummons(scene, await sceneTokens(scene, plan.expiredTokenUuids), this.guardBonds, operation);
     } catch (diagnosticError) {
       reportFoundryError(import.meta.url, diagnosticError, 'expireSummons');
@@ -631,6 +647,27 @@ export async function removeSummons(scene, tokens, guardBonds, operation = null)
   for (const token of tokens) await guardBonds?.breakFor(token.uuid, GUARD_BOND_BREAKS.LEFT, { operation });
   await scene.deleteEmbeddedDocuments('Token', tokens.map(token => String(token.id)), encounterOptions());
   return tokens.every(token => !scene.tokens.get(token.id));
+}
+
+/**
+ * Group turn updates into writes, keeping plan order: a run of world Actors goes out as one Actor.updateDocuments,
+ * and a token's unlinked Actor, which Foundry writes through its ActorDelta, goes alone. An Actor already in the run
+ * starts a new one, so its second update applies on top of its first, as two separate writes would.
+ */
+function turnUpdateBatches(entries) {
+  const batches = [];
+  let run = null;
+  for (const entry of entries) {
+    const { actor } = entry;
+    if (actor.isToken || actor.pack || actor.parent) {
+      batches.push([entry]);
+      run = null;
+      continue;
+    }
+    if (!run || run.some(other => other.actor === actor)) batches.push(run = []);
+    run.push(entry);
+  }
+  return batches;
 }
 
 /** The Tokens a cleanup plan names that still stand on its map. */

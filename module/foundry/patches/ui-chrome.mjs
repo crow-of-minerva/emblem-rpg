@@ -229,8 +229,15 @@ function installCursors() {
 /*  Cursor stylesheet coverage                  */
 /* -------------------------------------------- */
 /**
+ * Stylesheets whose rules have been rewritten. A replaced sheet is a new object, so it is rewritten when it appears.
+ * An empty sheet is not recorded, in case it is one still loading.
+ */
+const normalizedSheets = new WeakSet();
+
+/**
  * Replace the cursor keywords in every loaded stylesheet with the matching --cursor-* variable, which
- * game.configureCursors fills from CONFIG.cursors, so Foundry's and modules' rules show the system cursors.
+ * game.configureCursors fills from CONFIG.cursors, so Foundry's and modules' rules show the system cursors. Sheets
+ * already rewritten are not walked again.
  */
 function normalizeStylesheetCursors() {
   const visited = new Set();
@@ -247,7 +254,24 @@ function normalizeStylesheet(sheet, visited) {
   } catch {
     return;
   }
-  if (rules) normalizeRules(rules, visited);
+  if (!rules) return;
+  if (normalizedSheets.has(sheet)) {
+    normalizeImportedSheets(rules, visited);
+    return;
+  }
+  if (rules.length) normalizedSheets.add(sheet);
+  normalizeRules(rules, visited);
+}
+
+/**
+ * Look only at the @import rules of a sheet already rewritten, since an imported sheet may have finished loading
+ * since. They come before every other rule except @charset and @layer statements.
+ */
+function normalizeImportedSheets(rules, visited) {
+  for (const rule of rules) {
+    if ('styleSheet' in rule) normalizeStylesheet(rule.styleSheet, visited);
+    else if (!rule.nameList) return;
+  }
 }
 
 function normalizeRules(rules, visited) {

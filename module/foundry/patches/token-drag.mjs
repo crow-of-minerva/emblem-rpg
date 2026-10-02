@@ -11,6 +11,9 @@ import { reportFoundryError } from '../adapters/services/diagnostics.mjs';
 /** The targets of the Foundry Token wrappers registered for the movement controls, which tokenDragPatchCount counts. */
 const registered = [];
 
+/** Core's elevation action ids, cached per `game.keybindings.activeKeys` Map (see verticalActionIds). */
+const VERTICAL_ACTION_IDS = new WeakMap();
+
 /**
  * Install the selection, drag, ruler and keyboard wrappers the movement controls need. Called once by
  * ui/controls/movement.mjs, which passes its handlers.
@@ -207,7 +210,7 @@ function registerKeyboardPatches() {
   register('foundry.helpers.interaction.KeyboardManager._getMatchingActions', function (wrapped, context) {
     const actions = wrapped(context);
     if (!Array.isArray(actions) || !actions.length) return actions;
-    const verticalIds = verticalMovementActionIds(registeredKeybindingActions());
+    const verticalIds = verticalActionIds();
     const tokenControlled = (globalThis.canvas?.tokens?.controlled?.length ?? 0) > 0;
     return actions.filter(action => coreKeybindingAllowed({
       id: `${action?.namespace ?? ''}.${action?.action ?? ''}`, verticalIds, tokenControlled
@@ -227,6 +230,20 @@ export function tokenDragPatchCount() {
 function register(target, handler, type) {
   globalThis.libWrapper.register(SYSTEM_ID, target, handler, type);
   registered.push(target);
+}
+
+/**
+ * The elevation action ids the KeyboardManager wrapper drops. They are cached per `activeKeys` Map, which Foundry
+ * builds afresh whenever bindings change, so a rebind starts a new cache and other keypresses skip the walk over
+ * every action, as coreMovementKeys in ui/controls/movement-keys.mjs does.
+ */
+function verticalActionIds() {
+  const index = game.keybindings.activeKeys;
+  const cached = VERTICAL_ACTION_IDS.get(index);
+  if (cached) return cached;
+  const ids = verticalMovementActionIds(registeredKeybindingActions());
+  VERTICAL_ACTION_IDS.set(index, ids);
+  return ids;
 }
 
 /** Every registered keybinding action as `{id, name}`, read fresh each time so a rebind takes effect at once. */

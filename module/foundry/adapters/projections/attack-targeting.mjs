@@ -1145,7 +1145,7 @@ function weaponArtCasterMet(token, actor, art, weapon) {
     target: null,
     sourceToken: token,
     targetToken: null,
-    movement: projectMovementSnapshot(token.document ?? token),
+    movement: () => projectMovementSnapshot(token.document ?? token),
     gridSize: tokenGridSize(token, 1)
   })).casterOk === true;
 }

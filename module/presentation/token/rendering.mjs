@@ -19,6 +19,8 @@ const AIRBORNE_SORT_OFFSET = 1_000_000;
 const CORNER_ANCHORS = Object.freeze({ nw: [0, 0], ne: [1, 0], sw: [0, 1], se: [1, 1] });
 
 const selectionIndicators = new Map();
+/** The four corner textures cut from the selection frame, by the frame's base texture. Shared by every frame shown. */
+const selectionCornerTextures = new WeakMap();
 const pathfindingIndicators = new Map();
 const exchangingTokens = new Set();
 let facadeSelectionTokenId = null;
@@ -30,6 +32,9 @@ const tokenDodges = new Map();
 const tokenDefeatFades = new Map();
 const TURN_GREY_FILTER = 'emblemTurnGrey';
 const MOVEMENT_ONLY_KEYS = new Set([...TOKEN_MOVEMENT_WRITE_KEYS, 'rotation']);
+const PLACEMENT_REFRESH_FLAGS = new Set([
+  'refreshPosition', 'refreshVisibility', 'refreshRotation', 'refreshElevation'
+]);
 const DEFEAT_FADE_FILTER = 'emblemDefeatFade';
 const DEFEAT_FADE_ALPHA = 0.55;
 const OUTLINE_TOLERANCE = 0.02;
@@ -360,14 +365,34 @@ export function onDrawTokenPresentation(token) {
 }
 
 /**
- * On every token refresh, reapply what Foundry's refresh would undo: pixel-art sampling, the hidden core
- * decorations, the turn greyout and the airborne sort.
+ * On a token refresh, reapply what Foundry's refresh would undo: pixel-art sampling, the hidden core decorations,
+ * the turn greyout and the airborne sort. A placed token's move-only refresh undoes none but the sort, while a drag
+ * preview, whose moves are its only refreshes, gets every step.
+ * @param {Token} token The refreshed Token.
+ * @param {Record<string, boolean>} [flags] The render flags of this refresh, as the refreshToken hook passes them.
  */
-export function onRefreshTokenPresentation(token) {
-  applyNearestTokenScaling(token);
-  hideCoreTokenDecorations(token);
-  refreshTokenTurnGreyout(token);
+export function onRefreshTokenPresentation(token, flags = null) {
+  if (token?.isPreview || !placementOnlyRefresh(flags)) {
+    applyNearestTokenScaling(token);
+    hideCoreTokenDecorations(token);
+    refreshTokenTurnGreyout(token);
+  }
   applyAirborneSort(token);
+}
+
+/**
+ * Whether a refresh only moves, turns, lifts or shows the token. Foundry raises these on every animation frame of a
+ * move, and its handlers for them set positions, angles, elevation and visibility only.
+ */
+function placementOnlyRefresh(flags) {
+  if (!flags) return false;
+  let raised = false;
+  for (const flag in flags) {
+    if (!flags[flag] || !Object.hasOwn(flags, flag)) continue;
+    if (!PLACEMENT_REFRESH_FLAGS.has(flag)) return false;
+    raised = true;
+  }
+  return raised;
 }
 
 /**
@@ -390,7 +415,7 @@ function applyAirborneSort(token) {
 
 /**
  * Reapply nearest sampling after Foundry replaces a token mesh texture. A move or a rotation change doesn't replace
- * the texture, and every refresh while the token moves reapplies the sampling anyway, so those updates skip it.
+ * the texture, so those updates skip it.
  */
 export function onUpdateTokenPresentation(tokenDocument, changes = null) {
   const keys = Object.keys(changes ?? {});
@@ -409,23 +434,30 @@ export function onScenePhaseTokenPresentation(scene, changes) {
 
 /** After an Actor update, refresh its tokens' turn greyout, indicators and airborne sort. */
 export function onUpdateActorTokenPresentation(actor) {
-  for (const token of canvas.tokens?.placeables ?? []) {
-    if (token.actor?.uuid !== actor?.uuid) continue;
+  for (const token of actorTokensOnCanvas(actor)) {
     refreshTokenTurnGreyout(token);
     refreshControlIndicator(token);
     applyAirborneSort(token);
   }
 }
 
-/** When an actor's ActiveEffect changes, lay out its tokens' status icons again and reapply pixel-art sampling. */
+/**
+ * When an actor's ActiveEffect changes, reapply pixel-art sampling to its tokens. The status icons need nothing
+ * here: Foundry's TokenDocument#_onRelatedUpdate already queues redrawEffects for every token of the actor, linked
+ * or not, and that redraw lays them out.
+ */
 export function onActiveEffectTokenPresentation(effect) {
-  const actorUuid = effect?.parent?.uuid;
-  if (!actorUuid) return;
-  for (const token of canvas.tokens?.placeables ?? []) {
-    if (token.actor?.uuid !== actorUuid) continue;
-    token._refreshEffects?.();
-    scheduleNearestTokenScaling(token);
-  }
+  for (const token of actorTokensOnCanvas(effect?.parent)) scheduleNearestTokenScaling(token);
+}
+
+/**
+ * The drawn tokens on the viewed scene whose actor is this one: a world actor's linked tokens, or an unlinked token's
+ * own token. A world actor's dependent tokens also hold the unlinked tokens made from it, which have their own actor,
+ * so only linked ones are asked for there. Anything but an Actor (an effect on an Item) has none.
+ */
+function actorTokensOnCanvas(actor) {
+  if (actor?.documentName !== 'Actor') return [];
+  return actor.getActiveTokens(!actor.isToken);
 }
 
 /** Keep Foundry's hover frame hidden when a token is hovered. */
@@ -756,15 +788,8 @@ function showSelectionIndicator(token) {
   };
   const applyFrames = () => {
     if (!alive()) return;
-    const halfWidth = baseTexture.width / 2;
-    const halfHeight = baseTexture.height / 2;
-    const frames = {
-      nw: new PIXI.Rectangle(0, 0, halfWidth, halfHeight),
-      ne: new PIXI.Rectangle(halfWidth, 0, halfWidth, halfHeight),
-      sw: new PIXI.Rectangle(0, halfHeight, halfWidth, halfHeight),
-      se: new PIXI.Rectangle(halfWidth, halfHeight, halfWidth, halfHeight)
-    };
-    for (const key of CORNERS) corners[key].texture = new PIXI.Texture(baseTexture.baseTexture, frames[key]);
+    const textures = selectionCornerTexturesFor(baseTexture);
+    for (const key of CORNERS) corners[key].texture = textures[key];
     sizeCorners();
   };
 
@@ -805,6 +830,28 @@ function clearSelectionIndicator(token) {
   if (entry.onLoaded) entry.baseTexture?.baseTexture?.off('loaded', entry.onLoaded);
   for (const key of CORNERS) destroyDisplayObject(entry.corners[key]);
   selectionIndicators.delete(tokenId);
+}
+
+/**
+ * The selection frame's four corner textures, each a quarter of the loaded frame, cut once per base texture and
+ * shared by every frame shown. Destroying a corner sprite leaves them alone.
+ * @param {PIXI.Texture} texture The loaded selection frame.
+ * @returns {{nw: PIXI.Texture, ne: PIXI.Texture, sw: PIXI.Texture, se: PIXI.Texture}}
+ */
+function selectionCornerTexturesFor(texture) {
+  const base = texture.baseTexture;
+  const cached = selectionCornerTextures.get(base);
+  if (cached) return cached;
+  const halfWidth = texture.width / 2;
+  const halfHeight = texture.height / 2;
+  const textures = Object.freeze({
+    nw: new PIXI.Texture(base, new PIXI.Rectangle(0, 0, halfWidth, halfHeight)),
+    ne: new PIXI.Texture(base, new PIXI.Rectangle(halfWidth, 0, halfWidth, halfHeight)),
+    sw: new PIXI.Texture(base, new PIXI.Rectangle(0, halfHeight, halfWidth, halfHeight)),
+    se: new PIXI.Texture(base, new PIXI.Rectangle(halfWidth, halfHeight, halfWidth, halfHeight))
+  });
+  selectionCornerTextures.set(base, textures);
+  return textures;
 }
 
 /* -------------------------------------------- */
@@ -967,21 +1014,32 @@ export function configureTokenEffectPresentation(configuration = {}) {
  * Draw Emblem's status icons in place of Foundry's token effects. init/hooks.mjs installs it as a libWrapper
  * override of Token#_drawEffects, so `this` is the Token. It follows core v14 `_drawEffects`, except: the icons come
  * from projectEffects (armour and mount entries dropped), wield icons come first and the overlay last, each icon
- * keeps its effect and gets pixel-art sampling, and the layout runs once before the icons are shown.
+ * keeps its effect and gets pixel-art sampling, and the icons already drawn are kept when nothing they show has
+ * changed. As in core, the layout waits for the refreshEffects render flag, which runs after the size refreshes.
  */
 export async function drawEmblemTokenEffects() {
-  this.effects.renderable = false;
-  this.effects.removeChildren().forEach(child => child.destroy());
-  this.effects.bg = this.effects.addChild(new PIXI.Graphics());
-  this.effects.bg.zIndex = -1;
-  this.effects.overlay = null;
-
   const visible = projectEffects(this).filter(effect => !effect.armor && !effect.mount);
   const overlay = visible.findLast(effect => effect.img && effect.overlay);
   const ordered = visible
     .filter(effect => effect !== overlay)
     .sort((left, right) => Number(right.wield) - Number(left.wield));
   if (overlay) ordered.push(overlay);
+
+  // Every field the icons, their order, the overlay and the layout read comes from these records.
+  const signature = JSON.stringify({ ordered, overlay: Boolean(overlay) });
+  if (drawnStatusIconsCurrent(this, signature, ordered, overlay)) {
+    for (const icon of drawnStatusIcons(this.effects)) applyNearestTexture(icon.texture);
+    this.effects.renderable = true;
+    this.renderFlags.set({ refreshEffects: true });
+    return;
+  }
+
+  this.effects.renderable = false;
+  this.effects.emblemSignature = null;
+  this.effects.removeChildren().forEach(child => child.destroy({ children: true }));
+  this.effects.bg = this.effects.addChild(new PIXI.Graphics());
+  this.effects.bg.zIndex = -1;
+  this.effects.overlay = null;
 
   const promises = [];
   for (const [index, effect] of ordered.entries()) {
@@ -1000,9 +1058,40 @@ export async function drawEmblemTokenEffects() {
 
   await Promise.allSettled(promises);
   this.effects.sortChildren();
-  this._refreshEffects();
   this.effects.renderable = true;
+  this.effects.emblemSignature = signature;
   this.renderFlags.set({ refreshEffects: true });
+}
+
+/**
+ * Whether the icons from the last draw still show exactly what a fresh draw would. Foundry keeps `token.effects`
+ * across full token draws, so the signature lives there; a new placeable starts without one. Each icon must also
+ * still hold the texture the cache would hand a fresh draw, since the cache can unload an image the token still
+ * shows, and an image that failed to load is not cached under its own path.
+ */
+function drawnStatusIconsCurrent(token, signature, ordered, overlay) {
+  const container = token.effects;
+  const background = container?.bg;
+  if (!container || container.destroyed || container.emblemSignature !== signature) return false;
+  if (!background || background.destroyed || background.parent !== container) return false;
+  const icons = drawnStatusIcons(container);
+  if (icons.length !== ordered.filter(effect => effect.img).length) return false;
+  if (Boolean(overlay) !== Boolean(container.overlay && icons.includes(container.overlay))) return false;
+  return icons.every(icon => !icon.destroyed && icon.emblemEffect && iconTextureCurrent(icon));
+}
+
+function drawnStatusIcons(container) {
+  return container.children.filter(child => isStatusIcon(child, container.bg));
+}
+
+/** Whether the icon's texture is the one Foundry's loadTexture would return for its image path now. */
+function iconTextureCurrent(icon) {
+  const base = icon.texture?.baseTexture;
+  if (!base || base.destroyed || !base.valid) return false;
+  const src = icon.emblemEffect.img;
+  if (src.startsWith('#')) return canvas.sceneTextures?.[src.slice(1)]?.baseTexture === base;
+  const cached = foundry.canvas.TextureLoader.loader.getCache(src);
+  return (cached?.baseTexture ?? cached) === base;
 }
 
 /**
@@ -1020,7 +1109,8 @@ export function refreshEmblemTokenEffects() {
 
   for (const child of Array.from(this.effects.children)) {
     if (!child.emblemSlotBackground && !child.emblemStackCount) continue;
-    this.effects.removeChild(child).destroy();
+    // A badge's Text owns its texture, so it goes with the badge. Slot backgrounds share a cached texture, kept.
+    this.effects.removeChild(child).destroy({ children: true });
   }
 
   const background = this.effects.bg.clear()

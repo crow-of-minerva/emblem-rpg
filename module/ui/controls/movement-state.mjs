@@ -153,6 +153,11 @@ export function activeMovementPlan() {
   return control.plan;
 }
 
+/** Whether this client's plan is dragging its unit right now. False when there is no plan. */
+export function movementPlanDragging() {
+  return control.plan?.dragging === true;
+}
+
 /** The plan record for a placed Token, when that Token is the one being moved here. */
 export function movementPlanForToken(token) {
   const tokenId = token?.document?.id ?? token?.id ?? token?._id;

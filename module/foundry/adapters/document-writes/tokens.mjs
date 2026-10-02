@@ -598,6 +598,29 @@ function projectTokenArtFacts(actor, usedItem = null) {
   };
 }
 
+/**
+ * Read only what activeTokenOffsetY needs, without cloning, for the per-frame mesh refresh. The art objects are
+ * passed through live and must only be read.
+ */
+function projectTokenOffsetFacts(actor) {
+  const art = actor?.system?.art ?? {};
+  let className = '';
+  for (const item of actor?.items ?? []) {
+    if (item?.type === 'Class') {
+      className = item.name ?? '';
+      break;
+    }
+  }
+  return {
+    className,
+    unitType: actor?.system?.unitType ?? {},
+    airborne: isAirborneActor(actor),
+    mounted: actor?.system?.statuses?.mounted === true,
+    offsets: art.tokenOffsetsY ?? {},
+    tabs: art.tabs ?? []
+  };
+}
+
 /** Resolve an Actor UUID and refresh its persistent token art. */
 export async function refreshActorTokenArt(actorUuid, options = {}) {
   const actor = await resolveActor(actorUuid);
@@ -700,7 +723,7 @@ export function onCanvasReadyTokenArt() {
 /** drawToken and refreshToken handler: apply the authored Y offset exactly once per mesh refresh. */
 export function onRefreshTokenArt(token) {
   if (!isCharacter(token?.actor) || !token?.mesh || !globalThis.canvas?.grid) return;
-  const lift = activeTokenOffsetY(projectTokenArtFacts(token.actor)) * canvas.grid.size;
+  const lift = activeTokenOffsetY(projectTokenOffsetFacts(token.actor)) * canvas.grid.size;
   const adjustment = (Number(token._emblemTransientY) || 0) - lift;
   if (token.mesh.position.y !== token._emblemVLastWritten) token._emblemVNaturalY = token.mesh.position.y;
   const natural = Number.isFinite(token._emblemVNaturalY) ? token._emblemVNaturalY : token.mesh.position.y;

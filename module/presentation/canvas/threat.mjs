@@ -1,5 +1,6 @@
 /** @layer presentation/canvas */
 import { THREAT_TIERS } from '../../contracts/domains/combat.mjs';
+import { FACTION_GROUPS } from '../../contracts/domains/characters.mjs';
 import { movementOverlayLayer } from './cell-overlays.mjs';
 import { recordDiagnostic } from '../../contracts/protocol.mjs';
 
@@ -20,6 +21,8 @@ const TIER_STYLE = Object.freeze({
   [THREAT_TIERS.LETHAL]: Object.freeze({ color: 0xFF0000, width: 5, alpha: 1, glow: true })
 });
 const DEFAULT_TIER = THREAT_TIERS.SEVERE;
+/** Faction roles on the player's side, lowercase, matched the way factionGroup (game/character/rules.mjs) does. */
+const PLAYER_FACTION_NAMES = new Set(FACTION_GROUPS.player.map(role => role.toLowerCase()));
 
 /* -------------------------------------------- */
 /*  Timing                                      */
@@ -81,6 +84,7 @@ export class ThreatIndicators {
   #cellY = null;
   #prefilter = null;
   #dirty = false;
+  #freshSelection = false;
   #regrade = false;
   #reprocessing = false;
   #assessDeferred = false;
@@ -220,6 +224,7 @@ export class ThreatIndicators {
     this.#cellY = null;
     this.#prefilter = null;
     this.#dirty = false;
+    this.#freshSelection = false;
     this.#regrade = false;
     this.#reprocessing = false;
     this.#assessDeferred = false;
@@ -317,11 +322,15 @@ export class ThreatIndicators {
     this.#invalidatedAt = this.#now();
     this.#focus = token;
     this.#anchor = { x: token.center.x, y: token.center.y };
-    if (!this.#openBuild({ keepAnimation: false })) this.#land([], { keepAnimation: false });
-    if (!this.#playerSelected) {
-      this.#focus = null;
-      this.#anchor = null;
-      this.#threats = [];
+    // A player's unit reads the board on the first quiet frame, so the click that selects it stays cheap. Any other
+    // unit reads it now: the intent line never reads the board again, and the hooks need its hostile list at once.
+    if (this.#isPlayerUnit(token)) {
+      this.#playerSelected = true;
+      this.#building = null;
+      this.#freshSelection = true;
+      this.#dirty = true;
+    } else {
+      this.#openSelection();
     }
     if (!this.#running) {
       this.#running = true;
@@ -332,6 +341,30 @@ export class ThreatIndicators {
 
   #selectedUuid() {
     return this.#selected?.document?.uuid ?? this.#selected?.uuid ?? '';
+  }
+
+  /**
+   * Whether the threat board would count this token as a player's unit (`selected.playerUnit` in projectThreatBoard,
+   * foundry/adapters/projections/movement.mjs), read from the token alone without building the board.
+   */
+  #isPlayerUnit(token) {
+    const document = token?.document;
+    if (document?.documentName !== 'Token' || !document.parent?.tokens || !document.actor) return false;
+    return PLAYER_FACTION_NAMES.has(String(document.actor.system?.faction?.role ?? '').toLowerCase());
+  }
+
+  /**
+   * Read the board for a newly selected unit. For a player's unit, measuring starts and the lines already drawn stay
+   * until the new ones land, each new line growing in from nothing. Any other unit has its lines and focus cleared.
+   */
+  #openSelection() {
+    this.#freshSelection = false;
+    if (!this.#openBuild({ keepAnimation: false })) this.#land([], { keepAnimation: false });
+    if (!this.#playerSelected) {
+      this.#focus = null;
+      this.#anchor = null;
+      this.#threats = [];
+    }
   }
 
   /**
@@ -469,7 +502,8 @@ export class ThreatIndicators {
       this.#building = null;
       if (quiet) {
         this.#dirty = false;
-        if (!this.#openBuild({ keepAnimation: true })) this.#land([], { keepAnimation: true });
+        if (this.#freshSelection) this.#openSelection();
+        else if (!this.#openBuild({ keepAnimation: true })) this.#land([], { keepAnimation: true });
       }
     }
     const landed = this.#building ? this.#advanceBuild(budget) : false;

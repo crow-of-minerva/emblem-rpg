@@ -31,7 +31,7 @@ import { EFFECT_MOVE_ACTION, EFFECT_MOVE_ANIMATION, ENCOUNTER_DECAY_FLAGS } from
 import { DEFAULT_STATUS_DURATION } from '../../../contracts/domains/characters.mjs';
 import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
 import { ACTIVATION_EXPERIENCE_USES_FLAG } from '../../../contracts/domains/progression.mjs';
-import { applyRallyEffect, recordRallyTarget } from './rallies.mjs';
+import { applyRallyEffect, rallyRecordUpdate } from './rallies.mjs';
 import { removeSummons } from './encounters.mjs';
 import { projectActivationExperienceUses } from '../projections/items.mjs';
 import { projectGeometrySight } from '../projections/terrain.mjs';
@@ -1048,11 +1048,6 @@ export class FoundryItemActivationSettlement {
     return applyRallyEffect(actorUuid, intent, snapshot.operation ?? null);
   }
 
-  /** Count one more Rally on this unit in the caster's record of this map's Rallies; see recordRallyTarget. */
-  recordRally(snapshot, targetActorUuid) {
-    return recordRallyTarget(snapshot.source.actorUuid, targetActorUuid, snapshot.operation ?? null);
-  }
-
   /** Raise the user's stats and growths by the planned Booster gains. HP or Stance rises with its maximum. */
   async applyBooster(actorUuid, plan, snapshot) {
     const actor = await resolveActor(actorUuid);
@@ -1105,11 +1100,22 @@ export class FoundryItemActivationSettlement {
     return true;
   }
 
-  /** Spend the activation's use and action, destroying a consumable that reaches zero. */
-  async settleActivation(snapshot, { consumption, actionSpend }) {
+  /**
+   * Spend the activation's use and action, destroying a consumable that reaches zero, and count the units a Rally
+   * reached in the caster's record of this map's Rallies (rallyRecordUpdate in rallies.mjs). The action spend and the
+   * Rally record go to the caster in one write; the Rally path is recorded for undo before any of this method's
+   * writes.
+   * @param {object} snapshot The item use's state, including the command's `operation`.
+   * @param {{consumption: object, actionSpend: object, ralliedActorUuids?: string[]}} settlement What the use spends,
+   *   and the units it Rallied, in the order they were Rallied.
+   * @returns {Promise<boolean>} False when the caster or the Item is gone.
+   */
+  async settleActivation(snapshot, { consumption, actionSpend, ralliedActorUuids = [] }) {
     const actor = await resolveActor(snapshot.source.actorUuid);
+    if (!actor) return false;
+    const rallyRecord = await rallyRecordUpdate(actor, ralliedActorUuids, snapshot.operation ?? null);
     const item = await resolveItem(snapshot.envelope.itemUuid);
-    if (!actor || !item) return false;
+    if (!item) return false;
     if (consumption.consume) {
       await item.update({ 'system.uses.current': consumption.remaining }, effectOptions());
     }
@@ -1117,7 +1123,8 @@ export class FoundryItemActivationSettlement {
       await snapshot.operation?.capture({ deleting: [item] });
       await actor.deleteEmbeddedDocuments('Item', [item.id], effectOptions());
     }
-    if (Object.keys(actionSpend).length) await actor.update({ ...actionSpend }, effectOptions());
+    const casterUpdate = { ...actionSpend, ...rallyRecord };
+    if (Object.keys(casterUpdate).length) await actor.update(casterUpdate, effectOptions());
     return true;
   }
 

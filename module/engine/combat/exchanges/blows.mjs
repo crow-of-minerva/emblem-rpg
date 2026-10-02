@@ -48,6 +48,9 @@ export async function runCombatSequence(services, exchange) {
   // Blows are labelled A1, A2... for the attacker and D1, D2... for the defender. `completed` holds the highest
   // number each side has reached, so a rebuilt sequence skips blows already taken.
   const completed = { A: 0, D: 0 };
+  // The last read of the map, kept until a blow uses it. Nothing writes or awaits between this read and the next
+  // blow, so that blow starts from it instead of reading again.
+  let unwritten = snapshot;
   while (remaining.length) {
     const label = remaining.shift();
     const prefix = label.charAt(0);
@@ -55,7 +58,8 @@ export async function runCombatSequence(services, exchange) {
     if (prefix === 'A' && intent.skippedAttacks.includes(label)) continue;
 
     // Every blow starts from newly derived Actors because the preceding blow may have changed combat stats.
-    snapshot = await requireActiveExchangeSnapshot(reads, intent, context.userId);
+    snapshot = unwritten ?? await requireActiveExchangeSnapshot(reads, intent, context.userId);
+    unwritten = null;
     const sequenceState = sequenceStateOf(snapshot);
     const rolled = await rollBlow(services, snapshot, label, intent);
     if (!blowRemainsLegal(rolled.acting, rolled.combat, exchange.useLedger)) continue;
@@ -73,6 +77,7 @@ export async function runCombatSequence(services, exchange) {
 
     await services.wait(delayBeforeNextBlow(snapshot, remaining, rolled.side));
     snapshot = await requireActiveExchangeSnapshot(reads, intent, context.userId);
+    unwritten = snapshot;
     remaining = rebuildSequence(snapshot, sequenceState, remaining, completed, exchange.useLedger);
   }
 }

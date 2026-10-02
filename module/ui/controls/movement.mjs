@@ -749,7 +749,7 @@ async function confirmPlan() {
   return withPlanInputHeld(current, movementHoldIsCurrent, async () => {
     const snapshot = await liveSnapshot(plan);
     if (!snapshot || activeMovementPlan() !== plan) return;
-    const graph = buildMovementGraph(snapshot);
+    const graph = buildMovementGraph(snapshot, { attackReach: false, keyboardDiagonals: false });
     const resolution = resolveMovementDestination(graph, snapshot.current);
     if (!resolution) {
       notifications.show(NOTIFICATION_IDS.MOVEMENT_DESTINATION_INVALID, {

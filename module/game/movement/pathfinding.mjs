@@ -292,7 +292,10 @@ export function standingLegality(source = {}) {
 
 /** Where a unit is standing now: the destination its own current square resolves to. */
 export function resolveStandingDestination(movement) {
-  return resolveMovementDestination(buildMovementGraph(movement), movement.current);
+  return resolveMovementDestination(
+    buildMovementGraph(movement, { attackReach: false, keyboardDiagonals: false }),
+    movement.current
+  );
 }
 
 /** Where a unit stands once its effects have run: the leg it walked, ending wherever they set it down. */
@@ -329,6 +332,7 @@ export function resolveMovementPreviewFrom(graph, start, destination) {
   const targetKey = cellKey(target.x, target.y);
   const legalKeys = cellKeySet(graph?.placements ?? []);
   if (!legalKeys.has(originKey) || !legalKeys.has(targetKey)) return null;
+  const legalSteps = stepKeySet(graph?.stepKeys);
 
   const queue = [];
   pushCheapest(queue, { ...origin, cost: 0, route: 0 });
@@ -343,8 +347,10 @@ export function resolveMovementPreviewFrom(graph, start, destination) {
       const next = { x: current.x + direction.x, y: current.y + direction.y };
       const nextKey = cellKey(next.x, next.y);
       if (!legalKeys.has(nextKey)) continue;
-      if (!canTraverseMovementStep(graph, current, next)) continue;
-      const nextCost = current.cost + finiteNonNegative(graph.costByStep?.[stepKey(current, next)], 1);
+      // A whole square and one cardinal step, so the edge key is built once with no point normalising.
+      const edgeKey = stepKey(current, next);
+      if (!legalSteps.has(edgeKey)) continue;
+      const nextCost = current.cost + finiteNonNegative(graph.costByStep?.[edgeKey], 1);
       if (nextCost + EPSILON >= (routeCostByCell[nextKey] ?? Infinity)) continue;
       routeCostByCell[nextKey] = nextCost;
       parentByCell[nextKey] = currentKey;
@@ -903,6 +909,7 @@ export function collectCrossingOptions(source, graph) {
  */
 function stepCrossesWall(from, to, input) {
   if (input.wallsByCell.size === 0) return false;
+  const buckets = isOneSquareStep(from, to) ? input.wallsByCell : wallsByBox(input.wallIndex);
   for (let dx = 0; dx < input.footprint.width; dx += 1) {
     for (let dy = 0; dy < input.footprint.height; dy += 1) {
       const movement = {
@@ -911,7 +918,7 @@ function stepCrossesWall(from, to, input) {
         x2: to.x + dx + 0.5,
         y2: to.y + dy + 0.5
       };
-      for (const wall of wallsNearStep(input, from.x + dx, from.y + dy, to.x + dx, to.y + dy)) {
+      for (const wall of wallsNearStep(buckets, from.x + dx, from.y + dy, to.x + dx, to.y + dy)) {
         if (segmentsIntersect(movement, wall)) return true;
       }
     }
@@ -919,10 +926,10 @@ function stepCrossesWall(from, to, input) {
   return false;
 }
 
-/** The walls that could cross a one-square step, drawn from the buckets of its two cells. */
-function wallsNearStep(input, fromX, fromY, toX, toY) {
-  const near = input.wallsByCell.get(cellKey(fromX, fromY)) ?? [];
-  const beyond = input.wallsByCell.get(cellKey(toX, toY)) ?? [];
+/** The walls that could cross a step, drawn from the buckets of its two cells. */
+function wallsNearStep(buckets, fromX, fromY, toX, toY) {
+  const near = buckets.get(cellKey(fromX, fromY)) ?? [];
+  const beyond = buckets.get(cellKey(toX, toY)) ?? [];
   if (near.length === 0) return beyond;
   if (beyond.length === 0) return near;
   return new Set([...near, ...beyond]);
@@ -997,7 +1004,7 @@ function normalizeInput(source = {}, { start: startOverride = null, allowance = 
     width: positiveInteger(source.footprint?.width) || 1,
     height: positiveInteger(source.footprint?.height) || 1
   };
-  const walls = source.airborne ? [] : (source.walls ?? []).map(normalizeWall).filter(Boolean);
+  const wallIndex = source.airborne ? NO_WALLS : indexedWalls(source.walls ?? []);
   return {
     columns,
     rows,
@@ -1009,23 +1016,103 @@ function normalizeInput(source = {}, { start: startOverride = null, allowance = 
     airborne: source.airborne === true,
     terrainOcclusionCells: source.airborne ? [] : normalizeCellKeys(source.terrainOcclusionCells),
     terrainImpassableCells: normalizeCellKeys(source.terrainImpassableCells),
-    terrainCosts: source.airborne ? {} : { ...(source.terrainCosts ?? {}) },
-    terrainElevations: { ...(source.terrainElevations ?? {}) },
-    terrainTransitionDirections: { ...(source.terrainTransitionDirections ?? {}) },
+    terrainCosts: source.airborne ? NO_TERRAIN : (source.terrainCosts ?? NO_TERRAIN),
+    terrainElevations: source.terrainElevations ?? NO_TERRAIN,
+    terrainTransitionDirections: source.terrainTransitionDirections ?? NO_TERRAIN,
     terrainRestrictedTransitionCells: new Set(normalizeCellKeys(source.terrainRestrictedTransitionCells)),
     terrainTeleports: Array.isArray(source.terrainTeleports) ? source.terrainTeleports : [],
     armamentCells: new Set(normalizeCellKeys(source.armamentCells)),
-    walls,
-    wallsByCell: indexWallsByCell(walls),
+    walls: wallIndex.walls,
+    wallsByCell: wallIndex.wallsByCell,
+    wallIndex,
     attackRanges: normalizeAttackRanges(source.attackRanges),
     freeTargeting: source.freeTargeting === true
   };
 }
 
-/** Index walls for wallsNearStep. Include a one-cell margin so a center-to-center step needs only its two buckets. */
+/** Read-only stand-in for a missing terrain map. The search only reads these maps, so the source's are used as is. */
+const NO_TERRAIN = Object.freeze({});
+const NO_WALLS = Object.freeze({ walls: Object.freeze([]), wallsByCell: new Map(), byBox: null });
+
+/**
+ * The wall index of each walls array the movement projection hands out. Only frozen arrays of frozen walls are kept,
+ * because a kept index must not outlive a change to its walls.
+ */
+const WALL_INDEXES = new WeakMap();
+
+/** A source's usable walls with their square index, built once per frozen walls array. */
+function indexedWalls(sourceWalls) {
+  const cacheable = Array.isArray(sourceWalls) && Object.isFrozen(sourceWalls) && sourceWalls.every(Object.isFrozen);
+  const kept = cacheable ? WALL_INDEXES.get(sourceWalls) : null;
+  if (kept) return kept;
+  const walls = sourceWalls.map(normalizeWall).filter(Boolean);
+  const index = { walls, wallsByCell: indexWallsByCell(walls), byBox: null };
+  if (cacheable) WALL_INDEXES.set(sourceWalls, index);
+  return index;
+}
+
+/** Whether a step stays put or moves to one of the eight neighbouring squares, the steps wallsByCell covers. */
+function isOneSquareStep(from, to) {
+  const integers = [from.x, from.y, to.x, to.y].every(Number.isInteger);
+  return integers && Math.abs(to.x - from.x) <= 1 && Math.abs(to.y - from.y) <= 1;
+}
+
+/**
+ * Index walls for wallsNearStep: each wall goes in every square it passes through or touches, and in the squares
+ * around those. A one-square step's centre-to-centre line stays inside its two squares, so a wall that meets it
+ * lies within half a square of one of them and is in that square's bucket.
+ */
 function indexWallsByCell(walls) {
   const index = new Map();
   for (const wall of walls) {
+    for (const key of wallCellKeys(wall)) {
+      const bucket = index.get(key);
+      if (bucket) bucket.push(wall);
+      else index.set(key, [wall]);
+    }
+  }
+  return index;
+}
+
+/** How far a wall is widened before its squares are read, so rounding never drops a square it touches. */
+const WALL_CELL_SLACK = 0.000001;
+
+/** The keys of the squares a wall passes through or touches, plus one square on every side of each. */
+function wallCellKeys(wall) {
+  const keys = new Set();
+  const minX = Math.min(wall.x1, wall.x2);
+  const maxX = Math.max(wall.x1, wall.x2);
+  const lastColumn = Math.floor(maxX + WALL_CELL_SLACK);
+  for (let column = Math.floor(minX - WALL_CELL_SLACK); column <= lastColumn; column += 1) {
+    const [low, high] = wallRowSpan(wall, column, minX, maxX);
+    const firstRow = Math.floor(low - WALL_CELL_SLACK) - 1;
+    const lastRow = Math.floor(high + WALL_CELL_SLACK) + 1;
+    for (let x = column - 1; x <= column + 1; x += 1) {
+      for (let y = firstRow; y <= lastRow; y += 1) keys.add(cellKey(x, y));
+    }
+  }
+  return keys;
+}
+
+/** The lowest and highest y a wall reaches inside one column of squares, or at its nearer end if it stops short. */
+function wallRowSpan(wall, column, minX, maxX) {
+  if (wall.x1 === wall.x2) return [Math.min(wall.y1, wall.y2), Math.max(wall.y1, wall.y2)];
+  const left = Math.min(Math.max(column, minX), maxX);
+  const right = Math.max(Math.min(column + 1, maxX), left);
+  const slope = (wall.y2 - wall.y1) / (wall.x2 - wall.x1);
+  const atLeft = wall.y1 + ((left - wall.x1) * slope);
+  const atRight = wall.y1 + ((right - wall.x1) * slope);
+  return [Math.min(atLeft, atRight), Math.max(atLeft, atRight)];
+}
+
+/**
+ * Walls bucketed over their bounding box widened by one square, for a step longer than one square (a push of several
+ * squares or a bridge landing). Built the first time such a step is tested and kept with the walls.
+ */
+function wallsByBox(wallIndex) {
+  if (wallIndex.byBox) return wallIndex.byBox;
+  const index = new Map();
+  for (const wall of wallIndex.walls) {
     const minX = Math.floor(Math.min(wall.x1, wall.x2)) - 1;
     const maxX = Math.floor(Math.max(wall.x1, wall.x2)) + 1;
     const minY = Math.floor(Math.min(wall.y1, wall.y2)) - 1;
@@ -1039,6 +1126,7 @@ function indexWallsByCell(walls) {
       }
     }
   }
+  wallIndex.byBox = index;
   return index;
 }
 

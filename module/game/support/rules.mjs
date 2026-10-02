@@ -280,8 +280,8 @@ export function ralliesOn(rallies, actorUuid) {
 }
 
 /**
- * The record after one more Rally on this unit, for FoundryItemActivationSettlement.recordRally
- * (foundry/adapters/document-writes/effect-execution.mjs). The input is left unchanged.
+ * The record after one more Rally on this unit, folded once per target by rallyRecordUpdate
+ * (foundry/adapters/document-writes/rallies.mjs). The input is left unchanged.
  */
 export function planRallyCount(rallies, actorUuid) {
   const record = normalizeRallyRecord(rallies);

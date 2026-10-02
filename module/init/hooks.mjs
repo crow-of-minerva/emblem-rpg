@@ -157,6 +157,7 @@ import {
   runTrade
 } from '../ui/controls/interaction.mjs';
 import { installBoardCursor } from '../ui/controls/board-cursor.mjs';
+import { movementPlanDragging } from '../ui/controls/movement-state.mjs';
 import { setCounterMode } from '../ui/controls/counter-mode.mjs';
 import { disposeCanvasDoubleClickCancel, installCanvasDoubleClickCancel } from '../ui/controls/keybindings.mjs';
 import {
@@ -838,10 +839,9 @@ export function installSystemHooks() {
  * (ui/controls/board-cursor.mjs).
  */
 function readBoardCursorFacts() {
-  const plan = inspectMovementPlan();
   return {
     picking: isAttackTargetingActive() || isActivationTargetingActive() || isInteractionPickActive(),
-    dragging: Boolean(plan) && plan.dragging === true
+    dragging: movementPlanDragging()
   };
 }
 
@@ -897,8 +897,13 @@ const TOKEN_EFFECT_WRAPPERS = Object.freeze([
  * frame while something animates, and the handlers can skip them.
  */
 function visibilityOnlyRefresh(flags) {
-  const raised = Object.keys(flags).filter(flag => flags[flag]);
-  return raised.length === 1 && raised[0] === 'refreshVisibility';
+  let visibility = false;
+  for (const flag in flags) {
+    if (!flags[flag] || !Object.hasOwn(flags, flag)) continue;
+    if (flag !== 'refreshVisibility') return false;
+    visibility = true;
+  }
+  return visibility;
 }
 
 function tokenOutlineSceneFlagChanged(changed) {

@@ -10,7 +10,8 @@ import { NOTIFICATION_IDS } from '../presentation/interface/notification-ids.mjs
 const MIGRATOR = Object.freeze({ pack: `${SYSTEM_ID}.macros`, id: 'H2ZGhJFCQBBXc0Qy' });
 
 /**
- * Bring an older world up to this version's schema by running the Migrate World Content macro. completeStartup in
+ * Bring an older world, and the Actor and Item compendiums of its enabled modules, up to this version's schema by
+ * running the Migrate World Content macro. completeStartup in
  * init/system.mjs calls this on the host client once commands are accepted, when stampWorldSchema reports the world
  * behind. The host holds the command lock for the whole run, so every client shows the hourglass and refuses
  * gameplay and edits. The GM sees a notice while it runs and another when it ends. A run that reaches the end

@@ -74,34 +74,68 @@ function rebuildTerrainVisualization(state = { cells: [], zones: {} }, diagnosti
  * Light the teleport squares a movement plan can reach, and their far sides with them.
  *
  * The letters drawn by the Terrain Builder's annotations stay hidden in play. This is the play-time layer, and it
- * shows a pair only once one of its ends is somewhere the unit could stand.
+ * shows a pair only once one of its ends is somewhere the unit could stand. Each pad's labels are drawn the first
+ * time it is lit and then kept, shown or hidden, until the pads or the grid size change or the layer is cleared.
  * @param {readonly object[]} pads Teleport pads with their square, letter, price and exit.
  * @param {Iterable<string>} reachable Cell keys the movement plan covers.
  * @returns {number} How many squares were lit.
  */
 export function showReachableTeleports(pads = [], reachable = []) {
-  clearReachableTeleports();
   const gridSize = Number(canvas.grid?.size) || 0;
   const root = ensureAnnotationOverlay();
-  if (!gridSize || !root) return 0;
+  if (!gridSize || !root) {
+    clearReachableTeleports();
+    return 0;
+  }
+  const inputs = teleportLabelInputs(pads, gridSize);
+  if (reachableTeleports && (reachableTeleports.destroyed || reachableTeleports.parent !== root
+    || !sameInputs(reachableTeleports.emblemInputs, inputs))) clearReachableTeleports();
   const keys = reachable instanceof Set ? reachable : new Set(reachable);
-  const lit = [];
-  for (const pad of pads) {
+  let lit = 0;
+  pads.forEach((pad, index) => {
     const own = `${pad.x},${pad.y}`;
     const far = pad.exit ? `${pad.exit.x},${pad.exit.y}` : '';
-    if (!keys.has(own) && !(far && keys.has(far))) continue;
-    lit.push({ x: pad.x, y: pad.y, transition: 'teleport', teleportLetter: pad.letter,
-      teleportCost: pad.cost, teleportMov: pad.movementCost });
-    if (pad.exit) {
-      lit.push({ x: pad.exit.x, y: pad.exit.y, transition: 'teleport', teleportLetter: pad.letter,
-        teleportCost: pad.cost, teleportMov: pad.movementCost });
+    const shown = keys.has(own) || Boolean(far && keys.has(far));
+    if (shown && !reachableTeleports) {
+      reachableTeleports = new PIXI.Container();
+      reachableTeleports.name = 'emblem-terrain-reachable-teleports';
+      reachableTeleports.emblemInputs = inputs;
+      for (let slot = 0; slot < pads.length; slot += 1) reachableTeleports.addChild(new PIXI.Container());
     }
+    const group = reachableTeleports?.children[index];
+    if (!group) return;
+    if (shown && !group.emblemDrawn) {
+      const ends = [{ x: pad.x, y: pad.y, transition: 'teleport', teleportLetter: pad.letter,
+        teleportCost: pad.cost, teleportMov: pad.movementCost }];
+      if (pad.exit) {
+        ends.push({ x: pad.exit.x, y: pad.exit.y, transition: 'teleport', teleportLetter: pad.letter,
+          teleportCost: pad.cost, teleportMov: pad.movementCost });
+      }
+      drawTransitionMarkers(group, ends, gridSize);
+      group.emblemDrawn = true;
+    }
+    group.visible = shown;
+    if (shown) lit += pad.exit ? 2 : 1;
+  });
+  // Re-append so the labels sit above whatever joined the annotation layer since, as a fresh draw would.
+  if (lit) root.addChild(reachableTeleports);
+  return lit;
+}
+
+/**
+ * Every value the teleport labels are drawn from, so a refresh can tell whether the kept ones still match. Whether
+ * the label font has loaded counts too, so labels first drawn in a fallback font are redrawn once it arrives.
+ */
+function teleportLabelInputs(pads, gridSize) {
+  const inputs = [gridSize, globalThis.document?.fonts?.check?.('bold 16px "Libertinus Sans"') ?? true];
+  for (const pad of pads) {
+    inputs.push(pad.x, pad.y, Boolean(pad.exit), pad.exit?.x, pad.exit?.y, pad.letter, pad.cost, pad.movementCost);
   }
-  if (!lit.length) return 0;
-  reachableTeleports = root.addChild(new PIXI.Container());
-  reachableTeleports.name = 'emblem-terrain-reachable-teleports';
-  drawTransitionMarkers(reachableTeleports, lit, gridSize);
-  return lit.length;
+  return inputs;
+}
+
+function sameInputs(kept = [], inputs = []) {
+  return kept.length === inputs.length && kept.every((value, index) => Object.is(value, inputs[index]));
 }
 
 /**

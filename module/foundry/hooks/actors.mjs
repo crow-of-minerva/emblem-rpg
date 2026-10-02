@@ -7,6 +7,8 @@ import { ARMAMENT_FLAGS } from '../../contracts/domains/objects.mjs';
 import { RESTORE_WRITE_OPTION } from '../../contracts/domains/recovery.mjs';
 import { isActiveGm as isCurrentCoordinator, isActiveGm as localUserIsActiveGm } from '../adapters/services/host.mjs';
 import { reportFoundryError } from '../adapters/services/diagnostics.mjs';
+import { projectEquipmentEffectIdentity } from '../adapters/document-writes/characters.mjs';
+import { characterEquipmentCapacity, equipmentStateField } from '../../game/character/inventory.mjs';
 import { changeLeafPaths } from '../../lib/core/runtime.mjs';
 
 /* -------------------------------------------- */
@@ -53,23 +55,32 @@ const REPORTED_RECONCILIATIONS = new Set([
  * out of step (on ready, and when it's created or its items, effects, borrowed Armament or own fields change),
  * submit RECONCILE_EFFECTS for it, 25 ms later and once per burst. Caster requirements can read any unit field or
  * status, so changes to those count. Writes the equipment check made itself, and undo restores, are skipped.
+ * A unit-field change or a non-equipment effect only runs the check when it could find something (see
+ * mayNeedEquipmentCheck); any other change in the same burst runs it regardless.
  */
 export function createEquipmentEffectLifecycle({ executeInternal, notify = null }) {
   const timers = new Map();
 
-  function schedule(actor) {
+  function schedule(actor, { always = true } = {}) {
     if (!isCurrentCoordinator() || actor?.type !== 'Character' || actor.pack) return;
     const actorUuid = String(actor.uuid ?? '');
-    if (!actorUuid || timers.has(actorUuid)) return;
-    const timer = setTimeout(() => {
+    if (!actorUuid) return;
+    const pending = timers.get(actorUuid);
+    if (pending) {
+      if (always) pending.always = true;
+      return;
+    }
+    const entry = { always, timer: null };
+    entry.timer = setTimeout(() => {
       timers.delete(actorUuid);
+      if (!entry.always && !mayNeedEquipmentCheck(currentActor(actorUuid) ?? actor)) return;
       void executeInternal(INTERNAL_COMMAND_IDS.CHARACTER.INVENTORY.RECONCILE_EFFECTS, { actorUuid }).then(result => {
         if (REPORTED_RECONCILIATIONS.has(result?.code)) notify?.showResult?.(result);
       }).catch(error => {
         reportFoundryError(import.meta.url, error, 'Emblem RPG | Equipment-effect reconciliation failed');
       });
     }, 25);
-    timers.set(actorUuid, timer);
+    timers.set(actorUuid, entry);
   }
 
   return Object.freeze({
@@ -92,13 +103,49 @@ export function createEquipmentEffectLifecycle({ executeInternal, notify = null 
     /** A unit's own fields changed: its name, a stat, a status, or anything else a caster requirement may read. */
     onActorFactsChanged(actor, changes = null, options = {}) {
       if (isEquipmentSettlement(options) || !actorFactsChanged(changes)) return;
-      schedule(actor);
+      schedule(actor, { always: false });
     },
-    onActiveEffectChanged(effect, _changes = null, options = {}) {
+    /** `changes` is null for a created or deleted effect. */
+    onActiveEffectChanged(effect, changes = null, options = {}) {
       if (isEquipmentSettlement(options)) return;
-      schedule(effect?.parent);
+      schedule(effect?.parent, { always: equipmentEffectTouched(effect, changes) });
     }
   });
+}
+
+/**
+ * Whether the equipment check could change anything on a unit whose items, equipment effects and borrowed Armament
+ * are as they were at its last check: an item in use that has requirements, which any unit field, status or effect
+ * may break, or more carried equipment than its slots, which item and effect modifiers may shrink. A borrowed
+ * Armament always counts, since its rack token can be deleted without a write to this actor.
+ */
+function mayNeedEquipmentCheck(actor) {
+  if (actor.getFlag?.(SYSTEM_ID, ARMAMENT_FLAGS.UUID)) return true;
+  let carried = 0;
+  for (const item of actor.items ?? []) {
+    const system = item._source?.system ?? item.system ?? {};
+    const field = equipmentStateField({ type: item.type, system });
+    const requirements = system.requirements;
+    if (field && system[field] === true && Array.isArray(requirements) && requirements.length) return true;
+    if (item.type === 'Equipment' && !item.getFlag(SYSTEM_ID, 'innateGrant')) carried += 1;
+  }
+  return carried > characterEquipmentCapacity(Number(actor.system?.equipment?.slots));
+}
+
+/** The actor as it is now. An unlinked token's actor can be rebuilt between the change and the check. */
+function currentActor(actorUuid) {
+  try { return fromUuidSync(actorUuid); } catch { return null; }
+}
+
+/**
+ * Whether an effect is, or may have stopped being, a wield, armor or mount effect. That depends on its name,
+ * flags and statuses (projectEquipmentEffectIdentity), so an update to any of those counts.
+ */
+function equipmentEffectTouched(effect, changes) {
+  if (projectEquipmentEffectIdentity(effect).kind) return true;
+  if (!changes || typeof changes !== 'object') return false;
+  return changeLeafPaths(changes).some(path => path === 'name' || path.startsWith('flags')
+    || path.startsWith('statuses'));
 }
 
 /** World actors plus each unlinked token's own actor, for the ready sweeps. game.actors holds only world actors. */

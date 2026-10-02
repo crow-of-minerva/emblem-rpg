@@ -141,7 +141,7 @@ export function projectMovementSnapshot(token, { ignoreTokenIds = [], nextTurn =
     mounted: actorIsMounted(actor),
     skills: projectSkillRanks(actor?.system ?? {}),
     attributes: projectAttributeTotals(actor?.system ?? {}),
-    walls: Object.freeze(supportedGrid ? projectMovementWalls(scene, gridSize) : []),
+    walls: supportedGrid ? projectMovementWalls(scene, gridSize) : NO_WALLS,
     attackRanges,
     anchorPosition: Object.freeze({ ...anchorPosition }),
     sourcePosition: Object.freeze({ ...currentPosition })
@@ -501,12 +501,31 @@ function emptyOccupancy() {
 /* -------------------------------------------- */
 /*  Walls                                       */
 /* -------------------------------------------- */
+const NO_WALLS = Object.freeze([]);
+
+/** The last walls list handed out for each Scene, reused while its walls read the same so pathfinding's index stays. */
+const SCENE_WALLS = new WeakMap();
+
+/**
+ * The Scene's movement-blocking walls in squares, read fresh on every call. When they match the last list handed out
+ * for this Scene, that same frozen list is returned, so pathfinding can keep the wall index it built for it.
+ */
 function projectMovementWalls(scene, gridSize) {
-  return collectionValues(scene.walls)
+  const walls = collectionValues(scene.walls)
     .filter(wallBlocksMovement)
     .map(wall => wallCoordinates(wall, gridSize))
     .filter(Boolean)
     .map(wall => Object.freeze(wall));
+  const kept = SCENE_WALLS.get(scene);
+  if (kept && sameWalls(kept, walls)) return kept;
+  const fresh = Object.freeze(walls);
+  SCENE_WALLS.set(scene, fresh);
+  return fresh;
+}
+
+function sameWalls(left, right) {
+  return left.length === right.length && left.every((wall, index) => wall.x1 === right[index].x1
+    && wall.y1 === right[index].y1 && wall.x2 === right[index].x2 && wall.y2 === right[index].y2);
 }
 
 function wallBlocksMovement(wall) {

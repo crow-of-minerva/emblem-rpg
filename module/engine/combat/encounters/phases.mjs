@@ -510,7 +510,8 @@ async function expireOutgoingTerrain(context) {
 /**
  * Count down the timed summons that tick on the outgoing phase and remove those whose time ran out. It runs after
  * the side's phase-end passives and the objective check, and before the incoming phase is written, so an expired
- * summon is never armed for the next phase. The writer saves undo data for each summon right before it writes.
+ * summon is never armed for the next phase. The writer saves undo data for every summon, then writes the counters in
+ * one Token update.
  */
 async function expireOutgoingSummons(context) {
   const { sceneUuid, services, outgoing } = context;

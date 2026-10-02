@@ -429,7 +429,8 @@ export function createGeometryResolver({
 } = {}) {
   return ({ anchor, mover, spec } = {}) => {
     const side = mover?.side === 'target' || mover?.side === 'custom' ? mover.side : 'self';
-    const board = side === 'target' ? target(String(mover?.id ?? '')) : self;
+    // `self` may be a function so a caller can leave the unit's own board unread until a geometry query needs it.
+    const board = side === 'target' ? target(String(mover?.id ?? '')) : typeof self === 'function' ? self() : self;
     if (!board?.supportedGrid || !anchor || !mover) return { count: 0, reason: 'no-board' };
     const footprint = placementFootprint(mover);
     const standing = side === 'custom'

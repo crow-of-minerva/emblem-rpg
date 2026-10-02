@@ -197,7 +197,11 @@ async function commitExchange(services, exchange) {
 
   const postCombatSnapshot = await requireSettlementSnapshot(reads, intent);
   const postCombatEffectIndex = exchange.effectHealth.length;
-  if (!objectDelay(snapshot)) {
+  const runsPostCombat = !objectDelay(snapshot);
+  // With no postCombat entry to plan, nothing below writes or waits, so the post-combat read is still current.
+  const postCombatMayWrite = runsPostCombat
+    && postCombatSnapshot.source.effects.some(entry => entry?.trigger === 'postCombat');
+  if (runsPostCombat) {
     collectRestores(await runActiveTriggers(services, postCombatSnapshot.source, postCombatSnapshot.target,
       postCombatSnapshot, ['postCombat'], {
         targetSlain: attackDefeat.targetDefeated,
@@ -205,7 +209,7 @@ async function commitExchange(services, exchange) {
       }, exchange.effectHealth), exchange.restores);
     await revalidateEffectDefeats(services, exchange.effectHealth, postCombatEffectIndex, exchange.operation);
   }
-  const finalSnapshot = await requireSettlementSnapshot(reads, intent);
+  const finalSnapshot = postCombatMayWrite ? await requireSettlementSnapshot(reads, intent) : postCombatSnapshot;
   await services.settlement.cleanupExchange(finalSnapshot.source, finalSnapshot.target, exchange.operation);
   exchange.bookedKarma = await services.settlement.commitKarma(exchange.karmaBookings) ?? [];
   exchange.outcome = exchangeOutcome(exchange, snapshot, finalSnapshot, movementResolution, continuation);

@@ -309,7 +309,7 @@ function characterApi({ promotions, execute, itemCinematicEnabled }) {
 /* -------------------------------------------- */
 function movementApi({ movements, execute }) {
   return Object.freeze({
-    getPlan: tokenUuid => movements.getSnapshot(tokenUuid),
+    getPlan: tokenUuid => movements.getSnapshot(tokenUuid, { hints: true }),
     getLock: () => movements.getLock(),
     getField: (intent = {}) => movements.getField(intent.tokenUuid ?? '', {
       nextTurn: intent.nextTurn === true,

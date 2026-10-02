@@ -52,7 +52,8 @@ import {
   tokenCells,
   withExchangeFlanking,
   withFoundryCombatContext,
-  withMarkedBonus
+  withMarkedBonus,
+  withSharedProjections
 } from './combat-context.mjs';
 import { projectMovementSnapshot } from './movement.mjs';
 import { redirectFoundryHostileToken } from './tokens.mjs';
@@ -112,7 +113,7 @@ export class FoundryCombatStateRepository {
   async getContinuationSnapshot(tokenUuid) {
     const token = await resolveToken(tokenUuid);
     if (!token?.actor || token.actor.type !== 'Character') return null;
-    const movement = await this.movements.getSnapshot(token.uuid);
+    const movement = await this.movements.getSnapshot(token.uuid, { hints: false });
     if (!movement) return null;
     const actor = token.actor;
     const turn = actor.system.turn;
@@ -174,7 +175,7 @@ export class FoundryCombatStateRepository {
     const [sourceHealth, targetHealth, movement] = await Promise.all([
       this.health.getSnapshot(sourceToken.actor.uuid, sourceToken.uuid),
       this.health.getSnapshot(targetToken.actor.uuid, targetToken.uuid),
-      this.movements.getSnapshot(sourceToken.uuid)
+      this.movements.getSnapshot(sourceToken.uuid, { hints: false })
     ]);
     if (!sourceHealth || !targetHealth || !movement) return null;
 
@@ -193,10 +194,12 @@ export class FoundryCombatStateRepository {
     const combatContext = recordCombatContext({ intent, sourceToken, targetToken, targetItem }, {
       distance, engagement, inMeleeRange, movementSpent, sourceChanceRolls, targetChanceRolls
     });
+    // Both sides share one copy of each Item's data. The scope opens inside the combat context, after its Actor
+    // resets, so the unit values the resets compute are not kept past it.
     const [sourceBase, targetBase] = withFoundryCombatContext({
       ...combatContext, sourceActor: sourceToken.actor, targetActor: targetToken.actor,
       sourceItem: sourceArt ?? sourceItem, targetItem
-    }, () => [
+    }, () => withSharedProjections(() => [
       withMarkedBonus(
         projectSide(sourceToken, sourceItem, sourceHealth, sourceArt, engagement),
         markedAllyBonus(sourceToken.actor, targetToken.actor)
@@ -207,7 +210,7 @@ export class FoundryCombatStateRepository {
           projectSide(targetToken, targetItem, targetHealth, null, engagement),
           markedAllyBonus(targetToken.actor, sourceToken.actor)
         )
-    ]);
+    ]));
     const flanking = distance === 1 && !objectTarget
       ? boardFlanking(sourceToken, targetToken, gridSize) : { source: false, target: false };
     const source = withExchangeFlanking(sourceBase, flanking.source);
@@ -223,7 +226,7 @@ export class FoundryCombatStateRepository {
     });
     const requirements = projectAttackRequirements({
       item: sourceArt ?? sourceItem, source, target: objectTarget ? null : target, sourceToken, targetToken,
-      movement, targetMovement: () => projectMovementSnapshot(targetToken), gridSize, effectRange
+      movement, targetMovement: () => projectMovementSnapshot(targetToken, { hints: false }), gridSize, effectRange
     });
     const snapshot = {
       sceneUuid: String(sourceToken.parent?.uuid ?? ''),
@@ -628,41 +631,51 @@ function validDamageTypes(system, itemSystem) {
     && itemSystem.weapon?.dmgTypes?.[type] !== false);
 }
 
+/** The weapon's and the active Item's effect entries. Each Item's entries share one frozen copy of the Item. */
 function projectActiveEffectEntries(weapon, activeItem) {
   const entries = [];
   const items = activeItem && activeItem !== weapon ? [weapon, activeItem] : [weapon];
   for (const item of items) {
     if (!item) continue;
+    let sourceItem = null;
     for (const entry of item.system?.effects ?? []) {
+      sourceItem ??= projectEffectItem(item);
       entries.push(Object.freeze({
         ...clone(entry),
         sourceItemUuid: item.uuid,
         sourceItemName: item.name,
-        sourceItem: projectEffectItem(item)
+        sourceItem
       }));
     }
   }
   return entries;
 }
 
+/** Every Passive's effect entries. A Passive's entries share one frozen copy of it. */
 function projectPassiveEffectEntries(actor) {
   const entries = [];
   for (const item of collectionValues(actor.items)) {
     if (triggerGroupForItem({ type: item.type, itemType: item.system?.itemType }) !== 'C') continue;
+    let sourceItem = null;
     for (const entry of item.system?.effects ?? []) {
+      sourceItem ??= projectEffectItem(item);
       entries.push(Object.freeze({
         ...clone(entry),
         sourceItemUuid: item.uuid,
         sourceItemName: item.name,
-        sourceItem: projectEffectItem(item)
+        sourceItem
       }));
     }
   }
   return entries;
 }
 
+/**
+ * An Item as its effect entries carry it, with a copy of its saved system data, frozen all the way down because
+ * every entry of the Item shares it. Nothing that reads an entry writes into its Item.
+ */
 function projectEffectItem(item) {
-  return Object.freeze({
+  return deepFreeze({
     uuid: String(item?.uuid ?? ''),
     name: String(item?.name ?? ''),
     type: String(item?.type ?? ''),
@@ -670,6 +683,14 @@ function projectEffectItem(item) {
     image: String(item?.img ?? ''),
     system: clone(item?.system ?? {})
   });
+}
+
+/** Freeze a plain-data value and everything inside it. */
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object') return value;
+  Object.freeze(value);
+  for (const child of Object.values(value)) deepFreeze(child);
+  return value;
 }
 
 /* -------------------------------------------- */

@@ -515,8 +515,13 @@ export function projectRequirementFacts({
   const sourceRect = tokenGridRect(sourceToken, gridSize);
   const targetRect = tokenGridRect(targetToken, gridSize);
   let targetBoard;
+  let selfBoard;
   const resolveTerrainGeometry = createGeometryResolver({
-    self: movement,
+    // `movement` may be a function, read once and only when a geometry requirement asks for the unit's own board.
+    self: () => {
+      if (selfBoard === undefined) selfBoard = typeof movement === 'function' ? movement() : movement;
+      return selfBoard;
+    },
     target: () => {
       if (targetBoard === undefined) targetBoard = targetMovement?.() ?? null;
       return targetBoard;

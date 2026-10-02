@@ -193,9 +193,22 @@ export async function closeMovementPlan({
     || !structurallyEqual(movementLockNow(), lock)) return false;
   await actor.update(clone(changes), {});
   if (!turnChangesLanded(actor, changes)) return false;
-  await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
-  await settlePlanEnd(actor, token, { cancelled, guardBonds, operation });
+  await releaseLockAndSettlePlanEnd(actor, token, { cancelled, guardBonds, operation });
   return true;
+}
+
+/**
+ * Release the movement lock and finish the plan's end (settlePlanEnd) side by side: neither reads what the other
+ * writes. Both are waited for before a failure is thrown, the lock's first, so the caller's undo never runs while a
+ * write is still in flight.
+ */
+export async function releaseLockAndSettlePlanEnd(actor, token, options = {}) {
+  const outcomes = await Promise.allSettled([
+    game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null),
+    settlePlanEnd(actor, token, options)
+  ]);
+  const failed = outcomes.find(outcome => outcome.status === 'rejected');
+  if (failed) throw failed.reason;
 }
 
 /* -------------------------------------------- */
