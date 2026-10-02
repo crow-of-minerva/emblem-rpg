@@ -342,11 +342,7 @@ function difficultyTargetActor(actor) {
 /*  Derived data preparation                    */
 /* -------------------------------------------- */
 
-/**
- * Fill a Character's derived fields from compileCharacterData, during EmblemActor#prepareDerivedData.
- * Percent-chance modifiers count only if the host rolled them for the current command.
- * @returns {Readonly<object>} The chance rolls this preparation used, by modifier key and condition path.
- */
+/** Fill a Character's derived fields from compileCharacterData, during EmblemActor#prepareDerivedData. */
 export function prepareCharacterData(actor) {
   const projected = projectCharacterSource(actor);
   const compiled = compileCharacterData(projected);
@@ -369,7 +365,6 @@ export function prepareCharacterData(actor) {
   for (const [key, pool] of Object.entries(compiled.special)) {
     if (system.special[key]) system.special[key].max = pool.max;
   }
-  return Object.freeze(projected.modifierContext.chanceRolls ?? {});
 }
 
 /* -------------------------------------------- */

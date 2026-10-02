@@ -189,15 +189,13 @@ const MAGE_ARMOR_EFFECT_NAME = 'MageArmor';
 const PROTECTION_CHANGE_KEY = /^system\.equipment\.(prots|vulns|imms)\.([^.]+)$/;
 
 /**
- * The input compileCharacterData reads for one Character, built from its saved data and its effects. Chance
- * modifiers use the rolls passed in, or the ones withFoundryCombatContext set on the Actor; ordinary preparation has
- * none. A borrowed Armament is added as a wielded weapon. Runs every time a Character prepares
- * (data-models/actor/character.mjs). `support`, `special` and modifier condition trees are the saved data itself,
- * not copies, so the compiler must not change them.
- * @param {{chanceRolls?: object|null}} [options]
+ * The input compileCharacterData reads for one Character, built from its saved data and its effects. A borrowed
+ * Armament is added as a wielded weapon. Runs every time a Character prepares (data-models/actor/character.mjs).
+ * `support`, `special` and modifier condition trees are the saved data itself, not copies, so the compiler must not
+ * change them.
  * @returns {object}
  */
-export function projectCharacterSource(actor, { chanceRolls = null } = {}) {
+export function projectCharacterSource(actor) {
   const source = actor._source?.system ?? actor.system ?? {};
   const effects = applicableEffects(actor);
   const armament = projectWieldedArmament(actor)?.weapon ?? null;
@@ -246,7 +244,6 @@ export function projectCharacterSource(actor, { chanceRolls = null } = {}) {
     statuses: { stanceBreak: [...(actor.effects ?? [])].some(isStanceBreakEffect) },
     difficulty: worldDifficulty(),
     modifierContext: {
-      chanceRolls: chanceRolls ?? actor.modifierChanceRolls ?? undefined,
       activeItemId: actor.activeItem?.id ?? null,
       activeItem: projectContextItem(actor.activeItem),
       wieldedItem: projectContextItem(armament ?? [...actor.items].find(item => item.system?.isWielded === true) ?? null),

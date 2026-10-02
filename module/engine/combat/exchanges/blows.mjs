@@ -37,9 +37,7 @@ import {
 /** Run the attack's blows in order, reading both units fresh from the map before each one. */
 export async function runCombatSequence(services, exchange) {
   const { intent, context } = exchange;
-  const reads = drawnExchangeReads(
-    services.combatState, exchange.modifierChances, exchange.operation, context.userId, true
-  );
+  const reads = exchangeReads(services.combatState, exchange.operation, context.userId, true);
   let snapshot = await requireActiveExchangeSnapshot(reads, intent, context.userId);
   exchange.defenderCouldCounterAtStart = snapshot.defenderCanRespond;
   // No blows when a pre-combat effect ended the exchange or left the attacker out of range.
@@ -83,21 +81,18 @@ export async function runCombatSequence(services, exchange) {
 }
 
 /**
- * Read the attack's state using the chance modifiers already rolled for it, so every check and blow sees the same
- * rolls. Each read also carries the command's operation, so writes made from it save undo data there.
+ * Read the attack's state. Each read also carries the command's operation, so writes made from it save undo data
+ * there.
  * @param {object} combatState The combat state reader.
- * @param {object|null} modifierChances The exchange's drawn rolls, by Actor uuid.
  * @param {object|null} operation The dispatcher operation the exchange writes under.
  * @param {string} [requesterUserId] The user who started the exchange, the audience for its effect notices.
  * @param {boolean} [afterPreCombat] Whether the pre-combat effects have already run.
  * @returns {{getSnapshot: Function}}
  */
-export function drawnExchangeReads(
-  combatState, modifierChances, operation = null, requesterUserId = '', afterPreCombat = false
-) {
+export function exchangeReads(combatState, operation = null, requesterUserId = '', afterPreCombat = false) {
   const audience = Object.freeze(requesterUserId ? [String(requesterUserId)] : []);
   return { getSnapshot: async intent => {
-    const snapshot = await combatState.getSnapshot(intent, { modifierChances, afterPreCombat });
+    const snapshot = await combatState.getSnapshot(intent, { afterPreCombat });
     return snapshot ? Object.freeze({ ...snapshot, operation, audience }) : snapshot;
   } };
 }

@@ -31,8 +31,8 @@ export async function runActiveTriggers(services, self, target, snapshot, trigge
 
 /**
  * Run the effects a landed blow sets off and return the defeat status the blow ends with.
- * The striker's on-hit effects run first, then the struck unit's On Struck. A unit the blow dropped is not yet
- * defeated, so either side's effects still reach it and a heal can save it.
+ * The striker's on-hit effects run first, then the struck unit's On Struck, from its weapon and then its Passives.
+ * A unit the blow dropped is not yet defeated, so either side's effects still reach it and a heal can save it.
  * The defeat is then checked again. If it holds, the dead unit's On Death and the striker's On Kill run, neither
  * targeting the body, and turn slots On Kill gives back go to `restores`. A saved unit sets off nothing more.
  * Effect conditions see the struck unit's HP and stance as the blow left them (struckAfterBlow), so "puts the
@@ -44,6 +44,9 @@ export async function runHitTriggers(services, acting, defending, snapshot, blow
   const context = { dmg: blow.rolledDamage, isCrit: blow.critical, combat: blow };
   await runActiveTriggers(services, acting, struck, snapshot, activeTriggers, context, effectHealth);
   await runActiveTriggers(services, struck, acting, snapshot, ['onStruck'], context, effectHealth);
+  await runGroupedEffects(
+    services, struck.passiveEffects, struck, acting, snapshot, ['onStruck'], context, effectHealth
+  );
   if (blow.defeatStatus !== DEFEAT_STATUSES.CLAIMED) return blow.defeatStatus ?? null;
   const finalStatus = await recheckDefeat(services, struck.actorUuid, struck.tokenUuid, snapshot.operation);
   if (!isConfirmedKill(finalStatus)) return finalStatus;

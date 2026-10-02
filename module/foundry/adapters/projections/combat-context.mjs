@@ -44,8 +44,8 @@ const ATTACK_ITEM_TYPES = Object.freeze(['Weapon', 'Attack', 'Staff']);
 
 /**
  * Run `read` with both Actors set up for this exchange, then put them back. Each Actor gets its item, its opponent
- * (`myTarget`), the distance, engagement and melee reach, its side (`isAttacking`) and any drawn chance rolls as
- * plain in-memory properties, and `reset()` re-prepares it so its stats reflect them. Afterwards the earlier values
+ * (`myTarget`), the distance, engagement and melee reach, and its side (`isAttacking`) as plain in-memory
+ * properties, and `reset()` re-prepares it so its stats reflect them. Afterwards the earlier values
  * are put back and both Actors are prepared again, so each call prepares each Actor twice. Nothing is saved.
  *
  * `read` must be synchronous: the values are put back in `finally` as soon as it returns, so anything it awaited
@@ -63,9 +63,6 @@ const ATTACK_ITEM_TYPES = Object.freeze(['Weapon', 'Attack', 'Staff']);
  *   distance alone when the caller has read no terrain.
  * @param {number|null} [input.movementSpent] The attacker's squares moved this turn, including moves in a movement
  *   plan not yet confirmed.
- * @param {object|null} [input.sourceChanceRolls] The chance-modifier rolls already drawn for the attacker in this
- *   action, reused while it prepares. Without them no chance modifier fires.
- * @param {object|null} [input.targetChanceRolls] The defender's, likewise.
  * @param {Function} read Called while both Actors are set up. Must be synchronous.
  * @returns {*} What `read` returns.
  */
@@ -77,9 +74,7 @@ export function withFoundryCombatContext({
   distance,
   engagement = '',
   inMeleeRange = isInMeleeRange({ distance }),
-  movementSpent = null,
-  sourceChanceRolls = null,
-  targetChanceRolls = null
+  movementSpent = null
 }, read) {
   const sourceState = captureContext(sourceActor);
   const targetState = captureContext(targetActor);
@@ -94,8 +89,7 @@ export function withFoundryCombatContext({
       combatMovementSpent: movementSpent,
       isAttacking: true,
       isDefending: false,
-      isUsingWeaponArt: isWeaponArtItem(sourceItem),
-      modifierChanceRolls: sourceChanceRolls
+      isUsingWeaponArt: isWeaponArtItem(sourceItem)
     });
     installContext(targetActor, {
       activeItem: targetItem,
@@ -106,8 +100,7 @@ export function withFoundryCombatContext({
       combatMovementSpent: null,
       isAttacking: false,
       isDefending: true,
-      isUsingWeaponArt: false,
-      modifierChanceRolls: targetChanceRolls
+      isUsingWeaponArt: false
     });
     sourceActor.reset();
     targetActor.reset();
@@ -350,7 +343,7 @@ function statusCollection(collection) {
 const CONTEXT_KEYS = Object.freeze([
   'activeItem', 'myTarget', 'combatDistance', 'combatEngagement', 'combatInMeleeRange',
   'combatMovementSpent',
-  'isAttacking', 'isDefending', 'isUsingWeaponArt', 'modifierChanceRolls'
+  'isAttacking', 'isDefending', 'isUsingWeaponArt'
 ]);
 
 function captureContext(actor) {
@@ -409,8 +402,6 @@ function movesBeforeCombat(item) {
  * @param {object|null} input.movement The attacker's movement state (projectMovementSnapshot), from where it stands now.
  * @param {number|null} [input.movementSpent] The attacker's squares moved this turn, as the exchange counts them.
  * @param {number} input.gridSize Pixels per grid square.
- * @param {object|null} [input.sourceChanceRolls] The attacker's drawn chance-modifier rolls, when an action drew them.
- * @param {object|null} [input.targetChanceRolls] The defender's, likewise.
  * @param {number} [input.effectRange] The attack's maximum range.
  * @param {string} [input.attackShape] The attacking weapon's targeting shape.
  * @returns {object} `boardDistance` and `boardEngagement` (where the two stand now), `reachDistance` and
@@ -419,7 +410,7 @@ function movesBeforeCombat(item) {
  */
 export function projectPreCombatApproach({
   sourceToken, targetToken, activatedItem, targetItem, movement, movementSpent = null, gridSize,
-  sourceChanceRolls = null, targetChanceRolls = null, effectRange = 0, attackShape = 'Cross'
+  effectRange = 0, attackShape = 'Cross'
 }) {
   const sourceActor = sourceToken?.actor ?? null;
   const targetActor = targetToken?.actor ?? null;
@@ -453,8 +444,7 @@ export function projectPreCombatApproach({
   }
   const approach = withFoundryCombatContext({
     sourceActor, targetActor, sourceItem: activatedItem, targetItem,
-    distance: boardDistance, engagement: boardEngagement, inMeleeRange: boardMeleeRange, movementSpent,
-    sourceChanceRolls, targetChanceRolls
+    distance: boardDistance, engagement: boardEngagement, inMeleeRange: boardMeleeRange, movementSpent
   }, () => predictGeometryApproach({
     entries: activatedItem.system?.effects ?? [],
     movement,

@@ -88,8 +88,11 @@ export const GUARD_BOND_BREAKS = Object.freeze({
   LEFT: 'left', FELL: 'fell', PARTNER_MISSING: 'partner-missing', ENCOUNTER_ENDED: 'encounter-ended'
 });
 
-/** The Token flag an illusion carries: its caster's actor uuid. Enemy AI's planner treats a unit with it as a lure. */
-export const ILLUSION_CASTER_FLAG = 'illusionCaster';
+/**
+ * The prototype-token flag (true) that marks an Actor as a lure, such as the Illusion. Every Token spawned from that
+ * Actor copies it, and the Enemy AI treats a unit that carries it as a decoy.
+ */
+export const LURE_FLAG = 'lure';
 
 /**
  * The Token flag every effect summon carries: the actor uuid of the unit whose effect placed it. An ending

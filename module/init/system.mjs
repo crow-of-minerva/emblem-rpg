@@ -31,8 +31,6 @@ import { OperationRecovery } from '../engine/recovery/operations.mjs';
 import { FoundryOperationStore } from '../foundry/adapters/recovery/operation-store.mjs';
 import { FoundryDocumentSnapshots } from '../foundry/adapters/recovery/document-snapshots.mjs';
 import { createPresentationDelivery } from '../presentation/interface/delivery.mjs';
-import { withActionModifierChances } from '../engine/effects/modifier-chances.mjs';
-import { FoundryModifierChanceScopes } from '../foundry/adapters/dice/modifier-chances.mjs';
 import { reconcileKarmaLedgerModel } from '../foundry/adapters/dice/karma.mjs';
 import { createTimeoutPresenter } from '../presentation/interface/timeout.mjs';
 import {
@@ -418,8 +416,8 @@ export function createSystemRuntime() {
     populateHud: populateBg3Hud,
     showInstantTooltip: showBg3InstantTooltip
   });
-  const hudCharacterSource = actor => projectCharacterSource(actor, { chanceRolls: actor?.preparedChanceRolls ?? {} });
-  const decorateHud = (app, html) => decorateEmblemBg3Hud(app, html, projectBg3HudView(app, { characterSource: hudCharacterSource }));
+  const decorateHud = (app, html) =>
+    decorateEmblemBg3Hud(app, html, projectBg3HudView(app, { characterSource: projectCharacterSource }));
   configureEmblemBg3Core({ decorateHud, enforceVisibility: enforceBg3HudVisibility });
   configureFoundryTokenArt({
     transitions: new TokenArtTransitionCoordinator({ diagnostics,
@@ -554,10 +552,7 @@ export function createSystemRuntime() {
     userId: () => gatewayIdentity.localUserId(),
     admits: lane => executionLifecycle.admits(lane)
   });
-  const modifierChances = new FoundryModifierChanceScopes();
-  /** Wrap CommandDispatcher handlers in withActionModifierChances so each action shares one set of chance draws. */
-  const registerCommands = definitions =>
-    dispatcher.registerContribution(withActionModifierChances(definitions, modifierChances));
+  const registerCommands = definitions => dispatcher.registerContribution(definitions);
   /** Tell a unit's owners when items over its carrying limit were moved to the convoy. */
   const inventoryPort = Object.freeze({ diagnostics,
     presentCapacityMove: (moved, options) => unitPresentation.broadcast(

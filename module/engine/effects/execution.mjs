@@ -73,8 +73,8 @@ export class EffectExecutionService {
    * not. Notices go only to the users in `audience`.
    * A step that fails an authoring precondition (isEffectPreconditionFailure) wrote nothing, so it is skipped and
    * the run goes on. The GM hears about it, and about each plan error, once.
-   * `combatContext` (exchanges only) reaches the health reads and nothing else. It stays out of the runtime because
-   * the runtime is sent to every client in presentation messages, and the context holds the host's chance draws.
+   * `combatContext` (exchanges only) reaches the health reads and nothing else. It is kept out of the runtime, which
+   * is sent to every client in presentation messages.
    */
   async run({
     entries, triggers, runtime, context = {}, activatedItem = null, resources = null, audience = null,

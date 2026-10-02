@@ -588,7 +588,7 @@ const TOOLTIPS = Object.freeze({
   'editor.status.duration': 'How many phases the status lasts',
   'editor.status.stacks': 'Applying it again adds to the remaining duration',
   'editor.status.linked-tag': 'An Animation step with the same tag stays on the unit while this status lasts',
-  'editor.status.custom-data': 'The ActiveEffect data object for a custom status, as JSON',
+  'editor.status.custom-data': 'The ActiveEffect data for a custom status, as JSON, with how many phases it lasts',
   'editor.remove.scope': 'Which tokens lose the effect',
   'editor.remove.name': 'The exact effect name to remove',
   'editor.remove.placed-by': 'Only remove statuses this unit applied',

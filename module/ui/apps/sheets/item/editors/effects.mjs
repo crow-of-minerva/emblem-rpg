@@ -4,7 +4,8 @@
  * can nest inside if branches. Cards are read back from the DOM before each edit. FIELDS_BY_KIND drives the ordinary
  * step fields. The few free-form values are kept as JSON text: a custom status and an animation step's animation
  * (a hidden field that openAnimationPayloadEditor fills). A step key that no field covers is dropped when the card
- * is read and saved.
+ * is read and saved, and so is a field the step's mode or scope hides, because a hidden field is not drawn at all.
+ * What the trigger supplies decides which steps, units and squares are offered (trigger-choices.mjs).
  */
 import { SYSTEM_ID } from '../../../../../contracts/protocol.mjs';
 import { readSystemJson } from '../../../../../foundry/adapters/services/json-files.mjs';
@@ -18,14 +19,12 @@ import {
   isPopulated as actionIsPopulated,
   STEP_KINDS,
   TOKEN_REFS,
+  TRIGGER_CAPABILITIES,
   effectCarrier,
-  validateEffectEntry,
-  ACTIVATION_EFFECT_TRIGGERS,
-  ATTACK_EFFECT_TRIGGERS,
-  PASSIVE_EFFECT_TRIGGERS
+  validateEffectEntry
 } from '../../../../../contracts/dsl/effects.mjs';
 import { STATUS_EFFECTS, STATUS_KEYS, STATUS_NAMES, statusLabel } from '../../../../../config/statuses.mjs';
-import { triggerIcon, triggerLabel } from '../../../../../config/triggers.mjs';
+import { triggerLabel } from '../../../../../config/triggers.mjs';
 import { DAMAGE_TYPES } from '../../../../../contracts/domains/damage.mjs';
 import { isEmpty as conditionIsEmpty } from '../../../../../contracts/dsl/conditions.mjs';
 import {
@@ -37,6 +36,15 @@ import {
   readConditionTree
 } from './conditions.mjs';
 import { openAnimationPayloadEditor } from './animations.mjs';
+import {
+  fitStepToTrigger,
+  referenceOffered,
+  stepKindOffered,
+  triggerChoices,
+  triggerFitsGroup,
+  triggerKeysForGroup,
+  triggerPhrase
+} from './trigger-choices.mjs';
 import {
   anyCardExpanded,
   createCardList,
@@ -121,7 +129,7 @@ const STEP_KIND_MEANINGS = Object.freeze({
 
 /**
  * The add-step picker's groups after the templates. Guard is left out of the menu: a guard step only arrives with an
- * item that already has one.
+ * item that already has one. The picker also leaves out each kind the effect's trigger can't carry (stepKindOffered).
  * @type {ReadonlyArray<{label: string, kinds: string[]}>}
  */
 const ADD_STEP_GROUPS = Object.freeze([
@@ -143,6 +151,16 @@ const TEMPLATE_LABELS = Object.freeze({
   applyDamage: 'Damage roll', applyHealing: 'Healing roll', applyStatus: 'Status on target',
   applyCustomStatus: 'Custom status', damageAndStatus: 'Damage and status', translateToken: 'Push back',
   linkedAnimation: 'Status with aura'
+});
+
+/**
+ * What a template needs from the trigger beyond each of its step kinds being offered. Status on target and Push back
+ * act on the other unit by name, and a trigger mid-exchange allows no push.
+ * @type {Readonly<Record<string, function(object): boolean>>}
+ */
+const TEMPLATE_NEEDS = Object.freeze({
+  applyStatus: cap => cap.target !== 'none',
+  translateToken: cap => cap.target !== 'none' && !cap.midExchange
 });
 
 function stepKindLabel(kind) {
@@ -196,8 +214,9 @@ function customStatusTemplate() {
 }
 
 /**
- * The starting templates the add-step picker offers, each building a fresh action whose steps a pick adds.
- * `default` is the empty action and isn't offered.
+ * The starting templates the add-step picker offers, each building a fresh action whose steps a pick adds after
+ * fitStepToTrigger has fitted them to the trigger. `default` is the empty action and isn't offered. A custom status
+ * keeps its duration in its own data.
  */
 export const TEMPLATES = Object.freeze({
   default: () => emptyAction(),
@@ -215,7 +234,6 @@ export const TEMPLATES = Object.freeze({
       kind: 'applyEffect',
       target: 'target',
       preset: 'custom',
-      durationPhases: DEFAULT_STATUS_DURATION,
       customData: customStatusTemplate()
     }]
   }),
@@ -242,8 +260,10 @@ export const TEMPLATES = Object.freeze({
 /*  Display Helpers                             */
 /* -------------------------------------------- */
 
+/** How many phases an apply-status step's status lasts. A custom status keeps its duration in its own data. */
 function effectDuration(step) {
-  const duration = Number(step?.durationPhases);
+  const raw = step?.preset === 'custom' ? step.customData?.flags?.[SYSTEM_ID]?.duration : step?.durationPhases;
+  const duration = Number(raw);
   return Number.isFinite(duration) && duration >= 1 ? duration : DEFAULT_STATUS_DURATION;
 }
 
@@ -305,71 +325,6 @@ let terrainPresetData = { presets: [], names: new Set(), custom: {} };
  * @type {object|null}
  */
 let _clipboard = null;
-
-/* -------------------------------------------- */
-/*  Triggers                                    */
-/* -------------------------------------------- */
-
-const triggerOptions = keys => keys.map(key => ({
-  key,
-  label: triggerLabel(key),
-  icon: triggerIcon(key)
-}));
-
-/**
- * Attack-sequence triggers, for effects that hang off a swing.
- * @type {object[]}
- */
-const GROUP_A_TRIGGERS = triggerOptions(ATTACK_EFFECT_TRIGGERS);
-
-/**
- * Activation triggers, including the branches a save or a check opens.
- * @type {object[]}
- */
-const GROUP_B_TRIGGERS = triggerOptions(ACTIVATION_EFFECT_TRIGGERS);
-
-/**
- * Passive triggers, which fire off the turn cycle rather than off a use.
- * @type {object[]}
- */
-const GROUP_C_TRIGGERS = triggerOptions(PASSIVE_EFFECT_TRIGGERS).map(entry => entry.key === 'onKill'
-  ? { ...entry, icon: 'fas fa-khanda' }
-  : entry);
-
-/**
- * Every trigger, for looking one up by key whatever group it belongs to.
- * @type {object[]}
- */
-const ALL_TRIGGERS = [...GROUP_A_TRIGGERS, ...GROUP_B_TRIGGERS, ...GROUP_C_TRIGGERS];
-
-/** Whether a trigger belongs to the activation group. */
-function isGroupBTrigger(triggerKey) {
-  return GROUP_B_TRIGGERS.some(t => t.key === triggerKey);
-}
-
-function isGroupCTrigger(triggerKey) {
-  return GROUP_C_TRIGGERS.some(t => t.key === triggerKey);
-}
-
-function isGroupATrigger(triggerKey) {
-  return GROUP_A_TRIGGERS.some(t => t.key === triggerKey);
-}
-
-/**
- * The triggers an entry may be re-pointed to, read off its own trigger and, where two groups share that trigger
- * (a kill and an evade are authored both on a swing and on a Passive), off the group the owning item belongs to.
- * An entry whose trigger belongs to another group, for example after the item's kind was changed, is offered that
- * other group's triggers, none of which fire on this item.
- * @param {string} group          The owning item's trigger group.
- */
-function triggerPoolFor(group, triggerKey) {
-  if (isGroupCTrigger(triggerKey) && isGroupATrigger(triggerKey)) {
-    return group === 'C' ? GROUP_C_TRIGGERS : GROUP_A_TRIGGERS;
-  }
-  return isGroupCTrigger(triggerKey) ? GROUP_C_TRIGGERS
-       : isGroupBTrigger(triggerKey) ? GROUP_B_TRIGGERS
-       : GROUP_A_TRIGGERS;
-}
 
 /* -------------------------------------------- */
 /*  Option Sets                                 */
@@ -1075,8 +1030,15 @@ const MOVE_FIELDS_BY_MODE = {
  */
 const MOVE_COMMON_FIELDS = new Set(['target', 'mode']);
 
-/** Whether a field belongs on a step's card, which for a move step depends on the mode it uses. */
+/**
+ * Whether a field belongs on a step's card. A move step shows the fields its mode uses. A remove-status step names
+ * a target only for one token, and spares the target only when it clears every token. An apply-status step asks for
+ * phases only for a stock status, because a custom status keeps its duration in its own data.
+ */
 function isStepFieldShown(step, name) {
+  if (step.kind === 'removeEffect' && name === 'target') return step.scope !== 'global';
+  if (step.kind === 'removeEffect' && name === 'excludeTarget') return step.scope === 'global';
+  if (step.kind === 'applyEffect' && name === 'durationPhases') return step.preset !== 'custom';
   if (step.kind !== 'moveToken' || MOVE_COMMON_FIELDS.has(name)) return true;
   const relevant = Object.hasOwn(MOVE_FIELDS_BY_MODE, step.mode) ? MOVE_FIELDS_BY_MODE[step.mode] : null;
   return !relevant || relevant.has(name);
@@ -1287,8 +1249,8 @@ function ifBodyHtml(step, idx, parentPath, depth) {
 }
 
 /**
- * The body of one step card. Animations, moves, guards and ifs lay themselves out. Every other kind shows its
- * descriptors in a three-column grid, then the area, terrain or JSON panel its kind adds.
+ * The body of one step card. Animations, moves, guards and ifs lay themselves out. Every other kind shows the
+ * descriptors isStepFieldShown keeps in a three-column grid, then the area, terrain or JSON panel its kind adds.
  * @param {number} idx            Its position in the list it sits in.
  * @param {string} parentPath     The path of that list, which makes field ids unique.
  * @param {number} depth          Nesting depth, which tints a branch.
@@ -1302,7 +1264,7 @@ function stepBodyHtml(step, idx, parentPath, depth) {
     case 'if': return ifBodyHtml(step, idx, parentPath, depth);
     default: break;
   }
-  const cells = (FIELDS_BY_KIND[step.kind] || []).map(f => {
+  const cells = (FIELDS_BY_KIND[step.kind] || []).filter(f => isStepFieldShown(step, f.name)).map(f => {
     const ownershipHidden = step.kind === 'setFaction' && f.name === 'grantOwnership' && step.target !== 'target';
     const field = ownershipHidden ? { ...f, hidden: true } : f;
     return fieldHtml(field, stepFieldValue(step, f), idPrefix);
@@ -1519,7 +1481,7 @@ function readStepPanels(cardEl, kind, step) {
     step.actions = actions;
   }
 
-  if (kind === 'applyEffect') {
+  if (kind === 'applyEffect' && step.preset !== 'custom') {
     const d = Number(step.durationPhases);
     step.durationPhases = Number.isFinite(d) && d >= 1 ? d : DEFAULT_STATUS_DURATION;
   }
@@ -1715,6 +1677,7 @@ function attachHandlers(dialogEl, state) {
   bindTerrainGeometryPanels(dialogEl);
   const repaint = () => {
     paintStepList(rootList, state.action.steps);
+    syncTriggerFields(dialogEl);
     syncCollapseAllLabel(dialogEl);
     refreshValidation(dialogEl, state);
   };
@@ -1739,21 +1702,41 @@ function attachHandlers(dialogEl, state) {
   attachStepDragAndDrop(dialogEl, state, repaint);
 
   dialogEl.querySelector('[data-entry-field="trigger"]')
-    ?.addEventListener('change', () => syncItemNamesField(dialogEl));
+    ?.addEventListener('change', () => syncTriggerFields(dialogEl));
 
   const revalidate = foundry.utils.debounce(() => refreshValidation(dialogEl, state), 150);
   dialogEl.addEventListener('input', revalidate);
   dialogEl.addEventListener('change', revalidate);
   dialogEl.addEventListener('click', revalidate);
+  syncTriggerFields(dialogEl);
   syncCollapseAllLabel(dialogEl);
   refreshValidation(dialogEl, state);
 }
 
-/** Show the item names box only while the trigger is On Use Item. */
-function syncItemNamesField(dialogEl) {
-  const field = dialogEl.querySelector('[data-role="item-names"]');
-  if (!field) return;
-  field.hidden = dialogEl.querySelector('[data-entry-field="trigger"]')?.value !== 'onUseItem';
+/** The trigger the dialog's trigger select holds now. */
+function currentTrigger(dialogEl) {
+  return dialogEl.querySelector('[data-entry-field="trigger"]')?.value ?? '';
+}
+
+/** The selects whose choices name a unit or a square, on step cards, area panels and move-by-rule panels. */
+const REFERENCE_SELECTS = [
+  'select[data-step-field="target"]', 'select[data-step-field="pair"]', 'select[data-step-field="location"]',
+  'select[data-step-field="placedByActor"]', 'select[data-area-field="center"]', 'select[data-tg-field="anchor"]'
+].join(', ');
+
+/**
+ * Fit the dialog to its trigger: show the item names box only for On Use Item, and hide each unit or square choice
+ * the trigger can't supply. A card keeps the choice it already holds, which the validation bar then explains. Runs
+ * when the trigger changes and after every repaint.
+ */
+function syncTriggerFields(dialogEl) {
+  const trigger = currentTrigger(dialogEl);
+  const names = dialogEl.querySelector('[data-role="item-names"]');
+  if (names) names.hidden = trigger !== 'onUseItem';
+  for (const select of dialogEl.querySelectorAll(REFERENCE_SELECTS)) {
+    const castArea = select.dataset.stepField === 'target' && select.closest(CARD)?.dataset.stepKind === 'terrainEdit';
+    for (const option of select.options) option.hidden = !referenceOffered(option.value, trigger, { castArea });
+  }
 }
 
 /** Set the collapse-all button's label from the cards' current state. */
@@ -1786,24 +1769,33 @@ function inheritStepDisplay(source, copy) {
   }
 }
 
+/** Whether the add-step picker offers a template on a trigger: each of its step kinds, and what TEMPLATE_NEEDS asks. */
+function templateOffered(key, steps, trigger) {
+  const cap = TRIGGER_CAPABILITIES[trigger];
+  return steps.every(step => stepKindOffered(step.kind, trigger)) && (!cap || (TEMPLATE_NEEDS[key]?.(cap) ?? true));
+}
+
 /**
- * The add-step picker's rows: every starting template, then every kind by group, each keyed by the text the row
- * shows so a pick can be turned back into the steps it adds.
+ * The add-step picker's rows on a trigger: each template and kind it offers there, each keyed by the text the row
+ * shows so a pick can be turned back into the steps it adds, fitted to that trigger.
  * @returns {{groups: object[], byValue: Map<string, Function>}}
  */
-function addStepRows() {
+function addStepRows(trigger) {
   const byValue = new Map();
-  const templates = Object.entries(TEMPLATES).filter(([key]) => key !== 'default').map(([key, make]) => {
-    const value = TEMPLATE_LABELS[key] ?? key;
-    const count = make().steps.length;
-    byValue.set(value.toLowerCase(), () => make().steps);
-    return { value, label: `adds ${count} step${count === 1 ? '' : 's'}` };
-  });
+  const fitted = steps => steps.map(step => fitStepToTrigger(step, trigger));
+  const templates = Object.entries(TEMPLATES)
+    .filter(([key, make]) => key !== 'default' && templateOffered(key, make().steps, trigger))
+    .map(([key, make]) => {
+      const value = TEMPLATE_LABELS[key] ?? key;
+      const count = make().steps.length;
+      byValue.set(value.toLowerCase(), () => fitted(make().steps));
+      return { value, label: `adds ${count} step${count === 1 ? '' : 's'}` };
+    });
   const groups = [{ label: 'Templates', entries: templates }];
   for (const group of ADD_STEP_GROUPS) {
-    const entries = group.kinds.map(kind => {
+    const entries = group.kinds.filter(kind => stepKindOffered(kind, trigger)).map(kind => {
       const value = stepKindLabel(kind);
-      byValue.set(value.toLowerCase(), () => [makeStepDefault(kind)]);
+      byValue.set(value.toLowerCase(), () => fitted([makeStepDefault(kind)]));
       return { value, label: STEP_KIND_MEANINGS[kind] ?? '' };
     });
     groups.push({ label: group.label, entries });
@@ -1813,14 +1805,17 @@ function addStepRows() {
 
 /**
  * Wire every add-step control. Its button reveals a search box, and `wireCatalogPicker` lists the templates and kinds
- * under that box, searchable and keyboard-driven. A pick lands in the list the control belongs to: the root list
- * from the footer, or a branch from its own add row.
+ * under that box, searchable and keyboard-driven. The rows follow the trigger the select holds whenever the list is
+ * drawn. A pick lands in the list the control belongs to: the root list from the footer, or a branch from its own add
+ * row.
  * @param {Function} repaint              Repaints the lists from `state.action`.
  */
 function attachAddStepPicker(dialogEl, state, rootList, repaint) {
-  const rows = addStepRows();
+  const rows = () => addStepRows(currentTrigger(dialogEl));
   const SEARCH = '[data-role="add-step-search"]';
-  wireCatalogPicker(dialogEl, { selector: SEARCH, groups: rows.groups, rows: 16, emptyText: 'No matching step.' });
+  wireCatalogPicker(dialogEl, {
+    selector: SEARCH, groups: () => rows().groups, rows: 16, emptyText: 'No matching step.'
+  });
 
   const hide = (input) => {
     input.value = '';
@@ -1840,7 +1835,7 @@ function attachAddStepPicker(dialogEl, state, rootList, repaint) {
   dialogEl.addEventListener('change', (ev) => {
     const input = ev.target.closest?.(SEARCH);
     if (!input) return;
-    const make = rows.byValue.get(input.value.trim().toLowerCase());
+    const make = rows().byValue.get(input.value.trim().toLowerCase());
     hide(input);
     if (!make) return;
     const branchEl = input.closest('.eff-if-branch');
@@ -1962,6 +1957,7 @@ function attachStepChanges(dialogEl, state, repaint) {
     const sel = ev.target.closest(
       'select[data-step-field="preset"], select[data-step-field="target"], '
       + '.ed-card[data-step-kind="moveToken"] select[data-step-field="mode"], '
+      + '.ed-card[data-step-kind="removeEffect"] select[data-step-field="scope"], '
       + '.ed-card[data-step-kind="animation"] input[data-step-field="persistent"], '
       + '.ed-card[data-step-kind="animation"] input[data-step-field="await"], '
       + '.ed-card[data-step-kind="terrainEdit"] select[data-step-field="effect"], '
@@ -1998,7 +1994,10 @@ function attachStepChanges(dialogEl, state, repaint) {
   });
 }
 
-/** Copying one whole effect entry and pasting it over another. */
+/**
+ * Copying one whole effect entry and pasting it over another. An entry whose trigger this item never fires is refused
+ * with a notice, and the dialog is left as it was.
+ */
 function attachEntryClipboard(dialogEl, state, repaint) {
   dialogEl.querySelector('[data-action="copy-entry"]')?.addEventListener('click', (ev) => {
     ev.preventDefault(); ev.stopPropagation();
@@ -2011,16 +2010,19 @@ function attachEntryClipboard(dialogEl, state, repaint) {
       notify.warn('Clipboard is empty.');
       return;
     }
+    if (!triggerFitsGroup(_clipboard.trigger, state.group)) {
+      notify.warn(`That effect uses ${triggerPhrase(_clipboard.trigger)}, which this item cannot use.`);
+      return;
+    }
+    const trigEl = dialogEl.querySelector('[data-entry-field="trigger"]');
+    if (trigEl) trigEl.value = _clipboard.trigger;
     state.action = foundry.utils.deepClone(_clipboard.action) || emptyAction();
     repaint();
 
     const nameEl = dialogEl.querySelector('[data-entry-field="name"]');
     if (nameEl) nameEl.value = _clipboard.name || '';
-    const trigEl = dialogEl.querySelector('[data-entry-field="trigger"]');
-    if (trigEl) trigEl.value = _clipboard.trigger || '';
     const namesEl = dialogEl.querySelector('[data-entry-field="itemNames"]');
     if (namesEl) namesEl.value = Array.isArray(_clipboard.itemNames) ? _clipboard.itemNames.join('\n') : '';
-    syncItemNamesField(dialogEl);
     const delayEl = dialogEl.querySelector('[data-entry-field="delayMs"]');
     if (delayEl) delayEl.value = Number.isFinite(Number(_clipboard.delayMs)) ? Number(_clipboard.delayMs) : 0;
     const awaitsEl = dialogEl.querySelector('[data-entry-field="tokenAwaits"]');
@@ -2197,8 +2199,9 @@ function readEntryFromDom(dialogEl, source = {}) {
 /* -------------------------------------------- */
 
 /**
- * A newly added step of a kind, with starting values. Spawn token, terrain edit and expression steps start empty
- * and block Save until they are filled in, and a floating text step shows nothing until it has text.
+ * A newly added step of a kind, with starting values that addStepRows then fits to the trigger. Spawn token, terrain
+ * edit and expression steps start empty and block Save until they are filled in, and a floating text step shows
+ * nothing until it has text.
  */
 function makeStepDefault(kind) {
   switch (kind) {
@@ -2232,14 +2235,6 @@ function makeStepDefault(kind) {
 /* -------------------------------------------- */
 
 /**
- * The triggers a new entry may start from, by the owning item's group.
- * @param {string} group          The group: `A` for attacks, `B` for activations, `C` for passives.
- */
-function triggerPoolForGroup(group) {
-  return group === 'C' ? GROUP_C_TRIGGERS : group === 'B' ? GROUP_B_TRIGGERS : GROUP_A_TRIGGERS;
-}
-
-/**
  * Append a default entry to the item, for `openEffectActionEditor` to open straight away with `isNew` so a cancel
  * takes it off again. The item sheet's `effectsPath` names the list.
  * @param {ItemSheet} itemSheet           The sheet it was asked from.
@@ -2250,7 +2245,7 @@ function triggerPoolForGroup(group) {
 export async function createEffectEntry(itemSheet, { group = '' } = {}) {
   const effectsPath = itemSheet.effectsPath;
   const entry = {
-    trigger: triggerPoolForGroup(group)[0]?.key ?? '',
+    trigger: triggerKeysForGroup(group)[0] ?? '',
     name: '',
     itemNames: [],
     itemUuids: [],
@@ -2288,12 +2283,17 @@ function currentEntryIndex(itemSheet, snapshot, openedAt) {
 }
 
 /**
- * The dialog's header row: trigger, the item names an on-use-item trigger filters by, name, hold pose and delay.
+ * The dialog's header row: trigger, the item names an on-use-item trigger filters by, name, hold pose and delay. The
+ * trigger select lists the item group's triggers (triggerChoices), and is 150px wide unless an unavailable trigger's
+ * longer label needs more. Only an item that is used reads the hold pose, so the other groups don't show it.
  * @param {string} group          The owning item's trigger group.
  */
 function effectHeaderHtml(entry, group) {
-  const triggerPool = triggerPoolFor(group, entry.trigger);
-  const triggerOpts = optionMarkup(triggerPool.map(t => ({ value: t.key, label: t.label })), entry.trigger);
+  const choices = triggerChoices(group, entry.trigger);
+  const longest = Math.max(...choices.map(choice => choice.label.length));
+  const triggerOpts = choices.map(({ value, label, disabled }) =>
+    `<option value="${escapeHtml(value)}"${value === entry.trigger ? ' selected' : ''}${disabled ? ' disabled' : ''}>`
+    + `${escapeHtml(label)}</option>`).join('');
   const itemNamesValue = Array.isArray(entry.itemNames) ? entry.itemNames.join('\n') : '';
   const itemNamesHidden = entry.trigger === 'onUseItem' ? '' : ' hidden';
   const itemNamesHtml = `
@@ -2302,9 +2302,16 @@ function effectHeaderHtml(entry, group) {
           <textarea data-entry-field="itemNames" rows="2">${escapeHtml(itemNamesValue)}</textarea>
         </label>`;
   const delay = Number.isFinite(Number(entry.delayMs)) ? Number(entry.delayMs) : 0;
+  const holdPoseHtml = group !== 'B' ? '' : `
+        <label class="ed-field ed-field--check">
+          ${labelSpan('hold pose', 'editor.effect.hold-pose')}
+          <span class="ed-check-slot">
+            <input type="checkbox" data-entry-field="tokenAwaits"${entry.tokenAwaits === true ? ' checked' : ''} />
+          </span>
+        </label>`;
   return `
       <div class="ed-hrow">
-        <label class="ed-field" style="width:150px">
+        <label class="ed-field" style="width:max(150px, calc(${longest}ch + 36px))">
           ${labelSpan('trigger', 'editor.effect.trigger')}
           <select data-entry-field="trigger">${triggerOpts}</select>
         </label>
@@ -2312,13 +2319,7 @@ function effectHeaderHtml(entry, group) {
         <label class="ed-field ed-field--grow">
           ${labelSpan('name', 'editor.effect.name')}
           <input type="text" data-entry-field="name" value="${escapeHtml(entry.name || '')}" />
-        </label>
-        <label class="ed-field ed-field--check">
-          ${labelSpan('hold pose', 'editor.effect.hold-pose')}
-          <span class="ed-check-slot">
-            <input type="checkbox" data-entry-field="tokenAwaits"${entry.tokenAwaits === true ? ' checked' : ''} />
-          </span>
-        </label>
+        </label>${holdPoseHtml}
         <label class="ed-field" style="width:78px">
           ${labelSpan('delay', 'editor.effect.delay')}
           <span class="ed-with-unit" data-unit="ms">
@@ -2340,13 +2341,35 @@ function effectFooterHtml() {
         </div>`;
 }
 
+/**
+ * Move each custom status step's duration into its custom status data, where the editor shows it, so saving keeps
+ * how long the status lasts. A duration on the step outranks the one in the data when the status is applied.
+ * @param {object[]} steps        The steps, changed in place through their branches.
+ */
+function moveCustomDurations(steps) {
+  for (const step of Array.isArray(steps) ? steps : []) {
+    if (!step || typeof step !== 'object') continue;
+    if (step.kind === 'applyEffect' && step.preset === 'custom' && step.durationPhases !== undefined) {
+      const duration = Number(step.durationPhases);
+      const data = step.customData;
+      if (Number.isFinite(duration) && duration >= 1 && data && typeof data === 'object') {
+        const flags = data.flags && typeof data.flags === 'object' ? data.flags : {};
+        data.flags = { ...flags, [SYSTEM_ID]: { ...flags[SYSTEM_ID], duration } };
+      }
+      delete step.durationPhases;
+    }
+    moveCustomDurations(step.then);
+    moveCustomDurations(step.else);
+  }
+}
+
 const ENTRY_LOST_MESSAGE = 'This effect was changed, moved or removed while the editor was open. Reopen it and try again.';
 
 /**
  * Open the effect editor on a copy of one entry, through openEffectEditor (dialogs.mjs). An entry-level condition
- * is shown as an if step wrapping the steps. The trigger choices come from `triggerPoolFor`, and the complete
- * entry is validated before saving. An entry opened with `isNew` (one `createEffectEntry` just appended) is removed
- * again when the dialog closes without saving.
+ * is shown as an if step wrapping the steps, and a custom status step's duration is moved into its data. The trigger
+ * choices are the item group's, and the complete entry is validated before saving. An entry opened with `isNew`
+ * (one `createEffectEntry` just appended) is removed again when the dialog closes without saving.
  * @param {ItemSheet} itemSheet           The sheet it was opened from.
  * @param {number} entryIndex             Which effect.
  * @param {object} [options]
@@ -2363,9 +2386,11 @@ export async function openEffectActionEditor(itemSheet, entryIndex, { group = ''
 
   const state = {
     document: itemSheet.document,
+    group,
     entry: foundry.utils.deepClone(entry),
     action: actionIsPopulated(entry.action) ? foundry.utils.deepClone(entry.action) : emptyAction()
   };
+  moveCustomDurations(state.action.steps);
   // The entry condition is saved back as an if step. A failing entry condition skipped the whole entry; a failing
   // if step still lets the entry's delay and hold pose run.
   if (entry.condition && !conditionIsEmpty(entry.condition)) {

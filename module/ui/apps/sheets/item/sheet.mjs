@@ -1,6 +1,7 @@
 /** @layer ui/apps/sheets/item */
 import { SYSTEM_ID } from '../../../../contracts/protocol.mjs';
 import { FOOD_TYPE_STATS, FOOD_TYPES, ITEM_SUBTYPES, RESOURCE_TYPES } from '../../../../contracts/domains/items.mjs';
+import { triggerGroupForItem } from '../../../../contracts/dsl/effects.mjs';
 import { NOTIFICATION_IDS, NotificationService } from '../../../../presentation/interface/notifications.mjs';
 import {
   openDamageConditionsEditor,
@@ -9,7 +10,8 @@ import {
   openModifierEditor,
   openRequirementEditor,
   openScalingEditor,
-  openTargetingEditor
+  openTargetingEditor,
+  offerToRemoveUnfiredEffects
 } from './editors/dialogs.mjs';
 import { openAnimationEditorDialog } from './editors/animations.mjs';
 import { openConsumableCraftingDialog, openCraftingSettingsDialog } from './editors/crafting.mjs';
@@ -620,6 +622,17 @@ export class ItemSheet extends EmblemSheetMixin(foundry.applications.sheets.Item
     });
   }
 
+  /**
+   * Write the form. When that changed the subtype to one that fires other triggers, offer to remove the effects the
+   * item can no longer fire.
+   */
+  async _processSubmitData(event, form, submitData, options = {}) {
+    const groupBefore = itemTriggerGroup(this.document);
+    const result = await super._processSubmitData(event, form, submitData, options);
+    if (itemTriggerGroup(this.document) !== groupBefore) await offerToRemoveUnfiredEffects(this.document);
+    return result;
+  }
+
   _confirmDelete(kind, name) {
     return foundry.applications.api.DialogV2.confirm({
       window: { title: `Delete ${kind}?` }, classes: [SYSTEM_ID], content: `<p>Remove ${escapeHtml(name || `this ${kind}`)}?</p>`
@@ -643,6 +656,11 @@ function actorOwnerContext(item) {
     uuid: parent.uuid, name: parent.name, img: parent.img, isNpc, tooltip: `Owned by ${parent.name}`,
     stealableFlag: item.system.stealable.flag ?? 'None', stealableDC: item.system.stealable.dc ?? 10
   };
+}
+
+/** Which group of effect triggers an item fires, read from its type and subtype. */
+function itemTriggerGroup(item) {
+  return triggerGroupForItem({ type: item.type, itemType: item.system?.itemType });
 }
 
 function sourceArray(item, path) {

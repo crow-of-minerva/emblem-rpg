@@ -2,9 +2,11 @@
 /*
  * Entry points the Item sheet and the Object sheet use to open the item editors: effects (effects.mjs), modifiers
  * and requirements (condition-editors.mjs), uses and range scaling (scaling.mjs), and the targeting, effect
- * parameter and damage-condition dialogs defined here. The animation and crafting editors are opened from their own
- * files. The editors share card-list.mjs, fields.mjs and the condition builder in conditions.mjs.
+ * parameter and damage-condition dialogs defined here, with the one that offers to remove the effects a subtype
+ * change leaves unable to fire. The animation and crafting editors are opened from their own files. The editors
+ * share card-list.mjs, fields.mjs and the condition builder in conditions.mjs.
  */
+import { SYSTEM_ID } from '../../../../../contracts/protocol.mjs';
 import { DAMAGE_TYPES } from '../../../../../contracts/domains/damage.mjs';
 import { openEditor } from '../../../../dialogs.mjs';
 import { createEffectEntry, openEffectActionEditor } from './effects.mjs';
@@ -21,8 +23,10 @@ import { isEmpty as isConditionEmpty, validate as validateCondition } from '../.
 import { createItemEditorNotifier } from '../../../../../presentation/interface/notifications.mjs';
 import { FoundryDiagnostics } from '../../../../../foundry/adapters/services/diagnostics.mjs';
 import { triggerGroupForItem } from '../../../../../contracts/dsl/effects.mjs';
+import { triggerLabel } from '../../../../../config/triggers.mjs';
+import { triggerFitsGroup } from './trigger-choices.mjs';
 import { getTooltip } from '../../../../tooltips.mjs';
-import { capitalize } from '../../../../../lib/dom/html.mjs';
+import { capitalize, escapeHtml } from '../../../../../lib/dom/html.mjs';
 
 const TARGET_PARAMETERS_TEMPLATE = `systems/emblem-rpg/templates/editors/target-params.hbs`;
 const EFFECT_PARAMETERS_TEMPLATE = `systems/emblem-rpg/templates/editors/effect-params.hbs`;
@@ -369,6 +373,36 @@ export async function openEffectEditor(subject, index = null, { effectsPath = DE
   const created = await createEffectEntry(itemSheet, { group });
   if (created === null || created === undefined) return null;
   return openEffectActionEditor(itemSheet, created, { group, isNew: true });
+}
+
+/**
+ * After an item's subtype changed which triggers it fires, list the effects whose trigger it no longer fires and
+ * offer to remove them. Kept effects stay on the item but never fire, and the effect editor won't save one until its
+ * trigger is changed.
+ * @param {Item} item                     The item whose subtype just changed.
+ * @returns {Promise<void>}
+ */
+export async function offerToRemoveUnfiredEffects(item) {
+  const group = triggerGroupForItem({ type: item.type, itemType: item.system?.itemType });
+  const unfired = Array.from(item.system?.effects ?? []).filter(entry => !triggerFitsGroup(entry?.trigger, group));
+  if (!unfired.length) return;
+  const rows = unfired.map(entry =>
+    `<li>${escapeHtml(triggerLabel(entry?.trigger))}: ${escapeHtml(entry?.name || 'unnamed effect')}</li>`).join('');
+  const choice = await foundry.applications.api.DialogV2.wait({
+    window: { title: 'Remove effects?' },
+    classes: [SYSTEM_ID],
+    content: `<p>This item no longer fires these effects:</p><ul>${rows}</ul>`
+      + '<p>Kept effects stay on the item but never fire, and the effect editor will not save them until their '
+      + 'trigger is changed.</p>',
+    buttons: [
+      { action: 'remove', label: 'Remove them' },
+      { action: 'keep', label: 'Keep them', default: true }
+    ]
+  });
+  if (choice !== 'remove') return;
+  const kept = foundry.utils.deepClone(Array.from(item._source?.system?.effects ?? []))
+    .filter(entry => triggerFitsGroup(entry?.trigger, group));
+  await item.update({ 'system.effects': kept });
 }
 
 /**

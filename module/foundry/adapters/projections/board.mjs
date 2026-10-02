@@ -32,7 +32,7 @@ import {
 } from '../../../game/objects/rules.mjs';
 import { resolveMovementOccupancy } from '../../../game/movement/pathfinding.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
-import { ILLUSION_CASTER_FLAG } from '../../../contracts/domains/combat.mjs';
+import { LURE_FLAG, SUMMONED_BY_FLAG } from '../../../contracts/domains/combat.mjs';
 import { TERRAIN_STAT_FIELDS, TERRAIN_UNIT_TYPES } from '../../../contracts/domains/terrain.mjs';
 import {
   footprintCells as terrainFootprintCells,
@@ -657,7 +657,9 @@ function projectMeasuredUnit(tokenDocument, gridSize) {
     guarderTokenUuid: String(guarder?.uuid ?? tokenDocument.uuid ?? ''),
     sanctuary: statuses.has('sanctuary') || system.statuses?.sanctuary === true,
     sneaking: statuses.has('sneak') || system.statuses?.sneak === true,
-    illusionCasterUuid: String(tokenDocument.flags?.[SYSTEM_ID]?.[ILLUSION_CASTER_FLAG] ?? ''),
+    lure: tokenDocument.flags?.[SYSTEM_ID]?.[LURE_FLAG] === true,
+    // The actor uuid of the unit whose effect spawned this token; empty for a token that wasn't summoned.
+    summonedBy: String(tokenDocument.flags?.[SYSTEM_ID]?.[SUMMONED_BY_FLAG] ?? ''),
     passing: system.statuses?.passing === true,
     passable: system.statuses?.passable === true,
     blocksFlyers: system.blockFlyers === true,

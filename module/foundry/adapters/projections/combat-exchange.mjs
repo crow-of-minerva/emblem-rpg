@@ -13,7 +13,6 @@ import {
   twoRandomNumberNatural
 } from '../../../game/rolls/checks.mjs';
 import { readKarmaLedger } from '../dice/karma.mjs';
-import { actionModifierChances, withUndrawnModifierChances } from '../dice/modifier-chances.mjs';
 import {
   buildCombatSequence,
   calculateCombatSide,
@@ -143,22 +142,12 @@ export class FoundryCombatStateRepository {
   /**
    * Everything one attack needs: both sides, the distance and engagement after any pre-combat move, the attack
    * order, and every check the attack makes, with a fingerprint over them. The host client calls it to run the
-   * attack, and the acting player's client calls it for the previews. Pass the host's rolled chances in
-   * `modifierChances` to apply chance-based modifiers; without them none apply, as in the player's preview.
-   * With `afterPreCombat` the pre-combat effects have already run, so the distance is the current one on the map.
+   * attack, and the acting player's client calls it for the previews. With `afterPreCombat` the pre-combat effects
+   * have already run, so the distance is the current one on the map.
    * @param {object} intent The normalized exchange intent.
-   * @param {{modifierChances?: object|null, afterPreCombat?: boolean}} [options] The drawn rolls, by Actor uuid,
-   *   and whether pre-combat effects have run.
+   * @param {{afterPreCombat?: boolean}} [options] Whether pre-combat effects have run.
    */
-  async getSnapshot(intent, { modifierChances = null, afterPreCombat = false } = {}) {
-    if (!modifierChances) {
-      return withUndrawnModifierChances(null, () => this.#projectSnapshot(intent, null, afterPreCombat));
-    }
-    return this.#projectSnapshot(intent, modifierChances, afterPreCombat);
-  }
-
-  /** Build the data for one attack, applying the chance rolls it is given (see getSnapshot). */
-  async #projectSnapshot(intent, modifierChances, afterPreCombat) {
+  async getSnapshot(intent, { afterPreCombat = false } = {}) {
     const sourceToken = await resolveToken(intent.sourceTokenUuid);
     let targetToken = await resolveToken(intent.targetTokenUuid);
     targetToken = redirectFoundryHostileToken(targetToken);
@@ -181,18 +170,16 @@ export class FoundryCombatStateRepository {
 
     const gridSize = Number(sourceToken.parent?.grid?.size) || 1;
     const movementSpent = resolveStandingMovementSpent(movement);
-    const sourceChanceRolls = modifierChances?.[sourceToken.actor.uuid] ?? null;
-    const targetChanceRolls = modifierChances?.[targetToken.actor.uuid] ?? null;
     // Effect steps priced by range use the weapon's maximum range.
     const effectRange = parseAttackRange(projectWeapon(sourceToken.actor, sourceItem).range)?.maxRange ?? 0;
     const approach = projectPreCombatApproach({
       sourceToken, targetToken, targetItem, movement, movementSpent, gridSize,
       activatedItem: objectTarget || afterPreCombat ? null : sourceArt ?? sourceItem,
-      sourceChanceRolls, targetChanceRolls, effectRange, attackShape: sourceItem.system?.weapon?.targetShape
+      effectRange, attackShape: sourceItem.system?.weapon?.targetShape
     });
     const { distance, engagement, inMeleeRange } = approach;
     const combatContext = recordCombatContext({ intent, sourceToken, targetToken, targetItem }, {
-      distance, engagement, inMeleeRange, movementSpent, sourceChanceRolls, targetChanceRolls
+      distance, engagement, inMeleeRange, movementSpent
     });
     // Both sides share one copy of each Item's data. The scope opens inside the combat context, after its Actor
     // resets, so the unit values the resets compute are not kept past it.
@@ -298,20 +285,6 @@ export class FoundryCombatStateRepository {
   }
 
   /**
-   * Roll the chance-based modifiers for both Character combatants once per attack, on the host client. The attack
-   * passes them along to every later step so nothing is rolled twice.
-   */
-  async drawModifierChances(snapshot) {
-    const drawn = {};
-    for (const tokenUuid of [snapshot?.sourceTokenUuid, snapshot?.targetTokenUuid]) {
-      const actor = (await resolveToken(tokenUuid))?.actor;
-      if (actor?.type !== 'Character' || Object.hasOwn(drawn, actor.uuid)) continue;
-      drawn[actor.uuid] = actionModifierChances(actor);
-    }
-    return Object.freeze(drawn);
-  }
-
-  /**
    * Roll one hit check. Under the karmic model it starts from the saved karma debt plus any earlier rolls in this
    * attack, and returns its own karma entry (`karmaBooking`) to be saved with the rest of the attack.
    * @param {object} side The acting side.
@@ -404,8 +377,9 @@ export async function projectExchangeHealthTarget(combatContext, health) {
 
 /**
  * Save what the attack read both fighters under: the uuids of the two tokens, the weapon, Weapon Art and the
- * target's weapon, plus the distance and chance-roll values withFoundryCombatContext applies. The attack data
- * carries it as `combatContext` so projectExchangeHealthTarget can read the fighters the same way later.
+ * target's weapon, plus the distance, engagement, melee reach and movement spent that withFoundryCombatContext
+ * applies. The attack data carries it as `combatContext` so projectExchangeHealthTarget can read the fighters the
+ * same way later.
  */
 function recordCombatContext({ intent, sourceToken, targetToken, targetItem }, facts) {
   return Object.freeze({
@@ -700,7 +674,7 @@ function deepFreeze(value) {
 /**
  * A hash of the fields the attack depends on. The host refuses the attack when it differs from the one the
  * player's preview showed, so the preview and the host must compute every field here the same way, and nothing
- * only one client knows may go in. This is why getSnapshot leaves out the host's rolled chances by default.
+ * only one client knows may go in.
  */
 function combatFingerprint(snapshot) {
   return digest(JSON.stringify({

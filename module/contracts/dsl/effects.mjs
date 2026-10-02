@@ -76,9 +76,12 @@ export const ACTIVATION_EFFECT_TRIGGERS = Object.freeze([
   'onActivation', 'onFailedSave', 'onSucceedSave', 'onFailedCheck', 'onSucceedCheck'
 ]);
 
-/** Group C: triggers for passive Abilities, firing on phases, a death, a kill, an evade or another item's use. */
+/**
+ * Group C: triggers for passive Abilities, firing on phases, a death, a kill, a blow taken, an evade or another
+ * item's use.
+ */
 export const PASSIVE_EFFECT_TRIGGERS = Object.freeze([
-  'onPhaseBegin', 'onPhaseEnd', 'onDeath', 'onKill', 'onEvade', 'onUseItem'
+  'onPhaseBegin', 'onPhaseEnd', 'onDeath', 'onKill', 'onStruck', 'onEvade', 'onUseItem'
 ]);
 
 /** How each step kind reads after its number in a message, as in `Step 3 moves a token`. */
@@ -126,7 +129,7 @@ export function triggerGroupForItem({ type, itemType } = {}) {
   return 'A';
 }
 
-/** The groups whose items a trigger fires on. `onKill` and `onEvade` are both attack and passive triggers. */
+/** The groups whose items a trigger fires on. `onKill`, `onStruck` and `onEvade` are attack and passive triggers. */
 function triggerGroups(trigger) {
   const groups = [];
   if (ATTACK_EFFECT_TRIGGERS.includes(trigger)) groups.push('A');

@@ -66,7 +66,7 @@ export class EmblemActor extends Actor {
   prepareDerivedData() {
     super.prepareDerivedData();
     if (this.type !== 'Character') return;
-    this.preparedChanceRolls = prepareCharacterData(this);
+    prepareCharacterData(this);
     evaluateConditionalItemUses(this);
   }
 

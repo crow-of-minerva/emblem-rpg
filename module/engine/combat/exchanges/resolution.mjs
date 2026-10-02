@@ -10,10 +10,10 @@ import {
   keptTurnSlots, resolveCombatContinuation, resolveCombatContinuationChoice
 } from '../../../game/combat/exchange.mjs';
 import { resolveSettledStanding, resolveStandingDestination } from '../../../game/movement/pathfinding.mjs';
-import { addUse, drawnExchangeReads, objectDelay, proficiencyUpdates, runCombatSequence } from './blows.mjs';
+import { addUse, exchangeReads, objectDelay, proficiencyUpdates, runCombatSequence } from './blows.mjs';
 import { CombatPersistenceError, StaleCombatError } from '../../recovery/errors.mjs';
 import { cardRequester, presentSafely, runSafely, runSafelyAsync } from '../../feedback.mjs';
-import { requireOpeningExchangeSnapshot, requireSettlementSnapshot, validateSnapshot } from './gates.mjs';
+import { requireSettlementSnapshot, validateSnapshot } from './gates.mjs';
 import { endMessage, rankUpMessage, startMessage, weaponArtMessage } from './receipts.mjs';
 import {
   collectRestores,
@@ -48,14 +48,15 @@ import {
 async function resolveExchange(context, services) {
   const intent = normalizeCombatExchangeIntent(context.payload);
   if (!intent) return refuse(RESULT_CODES.COMBAT_EXCHANGE_INPUT_INVALID);
-  const snapshot = await services.combatState.getSnapshot(intent);
+  // The preview check and the opening of the attack share this read: nothing is written in between.
+  const snapshot = await exchangeReads(services.combatState, context.operation ?? null, context.userId)
+    .getSnapshot(intent);
   const refusal = validateSnapshot(snapshot, intent, context.userId);
   if (refusal) return refusal;
-  if (!resolveStandingDestination(snapshot.movement)) {
-    return refuse(RESULT_CODES.MOVEMENT_DESTINATION_INVALID);
-  }
+  const walked = resolveStandingDestination(snapshot.movement);
+  if (!walked) return refuse(RESULT_CODES.MOVEMENT_DESTINATION_INVALID);
 
-  const exchange = createExchangeState(snapshot, intent, context);
+  const exchange = createExchangeState(snapshot, intent, context, walked);
   try {
     await openExchange(services, exchange);
     await runCombatSequence(services, exchange);
@@ -77,7 +78,7 @@ function boardFacts(snapshot) {
 }
 
 /** The working state one attack carries from its opening to its last animation. */
-function createExchangeState(snapshot, intent, context) {
+function createExchangeState(snapshot, intent, context, walked) {
   return {
     intent,
     context,
@@ -88,7 +89,6 @@ function createExchangeState(snapshot, intent, context) {
     useLedger: {},
     karmaBookings: [],
     bookedKarma: [],
-    modifierChances: null,
     proficiencyAwards: new Map(),
     effectHealth: [],
     restores: [],
@@ -99,7 +99,7 @@ function createExchangeState(snapshot, intent, context) {
     defenderCountered: false,
     cinematicStarted: false,
     progressionSettlement: null,
-    walked: null,
+    walked,
     rankUps: [],
     outcome: null
   };
@@ -110,20 +110,11 @@ function createExchangeState(snapshot, intent, context) {
 /* -------------------------------------------- */
 
 /**
- * Open the attack after the preview check: roll its chance modifiers, read the map again, save undo data for
- * everything an attack always writes in one go, then land the attacker if attacking grounds it, and run the
- * pre-combat animation and effects.
+ * Open the attack after the preview check: save undo data for everything an attack always writes in one go, then
+ * land the attacker if attacking grounds it, and run the pre-combat animation and effects.
  */
 async function openExchange(services, exchange) {
-  const { intent, context } = exchange;
-  exchange.modifierChances = await services.combatState.drawModifierChances(exchange.snapshot);
-  const snapshot = await requireOpeningExchangeSnapshot(
-    drawnExchangeReads(services.combatState, exchange.modifierChances, exchange.operation, context.userId), intent,
-    context.userId
-  );
-  exchange.snapshot = snapshot;
-  exchange.walked = resolveStandingDestination(snapshot.movement);
-  if (!exchange.walked) throw new StaleCombatError();
+  const { snapshot } = exchange;
   await services.settlement.captureExchange(snapshot, exchange.operation);
   await services.settlement.settleGrounding(snapshot.source, exchange.operation);
   await services.settlement.prepareExchange(snapshot, exchange.operation);
@@ -158,9 +149,7 @@ async function openExchange(services, exchange) {
  */
 async function commitExchange(services, exchange) {
   const { intent, context } = exchange;
-  const reads = drawnExchangeReads(
-    services.combatState, exchange.modifierChances, exchange.operation, context.userId, true
-  );
+  const reads = exchangeReads(services.combatState, exchange.operation, context.userId, true);
   let snapshot = await requireSettlementSnapshot(reads, intent);
   await services.settlement.commitItemUses(exchange.useLedger, exchange.operation);
   const proficiency = proficiencyUpdates(exchange.proficiencyAwards);
@@ -237,7 +226,6 @@ function exchangeOutcome(exchange, snapshot, finalSnapshot, movementResolution, 
     userId: context.userId,
     cinematic: snapshot.cinematic,
     objectTarget: snapshot.target.destructible === true,
-    modifierChances: exchange.modifierChances,
     karmaBookings: Object.freeze([...exchange.bookedKarma])
   });
 }

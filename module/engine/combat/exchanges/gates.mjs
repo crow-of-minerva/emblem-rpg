@@ -39,16 +39,6 @@ export function validateSnapshot(snapshot, intent, userId) {
   return null;
 }
 
-/**
- * Read the attack again after its chance modifiers are rolled. A refusal now means the map changed
- * (StaleCombatError), not that the preview no longer matches.
- */
-export async function requireOpeningExchangeSnapshot(combatState, intent, userId) {
-  const snapshot = await combatState.getSnapshot({ ...intent, previewFingerprint: '' });
-  if (validateSnapshot(snapshot, { ...intent, previewFingerprint: '' }, userId)) throw new StaleCombatError();
-  return snapshot;
-}
-
 /** Read the attack again between blows. The attacker must still hold its movement plan, action and Item. */
 export async function requireActiveExchangeSnapshot(combatState, intent, userId) {
   const snapshot = await combatState.getSnapshot({ ...intent, previewFingerprint: '' });

@@ -25,7 +25,7 @@ import {
   SKILL_RANK_MAX,
   SKILL_RANK_XP
 } from '../progression/rules.mjs';
-import { chanceNodeEntries, evaluate as evaluateConditionTree } from '../effects/conditions.mjs';
+import { chanceNodePaths, evaluate as evaluateConditionTree } from '../effects/conditions.mjs';
 import { isInMeleeRange, resolveEngagement } from '../targeting/attack-grid.mjs';
 import { WEAPON_PROFICIENCIES } from '../../contracts/domains/items.mjs';
 import {
@@ -560,20 +560,18 @@ function addRange(base, delta) {
 /*  Item modifier collection                    */
 /* -------------------------------------------- */
 /**
- * Split item modifiers into unconditional and gated groups, for compileCharacterData and modifierChanceRequirements.
- * Aura modifiers are left to game/effects/auras.mjs.
+ * Split item modifiers into unconditional and gated groups. Aura modifiers are left to game/effects/auras.mjs, and
+ * a modifier that needs its item equipped is left out while the item is not.
  * @param {object[]} items The items from the compile source.
- * @param {{equippedOnly?: boolean}} [options] Whether a modifier that needs its item equipped is left out while the
- *   item is not. modifierChanceRequirements keeps it, so an item equipped mid-action reuses its chance roll.
  * @returns {{unconditional: object[], conditional: object[]}}
  */
-function collectModifiers(items, { equippedOnly = true } = {}) {
+function collectModifiers(items) {
   const unconditional = [];
   const conditional = [];
   for (const item of items) {
     for (const [index, modifier] of (item.modifiers ?? []).entries()) {
       if (!modifier || modifier.kind === 'aura') continue;
-      if (equippedOnly && modifier.requiresEquipped && !isEquipped(item)) continue;
+      if (modifier.requiresEquipped && !isEquipped(item)) continue;
       const conditionTree = hasConditionTree(modifier.conditionTree) ? modifier.conditionTree : null;
       const requiresActivation = modifier.requiresActivation === true;
       const entry = { ...modifier, conditionTree, requiresActivation, modifierIndex: index, sourceItem: item };
@@ -608,12 +606,18 @@ function applyConditionalModifiers(compiled, modifiers, source) {
         recordModifierDiagnostic(compiled, modifier, 'invalid-condition');
         continue;
       }
+      // Nothing rolls a chance for a modifier: chance belongs to effect entries and if steps. A modifier whose
+      // condition has one never applies.
+      if (chanceNodePaths(modifier.conditionTree).length) {
+        recordModifierDiagnostic(compiled, modifier, 'chance-condition');
+        continue;
+      }
     }
     let context = null;
     if (hasTree && !conditionIsEmpty(modifier.conditionTree)) {
       try {
         context = modifierEvaluationContext(compiled, modifier, source);
-        if (!evaluateConditionTree(modifier.conditionTree, context, modifierChanceRoll(modifier, source))) continue;
+        if (!evaluateConditionTree(modifier.conditionTree, context)) continue;
       } catch {
         recordModifierDiagnostic(compiled, modifier, 'condition-evaluation-failed');
         continue;
@@ -748,71 +752,6 @@ function recordModifierDiagnostic(compiled, modifier, code, extra = {}) {
     modifierIndex: modifier.modifierIndex ?? null,
     ...extra
   });
-}
-
-/* -------------------------------------------- */
-/*  Modifier chance rolls                       */
-/* -------------------------------------------- */
-
-const UNDRAWN_CHANCE = 100;
-
-/**
- * This modifier's chance draws, made for the current action by the dice adapter
- * (foundry/adapters/dice/modifier-chances.mjs). Without a draw the chance check fails, so preparation and previews
- * stay deterministic.
- */
-function modifierChanceRoll(modifier, source) {
-  const rolls = source.modifierContext?.chanceRolls?.[modifierChanceKey(modifier)];
-  return rolls && typeof rolls === 'object' ? rolls : UNDRAWN_CHANCE;
-}
-
-/**
- * The chance rolls the item modifiers need, for the dice adapter (foundry/adapters/dice/modifier-chances.mjs),
- * which rolls them once per action. Unequipped items are included, so an item equipped later in the same action
- * reuses its roll.
- * @param {object[]} items The items, as the compile source carries them.
- * @returns {Array<{key: string, path: string, percent: number}>}
- */
-export function modifierChanceRequirements(items = []) {
-  const requirements = [];
-  for (const modifier of collectModifiers(items, { equippedOnly: false }).conditional) {
-    const key = modifierChanceKey(modifier);
-    for (const { path, percent } of chanceNodeEntries(modifier.conditionTree)) {
-      requirements.push({ key, path, percent });
-    }
-  }
-  return requirements;
-}
-
-/**
- * Index the drawn percentiles in the shape compileCharacterData reads.
- * @param {ReadonlyArray<{key: string, path: string}>} requirements From {@link modifierChanceRequirements}.
- * @param {number[]} values One drawn percentile per requirement, in the same order.
- * @returns {Readonly<Record<string, Readonly<Record<string, number>>>>} Rolls by modifier key, then node path.
- */
-export function modifierChanceRolls(requirements = [], values = []) {
-  const rolls = {};
-  requirements.forEach((requirement, index) => {
-    (rolls[requirement.key] ??= {})[requirement.path] = Number(values[index]);
-  });
-  return Object.freeze(Object.fromEntries(Object.entries(rolls).map(([key, paths]) => [key, Object.freeze(paths)])));
-}
-
-/**
- * Whether these draws change any chance check's outcome, so the dice adapter knows the actor needs preparing again.
- * @param {ReadonlyArray<{key: string, path: string, percent: number}>} requirements From
- *   {@link modifierChanceRequirements}.
- * @param {object} rolls Drawn rolls by modifier key, then node path.
- * @returns {boolean}
- */
-export function modifierChancesFire(requirements = [], rolls = {}) {
-  const holds = (roll, percent) => Number(roll) < Number(percent);
-  return requirements.some(({ key, path, percent }) =>
-    holds(rolls[key]?.[path] ?? UNDRAWN_CHANCE, percent) !== holds(UNDRAWN_CHANCE, percent));
-}
-
-function modifierChanceKey(modifier) {
-  return `${modifier.sourceItem.id ?? ''}:${modifier.modifierIndex}`;
 }
 
 /** A plain name is looked up with resolveTarget. Anything else is an expression that yields the name. */

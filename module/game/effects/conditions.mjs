@@ -38,24 +38,18 @@ export function evaluate(tree, context, chanceRoll = 100, path = 'root') {
   }
 }
 
-/** The paths of a tree's chance nodes, for effectChanceRequirements in game/effects/planning.mjs. */
-export function chanceNodePaths(tree, path = 'root') {
-  return chanceNodeEntries(tree, path).map(entry => entry.path);
-}
-
 /**
- * The path and percent of each chance node in a tree. modifierChanceRequirements in game/character/compilation.mjs
- * lists them so the dice adapter (foundry/adapters/dice/modifier-chances.mjs) can draw them, and chanceNodePaths
- * keeps just the paths.
+ * The path of each chance node in a tree, in authored order, named the way `evaluate` names it when it asks
+ * `chanceRoll` for that node's draw.
  * @param {object|null} tree The condition tree.
  * @param {string} [path] The stable path of the tree's root.
- * @returns {Array<{path: string, percent: number}>} One entry per chance node, in authored order.
+ * @returns {string[]}
  */
-export function chanceNodeEntries(tree, path = 'root') {
+export function chanceNodePaths(tree, path = 'root') {
   if (isEmpty(tree)) return [];
-  if (tree.kind === 'chance') return [{ path, percent: Number(tree.percent ?? 0) }];
+  if (tree.kind === 'chance') return [path];
   if (tree.kind !== 'group' || !Array.isArray(tree.children)) return [];
-  return tree.children.flatMap((child, index) => chanceNodeEntries(child, `${path}.${index}`));
+  return tree.children.flatMap((child, index) => chanceNodePaths(child, `${path}.${index}`));
 }
 
 /**
