@@ -59,6 +59,10 @@ export function resolveMovementOccupancy(moving, other) {
     const canPass = other.blocksFlyers ? false : moving?.airborne === true;
     return { occupiesLanding, canPass };
   }
+  if (other.actorType === 'Object') {
+    // Objects take no side, so faction never lets a unit through. A locked Door stops fliers too.
+    return { occupiesLanding, canPass: other.objectType !== 'Door' && moving?.airborne === true };
+  }
   const canPass = (moving?.airborne === true) !== (other.airborne === true)
     || areFactionsFriendly(moving?.faction, other.faction);
   return { occupiesLanding, canPass };

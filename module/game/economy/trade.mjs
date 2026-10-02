@@ -94,11 +94,14 @@ function stealDynamicDC(cost) {
   return Math.round((Number(cost) || 0) / 150);
 }
 
-/** An Item's full steal DC. An authored DC always wins, even 0 or a negative one. */
+/**
+ * An Item's full steal DC. An authored DC always wins. Anything below 0 counts as 0, so an easy item added to a
+ * theft never makes the other items easier to take.
+ */
 export function stealItemDC(item) {
   const explicit = authoredStealDC(item);
-  if (explicit !== null) return explicit;
-  return stealBaseDC(item) + stealDynamicDC(item?.cost);
+  const dc = explicit !== null ? explicit : stealBaseDC(item) + stealDynamicDC(item?.cost);
+  return Math.max(0, dc);
 }
 
 /** The difficulty the GM wrote on the Item, or null where none was written at all. */

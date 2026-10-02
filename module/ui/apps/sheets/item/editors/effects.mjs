@@ -2262,12 +2262,26 @@ export async function createEffectEntry(itemSheet, { group = '' } = {}) {
 }
 
 /** Take a just-created entry off the item again, because its editor was cancelled. */
-async function removeEffectEntry(itemSheet, entryIndex) {
+async function removeEffectEntry(itemSheet, snapshot, openedAt) {
   const effectsPath = itemSheet.effectsPath;
+  const entryIndex = currentEntryIndex(itemSheet, snapshot, openedAt);
+  if (entryIndex < 0) return;
   const all = [...foundry.utils.getProperty(itemSheet.document, effectsPath)];
-  if (!all[entryIndex]) return;
   all.splice(entryIndex, 1);
   await itemSheet.document.update({ [effectsPath]: all });
+}
+
+/**
+ * Where the entry an editor opened on sits now, or -1 if it is gone or was changed elsewhere. The item sheet can
+ * delete and reorder effects while the editor is open, so the entry is found by its content.
+ * @param {ItemSheet} itemSheet           The sheet it was opened from.
+ * @param {object} snapshot               A copy of the entry as it was when the editor opened.
+ * @param {number} openedAt               Its index when the editor opened, preferred while it still matches.
+ */
+function currentEntryIndex(itemSheet, snapshot, openedAt) {
+  const all = Array.from(foundry.utils.getProperty(itemSheet.document, itemSheet.effectsPath) ?? []);
+  if (foundry.utils.equals(all[openedAt], snapshot)) return openedAt;
+  return all.findIndex(e => foundry.utils.equals(e, snapshot));
 }
 
 /**
@@ -2323,6 +2337,8 @@ function effectFooterHtml() {
         </div>`;
 }
 
+const ENTRY_LOST_MESSAGE = 'This effect was changed, moved or removed while the editor was open. Reopen it and try again.';
+
 /**
  * Open the effect editor on a copy of one entry, through openEffectEditor (dialogs.mjs). An entry-level condition
  * is shown as an if step wrapping the steps. The trigger choices are limited to the item's group, and the complete
@@ -2339,6 +2355,7 @@ export async function openEffectActionEditor(itemSheet, entryIndex, { group = ''
   const effectsPath = itemSheet.effectsPath;
   const entry = foundry.utils.getProperty(itemSheet.document, effectsPath)[entryIndex];
   if (!entry) return;
+  const snapshot = foundry.utils.deepClone(entry);
   await terrainPresetsReady();
 
   const state = {
@@ -2392,18 +2409,27 @@ export async function openEffectActionEditor(itemSheet, entryIndex, { group = ''
         notify.error(`This effect cannot be saved. ${r.errors.join(' ')}`);
         return undefined;
       }
+      if (currentEntryIndex(itemSheet, snapshot, entryIndex) < 0) {
+        notify.error(ENTRY_LOST_MESSAGE);
+        return undefined;
+      }
 
       return updated;
     },
     apply: async (updated) => {
+      const index = currentEntryIndex(itemSheet, snapshot, entryIndex);
+      if (index < 0) {
+        notify.error(ENTRY_LOST_MESSAGE);
+        return null;
+      }
       const all = [...foundry.utils.getProperty(itemSheet.document, effectsPath)];
-      all[entryIndex] = updated;
+      all[index] = updated;
       const written = await itemSheet.document.update({ [effectsPath]: all });
       saved = true;
       return written;
     }
   });
-  if (isNew && !saved) await removeEffectEntry(itemSheet, entryIndex);
+  if (isNew && !saved) await removeEffectEntry(itemSheet, snapshot, entryIndex);
   return result;
 }
 

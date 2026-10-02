@@ -293,11 +293,15 @@ function removablePath(root, leaf, captured) {
   return leaf;
 }
 
-/** Restoration options, built fresh per write: a Token snaps back without animating or sounding like a move. */
+/**
+ * Restoration options, built fresh per write: a Token snaps back without animating or sounding like a move, and
+ * as an undo, so walls never block it the way they block a walk.
+ */
 function updateOptions(document) {
   const options = restoreOptions();
   if (document.documentName !== 'Token') return options;
   options.animate = false;
+  options.isUndo = true;
   options.emblemMovementRestore = true;
   return options;
 }

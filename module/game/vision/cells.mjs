@@ -13,11 +13,15 @@ import { cellKey, parseCellKey, footprintDistance } from '../../lib/core/geometr
  * A range in scene distance units, as a whole number of cells.
  * @param {number} rangeUnits Range in distance units.
  * @param {number} gridDistance Distance units per square.
+ * @param {number} [maxCells] Largest answer allowed; an unlimited range comes back as this.
  * @returns {number}
  */
-export function cellRange(rangeUnits, gridDistance) {
+export function cellRange(rangeUnits, gridDistance, maxCells = 0) {
   if (!(gridDistance > 0)) return 0;
-  return Math.max(0, Math.round(rangeUnits / gridDistance));
+  const cells = Math.max(0, Math.round(rangeUnits / gridDistance));
+  if (Number.isNaN(cells)) return 0;
+  const cap = Number.isFinite(maxCells) && maxCells > 0 ? maxCells : Number.MAX_SAFE_INTEGER;
+  return Math.min(cells, cap);
 }
 
 /**
@@ -74,6 +78,7 @@ const SAMPLES_PER_AXIS = 6;
  */
 export function footprintCells(tc, tr, tw, th, R) {
   const cells = [];
+  if (!Number.isFinite(R)) return cells;
   for (let row = tr - R; row <= tr + th - 1 + R; row++) {
     for (let col = tc - R; col <= tc + tw - 1 + R; col++) {
       if (footprintDistance(col, row, 1, 1, tc, tr, tw, th) <= R) cells.push({ col, row });

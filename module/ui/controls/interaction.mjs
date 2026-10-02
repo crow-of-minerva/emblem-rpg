@@ -335,12 +335,12 @@ async function openTradeFor(sourceTokenUuid, targetTokenUuid, mode, handlers = {
   }
   if (view.refusal) {
     notifications.show(view.refusal, view.refusalData);
-    reopen?.();
+    await returnToPick(reopen, restore);
     return true;
   }
   if (stealing && !view.target.items.length) {
     notifications.show(NOTIFICATION_IDS.STEAL_NOTHING_TO_TAKE, { targetName: view.target.name });
-    reopen?.();
+    await returnToPick(reopen, restore);
     return true;
   }
   const confirm = stealing
@@ -364,7 +364,7 @@ async function openTradeFor(sourceTokenUuid, targetTokenUuid, mode, handlers = {
     advanceInteractionPick(PICK_EVENTS.WINDOW_CLOSED);
   }
   if (!choice?.confirmed) {
-    reopen?.();
+    await returnToPick(reopen, restore);
     return true;
   }
   if (stealing) {
@@ -425,7 +425,7 @@ async function openShopFor(economy, sourceTokenUuid, targetTokenUuid, { restore,
   }
   if (view.refusal) {
     notifications.show(view.refusal, view.refusalData);
-    reopen?.();
+    await returnToPick(reopen, restore);
     return true;
   }
   advanceInteractionPick(PICK_EVENTS.WINDOW_OPENED);
@@ -436,7 +436,7 @@ async function openShopFor(economy, sourceTokenUuid, targetTokenUuid, { restore,
     advanceInteractionPick(PICK_EVENTS.WINDOW_CLOSED);
   }
   if (!traded) {
-    reopen?.();
+    await returnToPick(reopen, restore);
     return true;
   }
   if (view.exploring !== true && typeof release === 'function') {
@@ -488,7 +488,7 @@ async function openSocialFor(sourceTokenUuid, targetTokenUuid, { resume = null, 
   }
   if (view.refusal) {
     notifications.show(view.refusal, view.refusalData);
-    await returnToSocialPick(reopen, restore);
+    await returnToPick(reopen, restore);
     return true;
   }
   let settled = false;
@@ -501,7 +501,7 @@ async function openSocialFor(sourceTokenUuid, targetTokenUuid, { resume = null, 
     advanceInteractionPick(PICK_EVENTS.WINDOW_CLOSED);
   }
   if (!settled) {
-    await returnToSocialPick(reopen, restore);
+    await returnToPick(reopen, restore);
     return true;
   }
   await restore({ announce: true });
@@ -509,7 +509,7 @@ async function openSocialFor(sourceTokenUuid, targetTokenUuid, { resume = null, 
 }
 
 /** Reopen the pick. If it can't be drawn again, hand the held plan back instead of leaving it suspended. */
-async function returnToSocialPick(reopen, restore) {
+async function returnToPick(reopen, restore) {
   reopen?.();
   if (!activePick()) await restore();
 }

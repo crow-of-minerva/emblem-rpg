@@ -98,12 +98,16 @@ export function compileCharacterData(source) {
   applyEffectModifiers(compiled, source.effectModifiers);
   const difficulty = isDifficultyTarget(system.faction?.role) ? difficultyTier(source.difficulty) : null;
   applyDifficulty(compiled, difficulty);
+  // Unconditional item modifiers read the totals from before any item modifier, conditional ones the totals after the
+  // unconditional ones. Difficulty HP comes last, then current HP and Stn are clamped to the final maximums.
   const modifiers = collectModifiers(items);
+  if (modifiers.unconditional.length) totalizeCharacter(compiled, source);
   applyModifierBucket(compiled, modifiers.unconditional, source);
   totalizeCharacter(compiled, source);
   applyConditionalModifiers(compiled, modifiers.conditional, source);
   totalizeCharacter(compiled, source);
   applyDifficultyHealth(compiled, difficulty);
+  clampPools(compiled, system);
   return compiled;
 }
 
@@ -452,10 +456,16 @@ function totalizeCharacter(compiled, source = {}) {
 
   compiled.resources.hp.max = Math.max(0, stats.hpMax.total);
   compiled.resources.stn.max = Math.max(0, stats.stnMax.total);
-  compiled.resources.hp.value = Math.min(compiled.resources.hp.value, compiled.resources.hp.max);
-  compiled.resources.stn.value = Math.min(compiled.resources.stn.value, compiled.resources.stn.max);
+  clampPools(compiled, source.system ?? {});
   compiled.resources.energy.max = energyCapacity(compiled.resources.energy.mod);
   compiled.resources.energy.value = Math.min(compiled.resources.energy.value, compiled.resources.energy.max);
+}
+
+/** Clamp current HP and Stn from the stored values, so a later pass can raise them again when the max grows. */
+function clampPools(compiled, system) {
+  const { hp, stn } = compiled.resources;
+  hp.value = Math.min(Math.max(0, number(system.resources?.hp?.value)), hp.max);
+  stn.value = Math.min(Math.max(0, number(system.resources?.stn?.value)), stn.max);
 }
 
 /**

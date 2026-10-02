@@ -526,8 +526,9 @@ export class FoundryActorRepository {
         data.system.isWorn = false;
         data.system.isEquipped = false;
         if (item.type === 'Resource') data.system.amount = amount;
+        // A moved item keeps its uses; a copy arrives as a new item.
         created = await targetActor.createEmbeddedDocuments('Item', [data],
-          { emblemEquipmentSettlement: true, keepId: true });
+          { emblemEquipmentSettlement: true, emblemTransfer: move === true, keepId: true });
       }
       if (!move) return Object.freeze({ ok: true, stale: false, created });
       if (splits) {

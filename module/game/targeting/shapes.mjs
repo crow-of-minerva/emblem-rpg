@@ -66,7 +66,7 @@ export function resolveLineRay(input = {}) {
   const targetCells = normalizeCells(input.targetCells);
   const targetable = keySet(input.targetableKeys);
   for (const origin of lineOrigins(bounds)) {
-    const direction = lineDirectionFrom(origin, targetCells, targetable);
+    const direction = lineDirectionFrom(origin, targetCells, targetable, band);
     if (!direction) continue;
     return traceLineRay(origin, direction, band, dimension(input.columns), dimension(input.rows));
   }
@@ -282,10 +282,20 @@ function lineOrigins(bounds) {
   return origins;
 }
 
-function lineDirectionFrom(origin, targetCells, targetableKeys) {
+/** Only the directions this edge square fires along count, and only within the reach it fires to. */
+function lineDirectionFrom(origin, targetCells, targetableKeys, band) {
   for (const cell of targetCells) {
-    const direction = axialDirection(cell.x - origin.x, cell.y - origin.y);
-    if (direction && targetableKeys.has(cellKey(cell.x, cell.y))) return direction;
+    if (!targetableKeys.has(cellKey(cell.x, cell.y))) continue;
+    const deltaX = cell.x - origin.x;
+    const deltaY = cell.y - origin.y;
+    const direction = axialDirection(deltaX, deltaY);
+    if (!direction) continue;
+    const diagonal = direction.dx !== 0 && direction.dy !== 0;
+    const allowed = diagonal ? origin.diagonals : origin.cardinals;
+    if (!allowed.some(entry => entry.dx === direction.dx && entry.dy === direction.dy)) continue;
+    const step = Math.max(Math.abs(deltaX), Math.abs(deltaY));
+    const maximum = diagonal ? Math.max(band.min, band.max - 1) : band.max;
+    if (step >= band.min && step <= maximum) return direction;
   }
   return null;
 }

@@ -84,11 +84,12 @@ export function clampDisposition(disposition) {
 
 /**
  * Calculate the vendor's offer multiplier for sellPrice: +5% per positive disposition point, -4% per negative
- * point.
+ * point. It never exceeds the lowest price any vendor charges, so a party cannot buy goods from one vendor and sell
+ * them to another at a profit.
  */
 function vendorBuyFraction(disposition) {
   const value = clampDisposition(disposition);
-  return value >= 0 ? 0.5 + 0.05 * value : 0.5 + 0.04 * value;
+  return Math.min(value >= 0 ? 0.5 + 0.05 * value : 0.5 + 0.04 * value, vendorSellMultiplier(10));
 }
 
 /**
@@ -264,7 +265,8 @@ function purchaseRoomRefusal(destination, item, isResource) {
 /**
  * Plan a sale for settleVendorSale in engine/economy/trade.mjs from fresh shop projections. A vendor short of gold
  * still buys and pays what it has. A Vendor never buys back what it sold (soldByVendor), and the plan's `buyback`
- * is the tag the shelved copy carries: the seller's haggle key and the per-unit gold actually paid, rounded down.
+ * is the tag the shelved copy carries: the seller's haggle key and the per-unit gold actually paid, rounded up so
+ * buying the goods back never costs less than the vendor paid.
  * @param {object} facts The seller (with its `haggleKey`), the vendor, the source of the goods, the Item and the
  *   quantity.
  * @returns {{ok: boolean, code?: string, data: object}}
@@ -311,7 +313,7 @@ export function planVendorSale(facts = {}) {
     sourceAmountAfter: isResource && units < held ? held - units : null,
     removeSourceItem: !isResource || units >= held,
     buyback: seller.haggleKey ? Object.freeze({
-      vendorUuid: String(vendor.uuid ?? ''), key: String(seller.haggleKey), unitPrice: Math.floor(paid / units)
+      vendorUuid: String(vendor.uuid ?? ''), key: String(seller.haggleKey), unitPrice: Math.ceil(paid / units)
     }) : null
   });
 }

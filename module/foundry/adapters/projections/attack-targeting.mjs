@@ -245,7 +245,7 @@ export async function projectFoundryAttackGrid(context, movementSnapshot) {
     rows: Number(movementSnapshot.rows) || 0,
     source: Object.freeze({ ...movementSnapshot.current }),
     footprint: Object.freeze({ ...movementSnapshot.footprint }),
-    square: weapon.targetShape === 'Square' || effect.rngShape === 'Square',
+    square: weapon.targetShape === 'Square',
     cone: weapon.targetShape === 'Cone',
     area: weapon.targetArea && typeof weapon.targetArea === 'object'
       ? Object.freeze({ ...weapon.targetArea }) : null,
@@ -353,8 +353,8 @@ export async function projectFoundryCombatPreview(snapshot, damageType = null) {
     defender: { ...snapshot.target, ...projectPreviewDisplay(targetToken) },
     distance: snapshot.distance,
     engagement: snapshot.engagement,
-    reachDistance: snapshot.boardDistance,
-    reachEngagement: snapshot.boardEngagement,
+    reachDistance: snapshot.reachDistance,
+    reachEngagement: snapshot.reachEngagement,
     damageType,
     attackerDamageTypeRoll: damageTypeRollFor(snapshot.source, snapshot.target, damageType)
   });

@@ -239,7 +239,8 @@ function exchangeOutcome(exchange, snapshot, finalSnapshot, movementResolution, 
 /**
  * Finish the defeats the sequence claimed, hold the exchange's events on its operation and send the closing
  * feedback. A presentation failure is reported in the accepted result and never turns the exchange into a refusal,
- * so the operation still commits and the events held on it are delivered.
+ * so the operation still commits and the events held on it are delivered. A defeat that fails here leaves its unit
+ * at 0 HP with the defeat pending, and the next phase change of the encounter finishes it.
  */
 async function publishExchange(services, exchange) {
   const { outcome, context, transcript, effectHealth, operation } = exchange;

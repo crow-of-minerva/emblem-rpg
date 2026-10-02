@@ -221,7 +221,11 @@ function rectilinearSightShape(source) {
  */
 function sightTrace(source, tokenDocument, los) {
   const g = canvas.dimensions.size;
-  const R = cellRange(effectiveRange(tokenDocument, tokenDocument.sight?.range ?? 0), canvas.dimensions.distance);
+  const range = effectiveRange(tokenDocument, tokenDocument.sight?.range ?? 0);
+  // A token with no vision range set sees without limit, so it keeps Foundry's own shape.
+  if (range === Infinity) return { key: 'unlimited', cells: new Set(), points: null, bounds: null };
+  // A very long range is held to the scene's size, as Foundry does for its own polygons.
+  const R = cellRange(range, canvas.dimensions.distance, Math.ceil(canvas.dimensions.maxR / g));
   const { tc, tr, tw, th } = sourceFootprint(source, tokenDocument, g);
   const padded = Boolean(globalThis.canvas?.performance?.lightSoftEdges) && !source.isPreview;
   const key = [g, R, tc, tr, tw, th, padded].join('|');
@@ -355,7 +359,8 @@ function applyStaircaseShape(source) {
 
   const radiusPx = source.data?.radius ?? 0;
   if (!Number.isFinite(radiusPx) || radiusPx <= 0) return;
-  const R = Math.max(0, Math.round(radiusPx / g));
+  // A very large radius is held to the scene's size, as for sight.
+  const R = cellRange(radiusPx, g, Math.ceil(canvas.dimensions.maxR / g));
   if (R <= 0) return;
 
   const origin = shape.origin ?? { x: source.x, y: source.y };

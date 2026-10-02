@@ -118,14 +118,21 @@ export function selectPerformer(menu, pick, onChange = null) {
 }
 
 /**
- * Send the menu's command: mark the menu busy, play the confirm sound and close the window, then run `send` (the
- * api.downtime call) and return its result. The caller clears `busy`.
+ * Send the menu's command: mark the menu busy, play the confirm sound, run `send` (the api.downtime call) and return
+ * its result. The caller clears `busy`. A refusal made on this client, such as the host being busy or the table
+ * paused, answers at once and leaves the window open with its picks. Otherwise the window closes while the host
+ * runs the command, so the activity plays on an uncovered board.
  */
 export async function submitMenu(menu, send) {
   menu.state.busy = true;
   playUiSound(SOUND_IDS.UI_CONFIRM);
+  const sent = send();
+  const waiting = Symbol('waiting');
+  const early = await Promise.race([sent, new Promise(resolve => setTimeout(resolve, 0, waiting))])
+    .catch(() => waiting);
+  if (early !== waiting && early?.ok !== true) return early;
   await menu.dialog.close();
-  return send();
+  return sent;
 }
 
 /* -------------------------------------------- */

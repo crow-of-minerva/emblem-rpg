@@ -14,6 +14,7 @@ import {
   validateActivationRequirements
 } from '../../../game/items/activation.mjs';
 import {
+  attackShapeDistance,
   isInMeleeRange,
   reachableFootprintElevation,
   resolveEffectiveAttackRange,
@@ -403,12 +404,14 @@ function movesBeforeCombat(item) {
  * @param {object|null} [input.sourceChanceRolls] The attacker's drawn chance-modifier rolls, when an action drew them.
  * @param {object|null} [input.targetChanceRolls] The defender's, likewise.
  * @param {number} [input.effectRange] The attack's maximum range.
- * @returns {object} `boardDistance`, `boardEngagement`, the fought `distance`, `engagement` and
+ * @param {string} [input.attackShape] The attacking weapon's targeting shape.
+ * @returns {object} `boardDistance`, `boardEngagement`, `reachDistance` and `reachEngagement` (the board facts
+ *   measured the way the weapon's shape aims, for the range check), the fought `distance`, `engagement` and
  *   `inMeleeRange`, and `moved`.
  */
 export function projectPreCombatApproach({
   sourceToken, targetToken, activatedItem, targetItem, movement, movementSpent = null, gridSize,
-  sourceChanceRolls = null, targetChanceRolls = null, effectRange = 0
+  sourceChanceRolls = null, targetChanceRolls = null, effectRange = 0, attackShape = 'Cross'
 }) {
   const sourceActor = sourceToken?.actor ?? null;
   const targetActor = targetToken?.actor ?? null;
@@ -431,9 +434,11 @@ export function projectPreCombatApproach({
   const standing = { distance: boardDistance, ...facing(tokenTerrainElevation(sourceToken, gridSize, elevations)) };
   const boardEngagement = resolveEngagement(standing);
   const boardMeleeRange = isInMeleeRange(standing);
+  const reachDistance = sourceRect && anchorRect ? attackShapeDistance(attackShape, sourceRect, anchorRect) : 0;
+  const reachEngagement = resolveEngagement({ ...standing, distance: reachDistance });
   const board = {
-    boardDistance, boardEngagement, distance: boardDistance, engagement: boardEngagement,
-    inMeleeRange: boardMeleeRange, moved: false
+    boardDistance, boardEngagement, reachDistance, reachEngagement, distance: boardDistance,
+    engagement: boardEngagement, inMeleeRange: boardMeleeRange, moved: false
   };
   if (!sourceActor || !targetActor || !anchorRect || !movement?.supportedGrid || !movesBeforeCombat(activatedItem)) {
     return board;

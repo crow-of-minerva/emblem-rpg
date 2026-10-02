@@ -1,6 +1,7 @@
 /** @layer foundry/adapters/document-writes */
 import { EQUIPMENT_REFUSALS } from '../../../contracts/domains/items.mjs';
 import { OWNED_UNIT_FACTIONS } from '../../../contracts/domains/characters.mjs';
+import { RESTORE_WRITE_OPTION } from '../../../contracts/domains/recovery.mjs';
 import { collectionValues } from '../../../lib/core/runtime.mjs';
 import { reportFoundryError } from '../services/diagnostics.mjs';
 import { readCustomTerrainPresets } from '../services/json-files.mjs';
@@ -83,7 +84,8 @@ async function fillItemUses(item) {
  * Tidy an Item an Actor has just received. Called by the active GM's createItem hook
  * (createItemArrivalHookHandlers in foundry/hooks/items.mjs). The item arrives unequipped, and a Lord or Retainer's
  * copy stops being stealable. A new item is filled to its maximum uses, while one moved by a transfer or combat
- * settlement keeps its uses. A second Mount is deleted, since a unit holds only one. Coinpurses are left alone.
+ * settlement keeps its uses. A second Mount is deleted, since a unit holds only one. Coinpurses, and items put back
+ * by an operation restore, are left alone.
  * @param {Item} item The created Item.
  * @param {object} [options] The creation options.
  * @returns {Promise<{ok: boolean, reasonCode: string, data?: object}>} A refused second Mount carries its reasonCode.
@@ -91,6 +93,7 @@ async function fillItemUses(item) {
 export async function normalizeCreatedItem(item, options = {}) {
   const actor = item?.parent;
   if (!isItem(item) || actor?.documentName !== 'Actor') return NOTHING_NORMALIZED;
+  if (options[RESTORE_WRITE_OPTION] === true) return NOTHING_NORMALIZED;
   if (String(item.system?.itemType ?? '') === 'Coinpurse') return NOTHING_NORMALIZED;
   if (String(item.system?.itemType ?? '') === 'Mount') {
     const held = collectionValues(actor.items)

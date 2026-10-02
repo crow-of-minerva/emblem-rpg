@@ -133,6 +133,7 @@ function onConfirm() {
 }
 
 function onCancel(context) {
+  if (cancelBelongsToFoundry(context)) return false;
   if (cancelInteraction()) return true;
   const captured = topActionWindow();
   if (captured) {
@@ -155,6 +156,25 @@ function onCancel(context) {
   globalThis.game?.user?._onUpdateTokenTargets?.();
   clearInspectedReaches();
   return true;
+}
+
+/**
+ * Whether to leave an Escape press to Foundry, which closes the window: the pointer is over an open window such as
+ * a sheet, or keyboard focus is inside one. Shift is never handed over, since Foundry reads it from the pointer
+ * event. The system's own prompts still take Cancel first.
+ */
+function cancelBelongsToFoundry(context) {
+  if (context.key !== 'Escape' || topActionWindow()) return false;
+  const selector = ':hover, :focus-within';
+  const windows = [
+    ...(globalThis.foundry?.applications?.instances?.values?.() ?? []),
+    ...Object.values(globalThis.ui?.windows ?? {})
+  ];
+  return windows.some(app => {
+    if (!app?.rendered || app.hasFrame === false) return false;
+    const element = app.element?.[0] ?? app.element; // ApplicationV1 windows keep a jQuery element
+    return element?.matches?.(selector) === true;
+  });
 }
 
 function isFormField(element) {

@@ -187,7 +187,7 @@ export class FoundryCombatStateRepository {
     const approach = projectPreCombatApproach({
       sourceToken, targetToken, targetItem, movement, movementSpent, gridSize,
       activatedItem: objectTarget || afterPreCombat ? null : sourceArt ?? sourceItem,
-      sourceChanceRolls, targetChanceRolls, effectRange
+      sourceChanceRolls, targetChanceRolls, effectRange, attackShape: sourceItem.system?.weapon?.targetShape
     });
     const { distance, engagement, inMeleeRange } = approach;
     const combatContext = recordCombatContext({ intent, sourceToken, targetToken, targetItem }, {
@@ -244,10 +244,12 @@ export class FoundryCombatStateRepository {
       engagement,
       boardDistance: approach.boardDistance,
       boardEngagement: approach.boardEngagement,
+      reachDistance: approach.reachDistance,
+      reachEngagement: approach.reachEngagement,
       effectRange,
       lineOfSightBlocked: sightBlocked(sourceToken, targetToken, sourceItem) === true,
       sourceInRange: rangeReachesEngagement(
-        source.weapon.range, approach.boardDistance, approach.boardEngagement, source.airborne
+        source.weapon.range, approach.reachDistance, approach.reachEngagement, source.airborne
       ),
       sourceRequirementsMet: requirements.ok,
       sourceRequirementCode: requirements.code,

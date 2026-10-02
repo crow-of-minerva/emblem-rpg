@@ -23,7 +23,8 @@ export function onGetEncounterSceneControls(controls) {
     icon: 'fas fa-flag',
     order: (controls.tokens?.order ?? 0) + 0.6,
     visible: true,
-    activeTool: 'advancePhase',
+    // No activeTool: every tool here is a button, and Foundry fires the active tool's onChange whenever the GM
+    // opens or leaves the group.
     tools: {
       begin: {
         name: 'begin',
@@ -56,12 +57,14 @@ export function onGetEncounterSceneControls(controls) {
   };
 }
 
-/** Redraw the encounter controls when a Scene's phase flag changes. */
+/** Rebuild the GM's encounter controls when a Scene's phase flag changes, so the right buttons show. */
 export function onEncounterPhaseChanged(scene, changes) {
   const flags = changes.flags?.[SYSTEM_ID];
   if (!flags || !(ENCOUNTER_PHASE_FLAG in flags || `-=${ENCOUNTER_PHASE_FLAG}` in flags)) return;
   if (scene.id !== activeScene()?.id) return;
-  globalThis.ui?.controls?.render?.();
+  if (!game.user.isGM) return;
+  // A plain render reuses the old tool list; reset re-runs getSceneControlButtons.
+  globalThis.ui?.controls?.render?.({ reset: true });
 }
 
 /* -------------------------------------------- */

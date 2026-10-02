@@ -11,8 +11,8 @@ import {
   phaseCameraPresentationMessage
 } from '../../../contracts/domains/combat.mjs';
 import { RESULT_CODES } from '../../../contracts/results.mjs';
-import { DAMAGE_POLICIES } from '../../../contracts/domains/damage.mjs';
-import { collectEffectDefeats, settleEffectDefeats } from '../defeat.mjs';
+import { DAMAGE_POLICIES, DEFEAT_STATUSES } from '../../../contracts/domains/damage.mjs';
+import { collectEffectDefeats, settleClaimedDefeat, settleEffectDefeats } from '../defeat.mjs';
 import { clampTickDamage, planEffectDecay, planPhaseStartTicks } from '../../../game/effects/statuses.mjs';
 import {
   nextEncounterPhase,
@@ -362,6 +362,7 @@ const TRANSITION_STAGES = Object.freeze([
  */
 async function settlePhaseTransition(context) {
   const { services, incoming, round, outgoing } = context;
+  if (!await finishStrandedDefeats(context)) return TRANSITION_FAILED;
   if (!await capturePhaseOpening(context)) return TRANSITION_FAILED;
   for (const stage of TRANSITION_STAGES) {
     if (!await services.holdsPlacedActors()) return TRANSITION_STALE;
@@ -372,6 +373,49 @@ async function settlePhaseTransition(context) {
     if (outcome.ok !== true) return outcome;
   }
   return { ok: true, phase: incoming, round, previousPhase: outgoing };
+}
+
+/**
+ * Finish a defeat an earlier command left half done: a unit still on the board at 0 HP whose Token still has its
+ * defeat pending, for example because removing the Token failed. Damage can't defeat a unit already at 0 HP, so
+ * nothing else would remove it. A unit at 0 HP with no pending defeat is left alone. A failure here is recorded and
+ * the phase change goes on, and the next change tries again.
+ */
+async function finishStrandedDefeats(context) {
+  const { services, snapshot } = context;
+  const fallen = (snapshot.units ?? []).filter(unit => unit.tokenUuid && !(Number(unit.hp) > 0));
+  if (!fallen.length) return true;
+  const pipeline = {
+    defeats: services.defeats,
+    objects: services.objects,
+    presentation: { broadcast: message => services.presentation(message) },
+    events: services.events,
+    wait: services.wait,
+    diagnostics: services.diagnostics
+  };
+  const attribution = {
+    requestId: String(services.requestId ?? ''),
+    userId: String(services.userId ?? ''),
+    operation: services.operation ?? null
+  };
+  for (const unit of fallen) {
+    try {
+      await settleClaimedDefeat(pipeline, {
+        actorUuid: unit.actorUuid,
+        tokenUuid: unit.tokenUuid,
+        actorName: unit.actorName,
+        actorType: unit.actorType,
+        defeatStatus: DEFEAT_STATUSES.CLAIMED
+      }, attribution);
+    } catch (diagnosticError) {
+      recordDiagnostic(services?.diagnostics, {
+        sourcePath: import.meta.url, error: diagnosticError, detail: 'finishStrandedDefeats'
+      });
+    }
+  }
+  // The later stages read this board, so drop any unit the sweep removed.
+  context.snapshot = await services.encounters.getSnapshot(context.sceneUuid);
+  return Boolean(context.snapshot);
 }
 
 /**
@@ -406,7 +450,8 @@ const OUTGOING_DECAY_FLAGS = Object.freeze([ENCOUNTER_DECAY_FLAGS.PHASE_END, ENC
 /**
  * Every unit outside the outgoing side first sheds the effects that end with any phase, read from the snapshot the
  * change opened on before any phase-end passive writes. The outgoing side then decays both kinds in one plan and runs
- * its onPhaseEnd passives, unit by unit. An Actor standing behind several Tokens decays once.
+ * its onPhaseEnd passives, unit by unit, each unit's decay planned from its effects as they stand after the passives
+ * before it. An Actor standing behind several Tokens decays once.
  */
 async function closeOutPhase(context) {
   const { snapshot, outgoing } = context;
@@ -417,14 +462,16 @@ async function closeOutPhase(context) {
     decayed.add(unit.actorUuid);
     if (!await settleUnitDecay(unit, ENCOUNTER_DECAY_FLAGS.ANY_PHASE_END, context)) return TRANSITION_FAILED;
   }
+  const board = decayBoard(snapshot);
   const outgoingDecayed = new Set();
   for (const unit of participants) {
     if (!outgoingDecayed.has(unit.actorUuid)) {
       outgoingDecayed.add(unit.actorUuid);
-      if (!await settleUnitDecay(unit, OUTGOING_DECAY_FLAGS, context)) return TRANSITION_FAILED;
+      if (!await settleCurrentDecay(unit, OUTGOING_DECAY_FLAGS, board, context)) return TRANSITION_FAILED;
     }
     const passives = await settleUnitPassive(unit, 'onPhaseEnd', snapshot, context);
     if (!passives.ok) return passives;
+    markPassiveRan(unit, board);
   }
   return TRANSITION_OK;
 }
@@ -491,7 +538,8 @@ async function armIncomingTurns(context) {
 }
 
 /**
- * Show the incoming phase banner through presentation, then run passives and phase-begin decay.
+ * Show the incoming phase banner through presentation, then run passives and phase-begin decay. Each unit's decay
+ * is planned from its effects as they stand after its passives. An Actor standing behind several Tokens decays once.
  * settleIncomingTicks handles damage afterward.
  */
 async function openIncomingPhase(context) {
@@ -500,10 +548,15 @@ async function openIncomingPhase(context) {
   if (!opening) return TRANSITION_FAILED;
   await announcePhase(services, incoming);
   await services.wait(ENCOUNTER_PHASE_TIMING.bannerHold);
+  const board = decayBoard(opening);
+  const decayed = new Set();
   for (const unit of phaseParticipants(opening.units, incoming)) {
     const passives = await settleUnitPassive(unit, 'onPhaseBegin', opening, context);
     if (!passives.ok) return passives;
-    if (!await settleUnitDecay(unit, ENCOUNTER_DECAY_FLAGS.PHASE_BEGIN, context)) return TRANSITION_FAILED;
+    markPassiveRan(unit, board);
+    if (decayed.has(unit.actorUuid)) continue;
+    decayed.add(unit.actorUuid);
+    if (!await settleCurrentDecay(unit, ENCOUNTER_DECAY_FLAGS.PHASE_BEGIN, board, context)) return TRANSITION_FAILED;
   }
   return TRANSITION_OK;
 }
@@ -553,7 +606,10 @@ async function runPhaseTicks(context) {
     if (!owed) return TRANSITION_FAILED;
     if (!owed.length) continue;
     if (!await applyPhaseStartTicks(owed, context)) return TRANSITION_FAILED;
-    if (!await settlePhaseStartHazards(owed, context)) return TRANSITION_FAILED;
+    // A tick may have defeated a unit, so the hazards land on the units still standing.
+    const standing = await currentTickUnits(owed, context);
+    if (!standing) return TRANSITION_FAILED;
+    if (!await settlePhaseStartHazards(standing, context)) return TRANSITION_FAILED;
   }
   if (incoming === ENCOUNTER_PHASES.PLAYER) await focusPhaseStart(services);
   return TRANSITION_OK;
@@ -586,6 +642,29 @@ async function settleUnitDecay(unit, flagKeys, context) {
   const plan = planUnitDecay(unit.effects ?? [], [flagKeys].flat());
   if (!plan.removeIds.length && !plan.durations.length && !plan.stacks.length) return true;
   return await services.encounters.applyEffectDecay(unit.actorUuid, plan, services.operation ?? null) === true;
+}
+
+/**
+ * The board a stage's decay reads. A phase passive can remove, refresh or add effects on any unit, so once one has
+ * run the next decay reads the board again.
+ */
+function decayBoard(snapshot) {
+  return { current: snapshot, stale: false };
+}
+
+function markPassiveRan(unit, board) {
+  if ((unit.passiveEntries ?? []).length) board.stale = true;
+}
+
+/** Decay one unit as the board shows it now. A unit no longer on the board has nothing left to decay. */
+async function settleCurrentDecay(unit, flagKeys, board, context) {
+  if (board.stale) {
+    board.current = await context.services.encounters.getSnapshot(context.sceneUuid);
+    board.stale = false;
+    if (!board.current) return false;
+  }
+  const current = (board.current.units ?? []).find(entry => entry.actorUuid === unit.actorUuid);
+  return current ? settleUnitDecay(current, flagKeys, context) : true;
 }
 
 /** Merge planEffectDecay's plan for each flag, so an effect carrying several of them counts down once. */
@@ -688,7 +767,10 @@ async function applyPhaseStartTicks(group, context) {
   return true;
 }
 
-/** Charge one unit's ticks in order, shedding each tick's stacks once its damage has landed. */
+/**
+ * Charge one unit's ticks in order, shedding each tick's stacks once its damage has landed. A tick that defeats the
+ * unit ends its charges, since its Token is already gone.
+ */
 async function settleUnitTicks(unit, ticks, context) {
   const { services } = context;
   let remaining = Math.max(0, Number(unit.hp) || 0);
@@ -696,6 +778,7 @@ async function settleUnitTicks(unit, ticks, context) {
     if (index > 0) await services.wait(ENCOUNTER_PHASE_TIMING.tickEffectStagger);
     const charged = await chargeUnitTick(unit, tick, remaining, context);
     if (!charged.ok) return false;
+    if (charged.defeated) return true;
     remaining = charged.remaining;
     if (tick.shed
       && await services.encounters.applyEffectDecay(unit.actorUuid, tick.shed, services.operation ?? null) !== true) {
@@ -724,6 +807,7 @@ async function chargeUnitTick(unit, tick, remaining, context) {
   if (result?.ok === false) return { ok: false, remaining };
   return {
     ok: true,
+    defeated: result?.data?.defeated === true,
     remaining: Number.isFinite(result?.data?.hpAfter) ? result.data.hpAfter : Math.max(0, remaining - amount)
   };
 }

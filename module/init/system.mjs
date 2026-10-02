@@ -1311,7 +1311,11 @@ export function createSystemRuntime() {
     await encounterHooks.flushDeferred();
     await encounterHooks.reconcileObjectives();
     equipmentEffectHooks.onReady();
-    syncRoundWarning();
+    try {
+      syncRoundWarning();
+    } catch (error) {
+      recordDiagnostic(diagnostics, { sourcePath: import.meta.url, error, detail: 'startup-round-warning' });
+    }
     syncPhaseMusic();
     modifierHooks.onReady();
     visionHooks.onReadyVision();

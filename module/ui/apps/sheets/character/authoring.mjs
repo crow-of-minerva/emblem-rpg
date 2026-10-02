@@ -21,19 +21,19 @@ const notifications = new NotificationService({ diagnostics: new FoundryDiagnost
 const DEFAULT_CLASS_TEMPLATES = Object.freeze({
   Novice: {
     name: 'Novice', tier: 'Novice',
-    baseStats: { hp: 20, stn: 1, mvmt: 5, bld: 5, mgt: 4, agi: 4, tqn: 4, wit: 4, cha: 4, def: 0, res: 0, spd: 0, eva: 8, acc: 0, crit: 0 },
+    baseStats: { hp: 20, stn: 1, mov: 5, bld: 5, mgt: 4, agi: 4, tqn: 4, wit: 4, cha: 4, def: 0, res: 0, spd: 0, eva: 8, acc: 0, crit: 0 },
     baseGrowths: { hp: 25, mgt: 25, agi: 25, tqn: 25, wit: 25, cha: 25, def: 25, res: 25 },
     baseCaps: { hp: 40, mgt: 10, agi: 10, tqn: 10, wit: 10, cha: 10, def: 10, res: 10 }
   },
   Intermediate: {
     name: 'Intermediate', tier: 'Intermediate',
-    baseStats: { hp: 30, stn: 2, mvmt: 5, bld: 6, mgt: 6, agi: 6, tqn: 6, wit: 6, cha: 6, def: 0, res: 0, spd: 2, eva: 10, acc: 2, crit: 0 },
+    baseStats: { hp: 30, stn: 2, mov: 5, bld: 6, mgt: 6, agi: 6, tqn: 6, wit: 6, cha: 6, def: 0, res: 0, spd: 2, eva: 10, acc: 2, crit: 0 },
     baseGrowths: { hp: 30, mgt: 30, agi: 30, tqn: 30, wit: 30, cha: 30, def: 30, res: 30 },
     baseCaps: { hp: 50, mgt: 15, agi: 15, tqn: 15, wit: 15, cha: 15, def: 15, res: 15 }
   },
   Advanced: {
     name: 'Advanced', tier: 'Advanced',
-    baseStats: { hp: 40, stn: 3, mvmt: 6, bld: 8, mgt: 8, agi: 8, tqn: 8, wit: 8, cha: 8, def: 0, res: 0, spd: 3, eva: 12, acc: 3, crit: 0 },
+    baseStats: { hp: 40, stn: 3, mov: 6, bld: 8, mgt: 8, agi: 8, tqn: 8, wit: 8, cha: 8, def: 0, res: 0, spd: 3, eva: 12, acc: 3, crit: 0 },
     baseGrowths: { hp: 35, mgt: 35, agi: 35, tqn: 35, wit: 35, cha: 35, def: 35, res: 35 },
     baseCaps: { hp: 60, mgt: 20, agi: 20, tqn: 20, wit: 20, cha: 20, def: 20, res: 20 }
   }

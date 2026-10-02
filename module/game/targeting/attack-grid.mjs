@@ -264,6 +264,24 @@ function chebyshevDistance(targetX, targetY, sourceCells) {
   return nearest;
 }
 
+/**
+ * Squares between two footprints, measured the way the attack grid measures this shape: diagonally for Square and
+ * Cone, in straight steps otherwise. The exchange checks a weapon's range with it, so it agrees with the grid.
+ * @param {string} shape The attacking weapon's targeting shape.
+ * @param {{x: number, y: number, width: number, height: number}} source The attacker's footprint.
+ * @param {{x: number, y: number, width: number, height: number}} target The target's footprint.
+ * @returns {number}
+ */
+export function attackShapeDistance(shape, source, target) {
+  const distance = usesChebyshev(normalizeShape(shape)) ? chebyshevDistance : manhattanDistance;
+  const sourceCells = footprintCells(source.x, source.y, source.width, source.height);
+  let nearest = Infinity;
+  for (const cell of footprintCells(target.x, target.y, target.width, target.height)) {
+    nearest = Math.min(nearest, distance(cell.x, cell.y, sourceCells));
+  }
+  return nearest;
+}
+
 /* -------------------------------------------- */
 /*  Directional targeting                       */
 /* -------------------------------------------- */

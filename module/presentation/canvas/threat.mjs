@@ -235,8 +235,21 @@ export class ThreatIndicators {
     this.#compulsionSources.clear();
   }
 
-  /** One animation frame: settle the board if it is quiet, advance every line, redraw what changed. */
+  /**
+   * A ticker callback may not throw: an exception there stops Foundry's canvas ticker for every other listener.
+   * On an error, log it and take the lines down until a unit is selected again.
+   */
   tick(frame) {
+    try {
+      this.#frame(frame);
+    } catch (error) {
+      recordDiagnostic(this.diagnostics, { sourcePath: import.meta.url, error, detail: 'tick' });
+      this.stop();
+    }
+  }
+
+  /** One animation frame: settle the board if it is quiet, advance every line, redraw what changed. */
+  #frame(frame) {
     if (!this.#glow || this.#glow.destroyed || !this.#core || this.#core.destroyed) return this.stop();
     const active = Boolean(this.#selected) && !this.#selected.destroyed && this.#encounterActive()
       && (this.#viewOnly || this.#selected.controlled === true);
@@ -498,7 +511,7 @@ export class ThreatIndicators {
     const request = new AbortController();
     this.#intentRequest = request;
     const enemy = this.#selected;
-    Promise.resolve(this.#intentProvider(selectedUuid, { signal: request.signal }))
+    new Promise(resolve => resolve(this.#intentProvider(selectedUuid, { signal: request.signal })))
       .then(intent => {
         if (this.#intentRequest !== request) return;
         if (this.#selectedUuid() !== selectedUuid || !this.#intentMode()) return;

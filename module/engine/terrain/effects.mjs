@@ -50,7 +50,8 @@ export class TerrainPhaseService {
   }
 
   /**
-   * Apply healing before hazards at phase start. A failed impact stops the phase change, which then restores.
+   * Apply healing before hazards at phase start. A failed impact stops the phase change, which then restores. Once a
+   * hazard defeats a unit, the rest of its hazards are skipped.
    * @param {object[]} units Projected phase participants carrying their scanned terrain facts.
    * @returns {Promise<{ok: boolean, applied: number}>}
    */
@@ -75,6 +76,8 @@ export class TerrainPhaseService {
           policy: DAMAGE_POLICIES.WEAPON, canKillPlayer: damage.canKillPlayer });
         if (dealt?.ok === false) return { ok: false, applied };
         applied += 1;
+        // A defeated unit's Token is already gone, so its remaining damage is skipped.
+        if (dealt?.data?.defeated === true) break;
       }
     }
     return { ok: true, applied };

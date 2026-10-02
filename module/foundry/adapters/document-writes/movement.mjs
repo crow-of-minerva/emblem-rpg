@@ -181,8 +181,8 @@ export class FoundryMovementRepository {
       severity: DIAGNOSTIC_SEVERITIES.WARNING,
       detail: `walk did not settle: ${snapshot.tokenUuid} placed at ${path.at(-1).x},${path.at(-1).y}`
     }));
-    await token.update({ ...destination }, movementRestoreOptions());
-    return { arrived: false, placed: true };
+    const placed = await token.move({ ...destination, action: 'displace' }, movementRestoreOptions());
+    return { arrived: false, placed: placed !== false && samePosition(token._source, destination) };
   }
 
   /** Take the board lock and record where the move starts (its anchor). A holder resuming their own plan keeps it. */
@@ -567,8 +567,10 @@ export class FoundryMovementRepository {
       settings: [USER_LOCK_SETTING]
     });
     if (displaced) {
-      await token.update({ ...snapshot.anchorPosition }, movementRestoreOptions());
-      if (!samePosition(token, snapshot.anchorPosition)) throw new Error('movement.stale-anchor-refused');
+      const moved = await token.move({ ...snapshot.anchorPosition, action: 'displace' }, movementRestoreOptions());
+      if (moved === false || !samePosition(token, snapshot.anchorPosition)) {
+        throw new Error('movement.stale-anchor-refused');
+      }
     }
     if (closes) {
       const changes = {
@@ -606,7 +608,9 @@ export class FoundryMovementRepository {
       for (const token of planning) {
         const record = scenePlanRecord(token);
         records.push(record);
-        await token.update({ ...record.anchor }, movementRestoreOptions());
+        if (samePosition(token, record.anchor)) continue;
+        const moved = await token.move({ ...record.anchor, action: 'displace' }, movementRestoreOptions());
+        if (moved === false || !samePosition(token, record.anchor)) throw new Error('movement.scene-anchor-refused');
       }
       if (previousLock?.tokenUuid) await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
     } catch (diagnosticError) {

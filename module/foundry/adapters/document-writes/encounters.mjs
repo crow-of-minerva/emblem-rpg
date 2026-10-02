@@ -163,14 +163,18 @@ export class FoundryEncounterRepository {
     }
   }
 
-  /** Apply one unit's planned phase decay: removals, countdowns, and shed stacks. */
+  /**
+   * Apply one unit's planned phase decay: removals, countdowns, and shed stacks. An effect that is already gone is
+   * skipped.
+   */
   async applyEffectDecay(actorUuid, plan, operation = null) {
     const actor = await resolveActor(actorUuid);
     if (!actor) return false;
     try {
       const effects = collectionValues(actor.effects);
       const byId = id => effects.find(candidate => candidate.id === id) ?? null;
-      const updates = plan.durations.map(entry => ({
+      const removeIds = plan.removeIds.filter(byId);
+      const updates = plan.durations.filter(entry => byId(entry.id)).map(entry => ({
         _id: entry.id,
         [`flags.${SYSTEM_ID}.duration`]: entry.duration
       }));
@@ -184,12 +188,10 @@ export class FoundryEncounterRepository {
         });
       }
       await operation?.capture({
-        deleting: plan.removeIds.map(byId).filter(Boolean),
-        documents: updates.map(entry => byId(entry._id)).filter(Boolean)
+        deleting: removeIds.map(byId),
+        documents: updates.map(entry => byId(entry._id))
       });
-      if (plan.removeIds.length) {
-        await actor.deleteEmbeddedDocuments('ActiveEffect', [...plan.removeIds], encounterOptions());
-      }
+      if (removeIds.length) await actor.deleteEmbeddedDocuments('ActiveEffect', removeIds, encounterOptions());
       if (updates.length) await actor.updateEmbeddedDocuments('ActiveEffect', updates, encounterOptions());
       return true;
     } catch (diagnosticError) {

@@ -78,7 +78,7 @@ import { EmblemSheetMixin, canCurrentUserAuthor } from '../base.mjs';
 import { CONVOY_GOLD_DRAG_TYPE } from '../../../../contracts/domains/economy.mjs';
 import { exposesLootToParty } from '../../../../game/economy/trade.mjs';
 import { isDroppableItem } from '../../../../game/objects/rules.mjs';
-import { readDropPayload } from '../../../../foundry/adapters/services/host.mjs';
+import { readDropPayload, resolveItem } from '../../../../foundry/adapters/services/host.mjs';
 import { reportFoundryError, FoundryDiagnostics, reportFoundryProbe } from '../../../../foundry/adapters/services/diagnostics.mjs';
 
 /* -------------------------------------------- */
@@ -1251,6 +1251,10 @@ function inventoryPageTabs(pages, key, title, icon) {
 }
 
 async function resolveDroppedItem(payload) {
+  // Look the Item up by uuid first: the inline copy in the payload has no parent, so a drag from an unlinked
+  // token's sheet would otherwise be traced back to the world Actor.
+  const owned = await resolveItem(String(payload.uuid ?? ''));
+  if (owned) return owned;
   try {
     return await Item.implementation.fromDropData(payload);
   } catch (error) {
