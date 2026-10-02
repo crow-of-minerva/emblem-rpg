@@ -1,6 +1,7 @@
 /** @layer game/combat */
 import {
-  DAMAGE_POLICIES, DEFEAT_STATUSES, isDamagePolicy, MAGICAL_DAMAGE_TYPES, PHYSICAL_DAMAGE_TYPES, STANCE_BREAK_OUTCOMES
+  DAMAGE_POLICIES, DAMAGE_TYPES, DEFEAT_STATUSES, isDamagePolicy, MAGICAL_DAMAGE_TYPES, PHYSICAL_DAMAGE_TYPES,
+  STANCE_BREAK_OUTCOMES, UNTYPED_DAMAGE_TYPE
 } from '../../contracts/domains/damage.mjs';
 import { OWNED_UNIT_FACTIONS } from '../../contracts/domains/characters.mjs';
 import { CRITICAL_MULTIPLIER_BASE } from '../character/rules.mjs';
@@ -12,6 +13,17 @@ import { finite, finite as finiteNumber, roundToHalf, whole } from '../../lib/co
 const PHYSICAL_TYPES = new Set(PHYSICAL_DAMAGE_TYPES);
 const MAGICAL_TYPES = new Set(MAGICAL_DAMAGE_TYPES);
 const PLAYER_UNIT_TYPES = new Set(OWNED_UNIT_FACTIONS);
+
+/**
+ * The damage type an effect step's damage deals: a known type as written, anything else as untyped ('none'), which
+ * Defense reduces like a physical hit. An unknown type would otherwise go through with no reduction at all.
+ * @param {unknown} value The step's authored `dmgType`.
+ * @returns {string}
+ */
+export function effectDamageType(value) {
+  const type = typeof value === 'string' ? value : '';
+  return DAMAGE_TYPES.includes(type) ? type : UNTYPED_DAMAGE_TYPE;
+}
 
 /** A defeat no heal or Extra Life undid: only this fires onKill and onDeath and counts the unit as slain. */
 export function isConfirmedKill(defeatStatus) {

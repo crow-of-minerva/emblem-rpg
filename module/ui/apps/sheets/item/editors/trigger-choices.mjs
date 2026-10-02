@@ -103,8 +103,9 @@ export function referenceOffered(value, trigger, { castArea = false } = {}) {
 
 /**
  * Fit a new step's starting values to a trigger, in place, through its branches. With no other unit, a step names
- * self instead of `target` and a spawn starts on self's square. With no cast area, a terrain edit starts on self's
- * square. On a pre-combat trigger a move starts as the one move allowed there: self, by rule, next to the target.
+ * self instead of `target`, a spawn starts on self's square, and a push or pull, which would then push self from
+ * self, starts as a shift instead. With no cast area, a terrain edit starts on self's square. On a pre-combat
+ * trigger a move starts as the one move allowed there: self, by rule, next to the target.
  * @param {object} step           A step just made by the add-step picker.
  * @param {string} trigger        The effect's trigger.
  * @returns {object}              The same step.
@@ -117,6 +118,11 @@ export function fitStepToTrigger(step, trigger) {
       if (step[key] === 'target') step[key] = 'self';
     }
     if (step.kind === 'spawnToken' && step.location === 'targetLocation') step.location = 'self';
+    if (step.kind === 'moveToken' && ['push', 'pull'].includes(step.mode) && step.pair === step.target) {
+      delete step.pair;
+      delete step.distance;
+      Object.assign(step, { mode: 'shift', dx: '1', dy: '0' });
+    }
   }
   if (step.kind === 'terrainEdit' && step.target === undefined && cap.castArea === 'none') step.target = 'self';
   if (step.kind === 'moveToken' && trigger === 'preCombat') {

@@ -28,8 +28,17 @@ export const STEP_KINDS = Object.freeze([
   'unequip',
   'guard',
   'terrainEdit',
-  'if', 'wait', 'expr'
+  'if', 'wait'
 ]);
+
+/**
+ * The longest an effect may pause, in milliseconds: an entry's delay, a step's delay or a wait step. Commands run
+ * one at a time on the host client, so a long pause holds up the whole table.
+ */
+export const MAX_EFFECT_DELAY_MS = 5000;
+
+/** The largest radius, in squares, an area target may have. */
+export const MAX_AREA_RADIUS = 20;
 
 /** Hazard types a `terrainEdit` step may paint onto a tile. Healing is a hazard slot that ticks upward. */
 export const TERRAIN_EDIT_HAZARD_TYPES = Object.freeze(['healing', ...DAMAGE_TYPES]);
@@ -91,7 +100,7 @@ const STEP_PHRASES = Object.freeze({
   floatingText: 'shows floating text', moveToken: 'moves a token', spawnToken: 'spawns a token',
   restoreAction: 'restores actions', playResist: 'shows the resist popup', playVoice: 'plays a voice line',
   refreshPathfinding: 'refreshes pathfinding', unequip: 'unequips a weapon', guard: 'starts a guard',
-  terrainEdit: 'edits terrain', if: 'checks a condition', wait: 'waits', expr: 'runs an expression'
+  terrainEdit: 'edits terrain', if: 'checks a condition', wait: 'waits'
 });
 
 /** How each trigger reads in a message, as in `That is not allowed on an evade trigger`. */
@@ -223,15 +232,18 @@ export function effectCarrier(item) {
 
 /**
  * The codes a step returns when it was authored for a moment that can't give it what it needs, or when the board
- * left it nothing to act on: no preset, no unit to move or to move against, no square to land on, no Actor or square
- * to summon, no Guard partner. The Foundry writers return each one before the step writes anything.
+ * left it nothing to act on: no preset, no unit to move or to move against, no square to land on, a landing square
+ * that is taken or walled off, no Actor or square to summon, no Guard partner, no linked status for a faction change.
+ * The Foundry writers return each one before the step writes anything.
  */
 export const EFFECT_STEP_PRECONDITION_FAILURES = Object.freeze({
   PRESET_MISSING: 'effect.preset-missing',
+  FACTION_STATUS_MISSING: 'effect.faction-status-missing',
   MOVE_TARGET_MISSING: 'effect.move-target-missing',
   MOVE_PAIR_MISSING: 'effect.move-pair-missing',
   MOVE_MODE_UNKNOWN: 'effect.move-mode-unknown',
   MOVE_DESTINATION_MISSING: 'effect.move-destination-missing',
+  MOVE_BLOCKED: 'effect.move-blocked',
   SPAWN_SOURCE_MISSING: 'effect.spawn-source-missing',
   SPAWN_LOCATION_MISSING: 'effect.spawn-location-missing',
   GUARD_TARGET_MISSING: 'effect.guard-target-missing'
@@ -280,7 +292,7 @@ const STEP_KEYS_BY_KIND = {
   heal:          new Set([...SHARED_KEYS, 'target', 'formula', 'stnAmount']),
   modShield:     new Set([...SHARED_KEYS, 'target', 'formula', 'cap']),
   applyEffect:   new Set([...SHARED_KEYS, 'target', 'preset', 'customData', 'linkAnimationTag', 'durationPhases', 'durationStacks']),
-  setFaction:    new Set([...SHARED_KEYS, 'target', 'actorType', 'grantOwnership']),
+  setFaction:    new Set([...SHARED_KEYS, 'target', 'actorType', 'grantOwnership', 'linkStatusTag']),
   removeEffect:  new Set([...SHARED_KEYS, 'target', 'name', 'scope', 'placedByActor', 'excludeTarget', 'dispelHarmful', 'dispelBeneficial']),
   animation:     new Set([...SHARED_KEYS, 'animation', 'persistent', 'tag', 'attachToEffectName', 'attachTarget', 'await']),
   floatingText:  new Set([...SHARED_KEYS, 'target', 'text', 'color', 'fontSize', 'offsetY', 'durationMs']),
@@ -302,8 +314,7 @@ const STEP_KEYS_BY_KIND = {
     'lightLuminosity', 'lightAttenuation', 'lightSaturation', 'lightContrast', 'lightShadows'
   ]),
   if:            new Set([...SHARED_KEYS, 'condition', 'then', 'else']),
-  wait:          new Set([...SHARED_KEYS, 'ms']),
-  expr:          new Set([...SHARED_KEYS, 'expr'])
+  wait:          new Set([...SHARED_KEYS, 'ms'])
 };
 
 /** Faction filters an area token reference may narrow to. */
@@ -340,6 +351,30 @@ function attachesToSpawnedToken(anim) {
 export function isPopulated(action) {
   if (!isPlainObject(action)) return false;
   return Array.isArray(action.steps) && action.steps.length > 0;
+}
+
+/** The end of the sentence for a pause longer than MAX_EFFECT_DELAY_MS. */
+const TOO_LONG = `longer than 5 seconds. Keep it to ${MAX_EFFECT_DELAY_MS} milliseconds or less`;
+
+/** Whether a delay or wait is a number over MAX_EFFECT_DELAY_MS. A wait written as a dice formula is not checked. */
+function overDelayCap(value) {
+  if (value === undefined || value === null || value === '') return false;
+  const n = Number(value);
+  return Number.isFinite(n) && n > MAX_EFFECT_DELAY_MS;
+}
+
+/**
+ * Check the radius and faction filter of a step's area target. A missing radius counts as 1 and a missing faction as
+ * every unit.
+ */
+function validateArea(area, fail) {
+  if (area.radius !== undefined
+      && !(Number.isInteger(area.radius) && area.radius >= 1 && area.radius <= MAX_AREA_RADIUS)) {
+    fail(`has an area whose radius is not a whole number from 1 to ${MAX_AREA_RADIUS}`);
+  }
+  if (area.faction !== undefined && !AREA_FACTIONS.includes(area.faction)) {
+    fail('has an area that picks units by a faction the system does not know');
+  }
 }
 
 /** Whether a value addresses a token: a symbolic name, an expression, or an area query. */
@@ -385,11 +420,14 @@ function validateStep(step, path) {
   for (const key of Object.keys(step)) {
     if (!allowed.has(key)) fail(`has a setting called ${key} that this kind of step does not use`);
   }
+  if (overDelayCap(step.delay)) fail(`has a delay ${TOO_LONG}`);
+  if (isPlainObject(step.target?.area)) validateArea(step.target.area, fail);
   switch (step.kind) {
     case 'damage':
       needsUnit();
       if (typeof step.formula !== 'string' || step.formula.trim() === '') fail('has no damage formula');
       if (typeof step.dmgType !== 'string' || step.dmgType.trim() === '') fail('has no damage type');
+      else if (!DAMAGE_TYPES.includes(step.dmgType)) fail('deals a damage type the system does not know');
       break;
     case 'heal':
       needsUnit();
@@ -401,7 +439,8 @@ function validateStep(step, path) {
       break;
     case 'applyEffect':
       needsUnit();
-      if (step.preset && !EFFECT_PRESETS.includes(step.preset)) fail('applies a status the system does not know');
+      if (!step.preset) fail('does not say which status to apply');
+      else if (!EFFECT_PRESETS.includes(step.preset)) fail('applies a status the system does not know');
       if (step.preset === 'custom' && !isPlainObject(step.customData)) {
         fail('applies a custom status but has no custom status data');
       }
@@ -416,10 +455,18 @@ function validateStep(step, path) {
     case 'setFaction':
       needsUnit();
       if (!ACTOR_TYPES.includes(step.actorType)) fail(`needs a faction, one of ${oneOf(ACTOR_TYPES)}`);
+      if (!(typeof step.linkStatusTag === 'string' && step.linkStatusTag.trim() !== '')) {
+        fail('changes a faction but is not tied to a status. Give it the linked animation tag of an apply status '
+          + 'step before it, so the unit changes back when that status ends');
+      }
       break;
     case 'removeEffect':
       // A global removal sweeps the whole Scene, so EffectExecutionService doesn't read a target.
       if (step.scope !== 'global') needsUnit();
+      if (!(typeof step.name === 'string' && step.name.trim() !== '')
+          && step.dispelHarmful !== true && step.dispelBeneficial !== true) {
+        fail('does not say which status to remove. Give a status name, or tick dispel harmful or dispel beneficial');
+      }
       break;
     case 'animation':
       if (!isPlainObject(step.animation)) {
@@ -445,6 +492,15 @@ function validateStep(step, path) {
         errors.push(...validateGeometry(step.geometry, { context: 'step', path: `${path}.geometry` }));
       }
       if (step.mode === 'teleport' && step.location === undefined) fail('teleports but has no place to go');
+      if (step.mode === 'push' && typeof step.pair === 'string' && step.pair === step.target) {
+        fail('pushes a unit away from itself. Choose another unit to push it from');
+      }
+      if (step.mode === 'pull' && typeof step.pair === 'string' && step.pair === step.target) {
+        fail('pulls a unit toward itself. Choose another unit to pull it toward');
+      }
+      if (step.mode === 'swap' && typeof step.pair === 'string' && step.pair === step.target) {
+        fail('swaps a unit with itself. Choose another unit to swap with');
+      }
       if (step.mode === 'shift') {
         if (step.dx === undefined && step.dy === undefined) fail('shifts but sets neither dx nor dy');
       }
@@ -498,9 +554,10 @@ function validateStep(step, path) {
           fail(`has a ${k.replace(/([A-Z])/g, ' $1').toLowerCase()} setting that is not a number`);
         }
       }
-      if (step.duration !== undefined && Number(step.duration) < 0) {
-        fail('needs a duration of 0 or more. 0 is permanent');
-      }
+      if (step.duration === undefined) fail('has no duration. Use 0 for an edit that is permanent');
+      else if (Number(step.duration) < 0) fail('needs a duration of 0 or more. 0 is permanent');
+      if (step.variable !== undefined && !(Number(step.variable) > 0)) fail('needs a hazard amount above 0');
+      if (step.mov !== undefined && !(Number(step.mov) >= 1)) fail('needs a movement cost of 1 or more');
       if (step.effect !== undefined && step.effect !== '' && !TERRAIN_EDIT_HAZARD_TYPES.includes(step.effect)) {
         fail('paints a hazard the system does not know');
       }
@@ -531,9 +588,7 @@ function validateStep(step, path) {
     }
     case 'wait':
       if (typeof step.ms !== 'number' && typeof step.ms !== 'string') fail('does not say how long to wait');
-      break;
-    case 'expr':
-      if (typeof step.expr !== 'string' || step.expr.trim() === '') fail('has no expression to run');
+      else if (overDelayCap(step.ms)) fail(`waits ${TOO_LONG}`);
       break;
   }
   return errors;
@@ -564,6 +619,8 @@ export function validateEffectEntry(entry, options = {}) {
   validateStringList(entry.itemUuids, 'item links', errors);
   if (entry.delayMs !== undefined && (!Number.isFinite(Number(entry.delayMs)) || Number(entry.delayMs) < 0)) {
     fail('needs a delay of 0 or more');
+  } else if (overDelayCap(entry.delayMs)) {
+    fail(`has a delay ${TOO_LONG}`);
   }
   if (entry.tokenAwaits !== undefined && typeof entry.tokenAwaits !== 'boolean') {
     fail('has a token wait setting that is not on or off');
@@ -580,6 +637,8 @@ export function validateEffectEntry(entry, options = {}) {
     errors.push(...rules.errors.filter(error => !errors.includes(error)));
     warnings.push(...rules.warnings);
   });
+  validatePromptPlacement(entry, path, errors);
+  validateFactionLinks(entry, path, errors);
   if (carrier && EFFECT_TRIGGER_KEYS.includes(entry.trigger)) {
     validateEntryContext(entry, carrier, path, { errors, warnings });
   }
@@ -599,7 +658,7 @@ const CORPSE_STEPS = new Set(['heal', 'applyEffect', 'moveToken', 'setFaction'])
 const MID_EXCHANGE_FORBIDDEN = new Set(['moveToken', 'setFaction', 'unequip', 'restoreAction']);
 /** Steps that only show something, so running them once per target is harmless. */
 const DISPLAY_STEPS = new Set([
-  'animation', 'floatingText', 'playVoice', 'playResist', 'refreshPathfinding', 'wait', 'expr'
+  'animation', 'floatingText', 'playVoice', 'playResist', 'refreshPathfinding', 'wait'
 ]);
 
 /** Run the carrier rules on one entry, adding to `errors` and `warnings`. */
@@ -805,6 +864,59 @@ function checkStep(step, at, topLevel, { trigger, cap, location, multiTarget }, 
 /** The one preCombat move the attack preview predicts: a top-level move of self next to the target. */
 function isPredictedPreCombatMove(step, topLevel, geometry) {
   return step.kind === 'moveToken' && topLevel && step.target === 'self' && geometry?.anchor === 'target';
+}
+
+/**
+ * The player is asked to pick a square only for the first move by rule with that pick at the top level of an
+ * activation entry, before the item is confirmed (findPromptGeometryStep). Anywhere else nobody is asked.
+ */
+function validatePromptPlacement(entry, path, errors) {
+  let asked = false;
+  walkSteps(entry.action?.steps, `${path}.action.steps`, true, (step, at, topLevel) => {
+    if (step.kind !== 'moveToken' || step.mode !== 'terrainGeometry' || step.geometry?.pick !== 'prompt') return;
+    const place = placeOf(`${at}.geometry.pick`);
+    if (entry.trigger !== 'onActivation' || !topLevel) {
+      errors.push(say(place, 'lets the player pick the square, which only works on a top level step of an activation '
+        + 'trigger. Choose nearest, farthest or random'));
+    } else if (asked) {
+      errors.push(say(place, 'lets the player pick the square, but only the first such step in an effect asks. '
+        + 'Choose nearest, farthest or random'));
+    }
+    if (entry.trigger === 'onActivation' && topLevel) asked = true;
+  });
+}
+
+/**
+ * A faction change lasts only while a status lasts, so each change faction step must name, as its linked status
+ * tag, the linked animation tag of an apply status step that comes before it in this entry and acts on the same
+ * unit. A step with no tag is reported by validateStep.
+ */
+function validateFactionLinks(entry, path, errors) {
+  const statusTargets = new Map();
+  walkSteps(entry.action?.steps, `${path}.action.steps`, true, (step, at) => {
+    if (step.kind === 'applyEffect' && typeof step.linkAnimationTag === 'string' && step.linkAnimationTag) {
+      const targets = statusTargets.get(step.linkAnimationTag) ?? [];
+      statusTargets.set(step.linkAnimationTag, [...targets, sameUnitKey(step.target)]);
+      return;
+    }
+    if (step.kind !== 'setFaction' || typeof step.linkStatusTag !== 'string' || !step.linkStatusTag.trim()) return;
+    const targets = statusTargets.get(step.linkStatusTag);
+    const place = placeOf(`${at}.linkStatusTag`);
+    if (!targets) {
+      errors.push(say(place, 'is tied to a status, but no apply status step before it has that linked animation tag'));
+    } else if (!targets.includes(sameUnitKey(step.target))) {
+      errors.push(say(place, 'is tied to a status put on a different unit. Give both steps the same unit'));
+    }
+  });
+}
+
+/** A token reference as text, so two steps naming the same unit or the same area compare equal. */
+function sameUnitKey(ref) {
+  if (!isPlainObject(ref)) return JSON.stringify(ref ?? null);
+  const sorted = value => isPlainObject(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])]))
+    : value;
+  return JSON.stringify(sorted(ref));
 }
 
 /** A list of item names or links must be a list of text. `words` names it in the message. */

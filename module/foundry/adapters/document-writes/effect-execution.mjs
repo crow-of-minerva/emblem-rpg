@@ -4,18 +4,21 @@ import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import {
   DRIVEN_WALK_TIMING, FORCED_STEP_OUTCOMES, TERRAIN_EDIT_RECORDS_FLAG, TERRAIN_GRID_FLAG, terrainKey
 } from '../../../contracts/domains/terrain.mjs';
-import { resolveForcedStep } from '../../../game/movement/pathfinding.mjs';
+import { resolveForcedStep, resolveLanding } from '../../../game/movement/pathfinding.mjs';
 import { normalizeGeometry } from '../../../contracts/dsl/terrain-geometry.mjs';
 import { factionGroup } from '../../../game/character/rules.mjs';
 import { TURN_REFRESH } from '../../../game/combat/phases.mjs';
 import { planGuardBond, resolveGuardBond } from '../../../game/effects/planning.mjs';
+import {
+  isFactionLinkRecord, nextFactionLinkOrder, planFactionChange, planFactionRevert
+} from '../../../game/effects/faction-links.mjs';
 import { generateAreaCells, geometryPlacementBudget, resolveGeometryPlacements } from '../../../game/targeting/shapes.mjs';
 import {
   buildTerrainEffectPatch,
   planTerrainEffectEdit,
   terrainEffectPatchIsEmpty
 } from '../../../game/terrain/effects.mjs';
-import { parseCellKey } from '../../../lib/core/geometry.mjs';
+import { parseCellKey, rectKeys } from '../../../lib/core/geometry.mjs';
 import { collectionValues, delay } from '../../../lib/core/runtime.mjs';
 import {
   displaceToken,
@@ -28,7 +31,8 @@ import {
   stackRescale as rescaleStackChanges
 } from '../services/host.mjs';
 import { EFFECT_MOVE_ACTION, EFFECT_MOVE_ANIMATION, ENCOUNTER_DECAY_FLAGS } from '../../../contracts/domains/combat.mjs';
-import { DEFAULT_STATUS_DURATION } from '../../../contracts/domains/characters.mjs';
+import { STANCE_BREAK_EFFECT_NAME, STANCE_BREAK_STATUS_ID } from '../../../contracts/domains/damage.mjs';
+import { DEFAULT_STATUS_DURATION, FACTION_LINK_FLAG } from '../../../contracts/domains/characters.mjs';
 import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
 import { ACTIVATION_EXPERIENCE_USES_FLAG } from '../../../contracts/domains/progression.mjs';
 import { applyRallyEffect, rallyRecordUpdate } from './rallies.mjs';
@@ -50,6 +54,12 @@ const effectOptions = () => ({ emblemEffectSettlement: true });
 
 /** Summon Tokens already placed by each running command, so a second cast in the same command keeps them. */
 const placedSummons = new WeakMap();
+
+/**
+ * The commands (by undo record, or by run when there is none) whose square picked before the use was confirmed has
+ * been spent. It belongs to the one prompted move it was picked for, so later steps and targets work out their own.
+ */
+const spentPlacements = new WeakSet();
 
 /** The only field `FoundryItemActivationSettlement.settleActivation` writes on the Item a use activates. */
 const ACTIVATED_ITEM_PATHS = Object.freeze(['system.uses']);
@@ -206,9 +216,13 @@ function documentId() {
 /*  Mechanical operations                       */
 /* -------------------------------------------- */
 
+/**
+ * Add the step's amount to each target's Shield, never below 0. A cap limits gains only: a unit already at or over
+ * the cap gains nothing, and a negative amount always applies in full.
+ */
 async function modifyShield(targets, step, runtime) {
   const delta = Math.round(Number(step.formula) || 0);
-  const hasCap = step.cap !== undefined && step.cap !== null && step.cap !== '';
+  const hasCap = delta > 0 && step.cap !== undefined && step.cap !== null && step.cap !== '';
   const maximum = hasCap ? Math.round(Number(step.cap) || 0) : null;
   const writes = [];
   for (const { target, actor } of await resolveTargetActors(targets)) {
@@ -233,7 +247,8 @@ async function modifyShield(targets, step, runtime) {
 /**
  * Plan every target's status first, so the whole step is recorded in one save, then write them in order. A refused
  * application (immunity or a full stack) writes nothing. Each result says whether the status was created and whether
- * it is beneficial; activation XP uses both.
+ * it is beneficial; activation XP uses both. A step with a linked animation tag also lists, per unit, the id of the
+ * ActiveEffect that carries the status, which persistent animations and change faction steps tie themselves to.
  */
 async function applyEffects(targets, step, repository, runtime) {
   const definition = step.preset === 'custom' ? step.customData
@@ -262,7 +277,8 @@ async function applyEffects(targets, step, repository, runtime) {
       baseTag: step.linkAnimationTag,
       actorUuid: plan.actor.uuid,
       tag: application.linkedAnimationTag ?? plan.data.flags?.[SYSTEM_ID]?.linkedAnimationTag ?? step.linkAnimationTag,
-      created: application.created === true
+      created: application.created === true,
+      effectId: application.created === true ? plan.createId : String((plan.effect ?? plan.kept)?.id ?? '')
     }));
   }
   return Object.freeze({
@@ -272,11 +288,16 @@ async function applyEffects(targets, step, repository, runtime) {
   });
 }
 
+/**
+ * Remove the statuses the step selects from each unit it reaches. A "placed by" unit that names nobody in this run
+ * removes nothing.
+ */
 async function removeEffects(writes, step, runtime, repository) {
   const actors = await Promise.all(writes.actorUuids.map(actorUuid => resolveActor(actorUuid)));
   const placedBy = step.placedByActor
-    ? (await repository.resolveTargets(step.placedByActor, runtime))[0]?.actorUuid
+    ? String((await repository.resolveTargets(step.placedByActor, runtime))[0]?.actorUuid ?? '')
     : '';
+  if (step.placedByActor && !placedBy) return Object.freeze({ ok: true });
   const excluded = step.scope === 'global' && step.excludeTarget === true ? runtime.target?.actorUuid : '';
   const removals = [];
   for (const actor of actors.filter(Boolean)) {
@@ -292,20 +313,101 @@ async function removeEffects(writes, step, runtime, repository) {
   return Object.freeze({ ok: true });
 }
 
+/**
+ * Change each target's faction role and token disposition, and with `grantOwnership` make the caster's players its
+ * owners, for as long as the status named by `linkStatusTag` lasts. What changed is saved on that status's
+ * ActiveEffect, and revertFactionLink writes it back when the status is deleted. A unit the tagged status did not
+ * reach in this run (it was immune, or the status step never ran) is left alone; when no unit has it, the step is
+ * skipped with FACTION_STATUS_MISSING.
+ */
 async function setFaction(targets, step, runtime) {
+  const linked = runtime.linkedAnimationTags?.[String(step.linkStatusTag ?? '')]?.byActor ?? {};
   const caster = await resolveActor(runtime.self?.actorUuid);
-  const ownership = step.grantOwnership === true ? playerOwnerUpdates(caster) : {};
-  const disposition = FACTION_DISPOSITIONS[String(step.actorType ?? '')];
+  const grants = step.grantOwnership === true ? Object.keys(playerOwnerUpdates(caster))
+    .map(path => path.slice('ownership.'.length)) : [];
+  const disposition = FACTION_DISPOSITIONS[String(step.actorType ?? '')] ?? null;
+  const ownerLevel = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
   const units = [];
   for (const { target, actor } of await resolveTargetActors(targets)) {
-    units.push({ actor, token: disposition === undefined ? null : await resolveToken(target.tokenUuid) });
+    const effect = actor.effects?.get?.(String(linked[actor.uuid]?.effectId ?? '')) ?? null;
+    if (!effect) continue;
+    const token = disposition === null ? null : await resolveToken(target.tokenUuid);
+    const plan = planFactionChange({
+      record: effect.flags?.[SYSTEM_ID]?.[FACTION_LINK_FLAG] ?? null,
+      order: nextFactionLinkOrder(factionLinkRecords(actor).map(entry => entry.record)),
+      role: String(step.actorType),
+      disposition: token ? disposition : null,
+      current: {
+        role: actor._source?.system?.faction?.role,
+        tokenUuid: token?.uuid,
+        disposition: token?.disposition,
+        ownership: actor._source?.ownership ?? actor.ownership
+      },
+      grants,
+      ownerLevel
+    });
+    units.push({ actor, token, effect, plan });
   }
-  await captureDocuments(runtime, units.flatMap(unit => [unit.actor, unit.token]));
-  for (const { actor, token } of units) {
+  if (!units.length) return Object.freeze({ ok: false, code: PRECONDITION.FACTION_STATUS_MISSING });
+  await captureDocuments(runtime, units.flatMap(unit => [unit.actor, unit.token, unit.effect]));
+  for (const { actor, token, effect, plan } of units) {
+    const ownership = Object.fromEntries(Object.entries(plan.ownership)
+      .map(([userId, level]) => [`ownership.${userId}`, level]));
+    await effect.update({ [`flags.${SYSTEM_ID}.${FACTION_LINK_FLAG}`]: plan.record }, effectOptions());
     await actor.update({ 'system.faction.role': step.actorType, ...ownership }, effectOptions());
     if (token) await token.update({ disposition }, effectOptions());
   }
   return Object.freeze({ ok: true });
+}
+
+/** Every faction change record on an actor's statuses, with the id of the ActiveEffect holding it. */
+function factionLinkRecords(actor) {
+  return collectionValues(actor?.effects)
+    .map(effect => ({ effectId: String(effect.id ?? ''), record: effect.flags?.[SYSTEM_ID]?.[FACTION_LINK_FLAG] }))
+    .filter(entry => isFactionLinkRecord(entry.record));
+}
+
+/**
+ * Write back what a change faction step changed, once the status it was tied to has been deleted. The internal
+ * faction revert command runs this on the host client, inside the command that deleted the status when there is one,
+ * and records the writes in that command's undo record (`operation`). A missing actor or token is skipped. When the
+ * status is back (an undo recreated it), nothing is written.
+ * @param {{actorUuid: string, effectId: string, record: object}} payload The deleted status's actor, its id, and the
+ *   faction change record it held.
+ * @param {object|null} operation The running command's undo record.
+ * @returns {Promise<{ok: boolean, reverted: boolean}>}
+ */
+export async function revertFactionLink({ actorUuid, effectId, record } = {}, operation = null) {
+  const actor = await resolveActor(actorUuid);
+  if (!actor || !isFactionLinkRecord(record) || actor.effects?.get?.(String(effectId ?? ''))) {
+    return Object.freeze({ ok: true, reverted: false });
+  }
+  const token = record.tokenUuid ? await resolveToken(record.tokenUuid) : null;
+  const plan = planFactionRevert({
+    record,
+    others: factionLinkRecords(actor),
+    current: {
+      role: actor._source?.system?.faction?.role,
+      disposition: token?.disposition ?? null,
+      ownership: actor._source?.ownership ?? actor.ownership
+    },
+    ownerLevel: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER
+  });
+  const actorUpdate = {};
+  if (plan.role !== null) actorUpdate['system.faction.role'] = plan.role;
+  for (const [userId, level] of Object.entries(plan.grant)) actorUpdate[`ownership.${userId}`] = level;
+  for (const userId of plan.revoke) Object.assign(actorUpdate, forcedDeletion(`ownership.${userId}`));
+  const tokenUpdate = token && plan.disposition !== null ? { disposition: plan.disposition } : null;
+  const handOff = plan.handOff ? actor.effects.get(plan.handOff.effectId) ?? null : null;
+  const writesActor = Object.keys(actorUpdate).length > 0;
+  await operation?.capture({ documents: [writesActor ? actor : null, tokenUpdate ? token : null, handOff]
+    .filter(Boolean) });
+  if (handOff) {
+    await handOff.update({ [`flags.${SYSTEM_ID}.${FACTION_LINK_FLAG}`]: plan.handOff.record }, effectOptions());
+  }
+  if (writesActor) await actor.update(actorUpdate, effectOptions());
+  if (tokenUpdate) await token.update(tokenUpdate, effectOptions());
+  return Object.freeze({ ok: true, reverted: writesActor || Boolean(tokenUpdate) || Boolean(handOff) });
 }
 
 /** The turn slots a restore can hand back. A unit whose slot was spent is listed in `restored`. */
@@ -395,9 +497,12 @@ async function moveTokens(targets, step, runtime, repository, choices = null) {
   if (step.mode === 'swap') {
     const pair = await resolveToken((await repository.resolveTargets(step.pair ?? 'self', runtime))[0]?.tokenUuid);
     if (!pair) return Object.freeze({ ok: false, code: PRECONDITION.MOVE_PAIR_MISSING });
-    await captureDocuments(runtime, [moving, pair]);
     const left = tokenGridPosition(moving, gridSize);
     const right = tokenGridPosition(pair, gridSize);
+    if (!await swapLandsFree(moving, pair, right, repository) || !await swapLandsFree(pair, moving, left, repository)) {
+      return Object.freeze({ ok: false, code: PRECONDITION.MOVE_BLOCKED });
+    }
+    await captureDocuments(runtime, [moving, pair]);
     if (!await displaceToken(moving, right, gridSize, moveOptions, moveAction)) {
       return Object.freeze({ ok: false, code: 'effect.move-refused' });
     }
@@ -420,7 +525,8 @@ async function moveTokens(targets, step, runtime, repository, choices = null) {
     };
   } else if (step.mode === 'push' || step.mode === 'pull') {
     const pair = await resolveToken((await repository.resolveTargets(step.pair ?? 'self', runtime))[0]?.tokenUuid);
-    if (!pair) return Object.freeze({ ok: false, code: PRECONDITION.MOVE_PAIR_MISSING });
+    // A unit can't be pushed away from or pulled toward itself: there is no direction to go.
+    if (!pair || pair.uuid === moving.uuid) return Object.freeze({ ok: false, code: PRECONDITION.MOVE_PAIR_MISSING });
     const current = tokenGridPosition(moving, gridSize);
     const reference = tokenGridPosition(pair, gridSize);
     const dx = current.x - reference.x;
@@ -440,6 +546,9 @@ async function moveTokens(targets, step, runtime, repository, choices = null) {
   if (destination.standing === true) {
     const stood = Object.freeze({ x: destination.x, y: destination.y });
     return recheckGuardBonds([moving], repository, runtime, { ok: true, destination: stood });
+  }
+  if (step.mode === 'teleport' && !await teleportLandsFree(moving, destination, teleport, repository)) {
+    return Object.freeze({ ok: false, code: PRECONDITION.MOVE_BLOCKED });
   }
   if (FORCED_STEP_MODES.has(step.mode)) {
     const forced = await judgeForcedStep(moving, destination, teleport, repository);
@@ -478,6 +587,34 @@ async function judgeForcedStep(moving, destination, ignoreWalls, repository) {
   const board = await repository.movements?.getSnapshot?.(moving.uuid);
   if (!board?.supportedGrid) return { outcome: FORCED_STEP_OUTCOMES.WALK, crossing: null };
   return resolveForcedStep(board, board.current, destination, { ignoreWalls });
+}
+
+/**
+ * Whether a teleport may land on its square: no other token takes it, it is on the map and not blocked, and, unless
+ * the step passes through walls, no wall stands on the straight line there. A scene without a square grid can't be
+ * checked, so the teleport goes ahead.
+ */
+async function teleportLandsFree(moving, destination, ignoreWalls, repository) {
+  const board = await repository.movements?.getSnapshot?.(moving.uuid);
+  if (!board?.supportedGrid) return true;
+  return resolveLanding(board, board.current, destination, { ignoreWalls }) === FORCED_STEP_OUTCOMES.WALK;
+}
+
+/**
+ * Whether one side of a swap may land on the other's square: no third token takes the squares it would cover and
+ * they are on the map and not blocked. The partner leaving that square doesn't count. Walls are not checked.
+ */
+async function swapLandsFree(token, partner, destination, repository) {
+  const board = await repository.movements?.getSnapshot?.(token.uuid);
+  if (!board?.supportedGrid) return true;
+  const rect = tokenGridRect(partner);
+  const leaving = new Set(rectKeys(rect.x, rect.y, rect.width, rect.height));
+  const cleared = {
+    ...board,
+    blockedCells: (board.blockedCells ?? []).filter(key => !leaving.has(key)),
+    occupiedCells: (board.occupiedCells ?? []).filter(key => !leaving.has(key))
+  };
+  return resolveLanding(cleared, board.current, destination, { ignoreWalls: true }) === FORCED_STEP_OUTCOMES.WALK;
 }
 
 /**
@@ -705,13 +842,19 @@ function tokenFootprintCoordinates(token, size) {
 /*  Effect move helpers                         */
 /* -------------------------------------------- */
 
+/**
+ * The square a terrainGeometry move sends the unit to. The first prompted move in a command takes the square the
+ * user picked before confirming the use; any other works out its own from the geometry.
+ */
 async function resolveGeometryDestination(moving, step, runtime, repository, choices = null) {
-  if (runtime.prePickedPlacement
-    && Number.isFinite(Number(runtime.prePickedPlacement.x))
-    && Number.isFinite(Number(runtime.prePickedPlacement.y))) {
-    return { x: Number(runtime.prePickedPlacement.x), y: Number(runtime.prePickedPlacement.y) };
-  }
   const geometry = normalizeGeometry(step.geometry);
+  const picked = runtime.prePickedPlacement;
+  const owner = runtime.operation ?? runtime;
+  if (geometry.pick === 'prompt' && picked && !spentPlacements.has(owner)
+    && Number.isFinite(Number(picked.x)) && Number.isFinite(Number(picked.y))) {
+    spentPlacements.add(owner);
+    return { x: Number(picked.x), y: Number(picked.y) };
+  }
   const anchor = geometry.anchor === 'targetLocation'
     ? runtime.targetLocation
     : tokenGridRect(await resolveToken((geometry.anchor === 'self' ? runtime.self : runtime.target)?.tokenUuid));
@@ -855,7 +998,7 @@ function planEffectApplication(actor, data) {
         created: false,
         reason: 'stackLimit',
         linkedAnimationTag: currentFlags.linkedAnimationTag ?? null
-      }) };
+      }), kept: existing };
     }
     const incoming = Math.max(1, Math.floor(Number(incomingFlags.stackCount) || 1));
     const next = limit > 0 ? Math.min(limit, current + incoming) : current + incoming;
@@ -948,13 +1091,36 @@ async function prepareEffectAnimation(operation, runtime, repository) {
   });
 }
 
+/**
+ * Whether a removeEffect step takes this status off. Every selector the step sets must match: the name, a dispel
+ * (harmful or beneficial), and the unit that placed a Mark. A step with no selector removes nothing, and the system's
+ * own effects are never removed.
+ */
 function shouldRemoveEffect(effect, step, placedBy = '') {
-  if (effect.flags?.[SYSTEM_ID]?.isMountEffect === true) return false;
-  if (step.dispelHarmful === true && effect.flags?.[SYSTEM_ID]?.harmful === true) return true;
-  if (step.dispelBeneficial === true && effect.flags?.[SYSTEM_ID]?.beneficial === true) return true;
+  if (isSystemEffect(effect)) return false;
+  const flags = effect.flags?.[SYSTEM_ID] ?? {};
+  const dispels = step.dispelHarmful === true || step.dispelBeneficial === true;
   if (step.name && String(effect.name ?? '') !== String(step.name)) return false;
-  if (placedBy && String(effect.flags?.[SYSTEM_ID]?.markedBy?.actorUuid ?? '') !== placedBy) return false;
-  return Boolean(step.name || placedBy);
+  if (dispels && !((step.dispelHarmful === true && flags.harmful === true)
+    || (step.dispelBeneficial === true && flags.beneficial === true))) return false;
+  if (placedBy && String(flags.markedBy?.actorUuid ?? '') !== placedBy) return false;
+  return Boolean(step.name || dispels || placedBy);
+}
+
+/** Status ids of effects the system keeps itself: Stance Break and the equipment and mount markers. */
+const SYSTEM_STATUS_IDS = new Set([STANCE_BREAK_STATUS_ID, 'Wielding', 'Wearing', 'Mounted']);
+
+/**
+ * Whether an ActiveEffect belongs to the system rather than to a status an effect applied: Stance Break, a Guard
+ * bond half, a Rally, or a wield, armor or mount effect. Each has its own rule for when it ends.
+ */
+function isSystemEffect(effect) {
+  const flags = effect.flags?.[SYSTEM_ID] ?? {};
+  if (flags.isWieldEffect === true || flags.isArmorEffect === true || flags.isMountEffect === true) return true;
+  if (flags.guardRole || flags.rally) return true;
+  const name = String(effect.name ?? '');
+  if (name === STANCE_BREAK_EFFECT_NAME) return true;
+  return collectionValues(effect.statuses).some(id => SYSTEM_STATUS_IDS.has(String(id)));
 }
 
 /* -------------------------------------------- */

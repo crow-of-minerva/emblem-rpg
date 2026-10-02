@@ -17,6 +17,8 @@ import {
   AREA_FACTIONS,
   empty as emptyAction,
   isPopulated as actionIsPopulated,
+  MAX_AREA_RADIUS,
+  MAX_EFFECT_DELAY_MS,
   STEP_KINDS,
   TOKEN_REFS,
   TRIGGER_CAPABILITIES,
@@ -96,8 +98,7 @@ export const STEP_KIND_LABELS = Object.freeze({
   setFaction: 'Change faction', animation: 'Animation', floatingText: 'Floating text', moveToken: 'Move token',
   spawnToken: 'Spawn token', restoreAction: 'Restore actions',
   playResist: 'Resist popup', playVoice: 'Voice line', refreshPathfinding: 'Refresh pathfinding',
-  unequip: 'Unequip weapon', guard: 'Guard', terrainEdit: 'Edit terrain', if: 'If', wait: 'Wait',
-  expr: 'Expression'
+  unequip: 'Unequip weapon', guard: 'Guard', terrainEdit: 'Edit terrain', if: 'If', wait: 'Wait'
 });
 
 /**
@@ -110,7 +111,7 @@ const STEP_KIND_MEANINGS = Object.freeze({
   modShield: 'adds temporary shield points to a unit',
   applyEffect: 'puts a status on a unit',
   removeEffect: 'takes statuses off one or every unit',
-  setFaction: 'moves a unit to another faction',
+  setFaction: 'moves a unit to another faction while a status lasts',
   animation: 'plays a Sequencer animation on the board',
   floatingText: 'shows text floating over a unit',
   moveToken: 'pushes, pulls, swaps or teleports a token',
@@ -123,8 +124,7 @@ const STEP_KIND_MEANINGS = Object.freeze({
   guard: 'runs the guard exchange on the target',
   terrainEdit: 'changes the squares in an area',
   if: 'runs steps only while a condition holds',
-  wait: 'pauses before the next step runs',
-  expr: 'evaluates an expression for its side effects'
+  wait: 'pauses before the next step runs'
 });
 
 /**
@@ -140,7 +140,7 @@ const ADD_STEP_GROUPS = Object.freeze([
     'unequip'
   ] },
   { label: 'Presentation', kinds: ['animation', 'floatingText', 'playResist', 'playVoice'] },
-  { label: 'Flow', kinds: ['if', 'wait', 'expr'] }
+  { label: 'Flow', kinds: ['if', 'wait'] }
 ]);
 
 /**
@@ -211,6 +211,15 @@ function customStatusTemplate() {
       }
     }
   };
+}
+
+/** The custom status a new change faction step is tied to. The unit changes back when it ends. */
+function turnedStatusTemplate() {
+  const status = customStatusTemplate();
+  status.name = 'Turned';
+  status.statuses = ['Turned'];
+  status.flags.core.statusId = 'Turned';
+  return status;
 }
 
 /**
@@ -390,15 +399,17 @@ const WHO_OR_AREA = { ...WHO, options: AOE_TARGET_OPTIONS };
 /**
  * The field descriptors for each step kind, used both to render a card and to read it back. Each carries the
  * `label` its card shows and the `tooltip` id `renderField` puts on that label. `unit` shows a measurement label
- * such as ms or sq inside the input, and `span` makes the field take a whole grid row. Animation, move, guard and
- * if steps lay out their own bodies. A terrain edit shows its "who" field from here, then its own panel.
+ * such as ms or sq inside the input, `span` makes the field take a whole grid row, and `required` leaves the blank
+ * choice out of a selector. Animation, move, guard and if steps lay out their own bodies. A terrain edit shows its
+ * "who" field from here, then its own panel.
  * @type {Record<string, object[]>}
  */
 const FIELDS_BY_KIND = {
   damage: [
     WHO_OR_AREA,
     { name: 'formula', type: 'text', label: 'amount', placeholder: '1d4', tooltip: 'editor.damage.amount' },
-    { name: 'dmgType', type: 'select', options: DMG_TYPE_OPTIONS, label: 'type', tooltip: 'editor.damage.type' },
+    { name: 'dmgType', type: 'select', options: DMG_TYPE_OPTIONS, label: 'type', tooltip: 'editor.damage.type',
+      required: true },
     { name: 'brk', type: 'text', label: 'stance damage', placeholder: '0', tooltip: 'editor.damage.stance' },
     { name: 'alt', type: 'checkboxDefaultOn', label: 'apply mitigation', tooltip: 'editor.damage.mitigation' },
     { name: 'isCrit', type: 'tristate', label: 'critical', tooltip: 'editor.damage.critical' }
@@ -415,7 +426,8 @@ const FIELDS_BY_KIND = {
   ],
   applyEffect: [
     WHO_OR_AREA,
-    { name: 'preset', type: 'select', options: PRESET_OPTIONS, label: 'status', tooltip: 'editor.status.preset' },
+    { name: 'preset', type: 'select', options: PRESET_OPTIONS, label: 'status', tooltip: 'editor.status.preset',
+      required: true },
     { name: 'durationPhases', type: 'number', label: 'phases', placeholder: `${DEFAULT_STATUS_DURATION}`,
       tooltip: 'editor.status.duration' },
     { name: 'durationStacks', type: 'checkbox', label: 'stacks', tooltip: 'editor.status.stacks' },
@@ -426,7 +438,9 @@ const FIELDS_BY_KIND = {
     WHO,
     { name: 'actorType', type: 'select', options: ACTOR_TYPES.map(t => ({ value: t, label: t })), label: 'faction',
       tooltip: 'editor.faction.faction' },
-    { name: 'grantOwnership', type: 'checkbox', label: 'grant ownership', tooltip: 'editor.faction.grant-ownership' }
+    { name: 'grantOwnership', type: 'checkbox', label: 'grant ownership', tooltip: 'editor.faction.grant-ownership' },
+    { name: 'linkStatusTag', type: 'text', label: 'linked status tag', placeholder: 'turned',
+      tooltip: 'editor.faction.linked-tag', required: true }
   ],
   removeEffect: [
     { name: 'scope', type: 'select', label: 'scope', tooltip: 'editor.remove.scope',
@@ -497,8 +511,6 @@ const FIELDS_BY_KIND = {
   unequip: [{ ...WHO, tooltip: 'editor.unequip.who' }],
   guard: [],
   wait: [{ name: 'ms', type: 'text', label: 'wait', placeholder: '500', unit: 'ms', tooltip: 'editor.wait.ms' }],
-  expr: [{ name: 'expr', type: 'textarea', label: 'expression', placeholder: 'self.hp > 0', span: true,
-    tooltip: 'editor.expr.expr' }],
   terrainEdit: [{ ...WHO, options: TERRAIN_TARGET_OPTIONS }],
   if: []
 };
@@ -794,7 +806,8 @@ function renderTerrainEditPanel(step) {
       ${terrainCheckField('overwrite', 'overwrite', 'editor.terrain.overwrite', step.overwrite === true)}
       ${terrainCheckField('replacePrevious', 'replace previous', 'editor.terrain.replace-previous',
         step.replacePrevious === true)}
-      ${terrainNumberField(step, 'duration', 'phases', 'editor.terrain.duration', { min: 0, step: 1, placeholder: '0' })}
+      ${terrainNumberField(step, 'duration', 'phases', 'editor.terrain.duration',
+        { min: 0, step: 1, placeholder: '0 is permanent' })}
       ${terrainSelectField('presetTile', 'tile', 'editor.terrain.preset',
         _terrainPresetOptions(locked ? step.presetTile : ''))}
     </div>
@@ -803,12 +816,12 @@ function renderTerrainEditPanel(step) {
         ${stat('eva')}
         ${stat('def')}
         ${stat('res')}
-        ${stat('mov', { min: 0 })}
+        ${stat('mov', { min: 1, placeholder: '1' })}
       </div>
       <div class="ed-grid ed-grid--4">
         ${terrainSelectField('effect', 'effect', 'editor.terrain.effect', hazardOpts, locked)}
         ${terrainNumberField(step, 'variable', 'amount', 'editor.terrain.variable',
-          { min: 0, step: 1, placeholder: '0', disabled: locked })}
+          { min: 1, step: 1, placeholder: '1', disabled: locked })}
         ${terrainNumberField(step, 'stn', 'stance', 'editor.terrain.stn',
           { min: 0, step: 1, placeholder: '0', hidden: !showStn, disabled: locked })}
         ${showKill
@@ -828,7 +841,7 @@ function renderTerrainEditPanel(step) {
 
 /**
  * renderField options for effect cards: keep a stored choice that is no longer offered as a marked entry, and add
- * a blank first choice.
+ * a blank first choice unless the field is `required`.
  * @type {object}
  */
 const FIELD_STYLE = { emptyOption: true, keepOrphan: true };
@@ -845,7 +858,7 @@ const LIST = '.ed-list[data-branch-list]';
  * @param {string} idPrefix       What makes the control's id unique within the dialog.
  */
 function fieldHtml(field, value, idPrefix) {
-  const html = renderField(field, value, { ...FIELD_STYLE, idPrefix });
+  const html = renderField(field, value, { ...FIELD_STYLE, emptyOption: field.required !== true, idPrefix });
   return field.span ? html.replace('class="', 'class="ed-span ') : html;
 }
 
@@ -952,7 +965,8 @@ function stepSummaryText(step) {
       return `heal ${who} ${step.formula || '?'}${step.stnAmount ? `, ${step.stnAmount} stance` : ''}`;
     case 'modShield':    return `${step.formula || '?'} shield to ${who}${step.cap ? `, up to ${step.cap}` : ''}`;
     case 'setFaction':
-      return `${who} joins ${step.actorType || '?'}${step.grantOwnership ? ', owned by the caster' : ''}`;
+      return `${who} joins ${step.actorType || '?'}${step.grantOwnership ? ', owned by the caster' : ''}`
+        + ` while ${step.linkStatusTag || '?'} lasts`;
     case 'applyEffect': {
       const n = effectDuration(step);
       const tag = step.linkAnimationTag ? `, tagged ${step.linkAnimationTag}` : '';
@@ -975,7 +989,6 @@ function stepSummaryText(step) {
     case 'guard':        return 'runs on the target';
     case 'wait':         return `wait ${step.ms || 0} ms`;
     case 'terrainEdit':  return `${terrainTargetSummary(step.target)}: ${terrainEditSummary(step)}`;
-    case 'expr':         return (step.expr || '').slice(0, 40) + ((step.expr || '').length > 40 ? '...' : '');
     case 'if':           return ifSummary(step);
     default: return stepKindLabel(step.kind);
   }
@@ -1109,7 +1122,8 @@ function areaPanelHtml(step) {
         <select data-area-field="center">${optionMarkup(TOKEN_REF_OPTIONS, center)}</select></label>
       <label class="ed-field">${labelSpan('radius', 'editor.step.area-radius')}
         <span class="ed-with-unit" data-unit="sq">
-          <input type="number" step="1" min="0" data-area-field="radius" value="${radius}" placeholder="1" />
+          <input type="number" step="1" min="1" max="${MAX_AREA_RADIUS}" data-area-field="radius" value="${radius}"
+            placeholder="1" />
         </span></label>
       ${filterHtml}
     </div></div>`;
@@ -1376,8 +1390,9 @@ function conditionTemplateSelectHtml() {
 }
 
 /**
- * Read the terrain panel back onto its step. A blank number is left off the step, a preset replaces every parameter
- * with its own, and the two switches that default on are only written when turned off.
+ * Read the terrain panel back onto its step. A blank number is left off the step, except a blank duration, which
+ * saves as 0 (permanent). A preset replaces every parameter with its own, and the two switches that default on are
+ * only written when turned off.
  * @param {object} step          The step read so far, which this completes in place.
  */
 function readTerrainEditPanel(panel, step) {
@@ -1401,7 +1416,7 @@ function readTerrainEditPanel(panel, step) {
   const put = (k, v) => { if (v !== undefined) step[k] = v; };
 
   put('overwrite', readOn('overwrite'));
-  put('duration', readNum('duration'));
+  put('duration', readNum('duration') ?? 0);
   put('replacePrevious', readOn('replacePrevious'));
   for (const k of ['eva', 'def', 'res', 'mov', 'variable', 'stn']) put(k, readNum(k));
   put('effect', readStr('effect'));
@@ -1440,7 +1455,7 @@ function readAreaTarget(panel, kind) {
   const faction = panel?.querySelector('[data-area-field="faction"]')?.value || 'all';
   const radiusRaw = panel?.querySelector('[data-area-field="radius"]')?.value;
   const radius = radiusRaw !== undefined && radiusRaw !== '' && Number.isFinite(Number(radiusRaw))
-    ? Math.max(0, Math.floor(Number(radiusRaw)))
+    ? Math.min(MAX_AREA_RADIUS, Math.max(1, Math.floor(Number(radiusRaw))))
     : 1;
   if (kind !== 'terrainEdit') return { area: { center, radius, faction } };
   const target = { area: { center, radius } };
@@ -1795,7 +1810,7 @@ function addStepRows(trigger) {
   for (const group of ADD_STEP_GROUPS) {
     const entries = group.kinds.filter(kind => stepKindOffered(kind, trigger)).map(kind => {
       const value = stepKindLabel(kind);
-      byValue.set(value.toLowerCase(), () => fitted([makeStepDefault(kind)]));
+      byValue.set(value.toLowerCase(), () => fitted([makeStepDefault(kind)].flat()));
       return { value, label: STEP_KIND_MEANINGS[kind] ?? '' };
     });
     groups.push({ label: group.label, entries });
@@ -2200,8 +2215,8 @@ function readEntryFromDom(dialogEl, source = {}) {
 
 /**
  * A newly added step of a kind, with starting values that addStepRows then fits to the trigger. Spawn token, terrain
- * edit and expression steps start empty and block Save until they are filled in, and a floating text step shows
- * nothing until it has text.
+ * edit and remove status steps start empty and block Save until they are filled in, and a floating text step shows
+ * nothing until it has text. A change faction step comes with the status it is tied to, as a list of two steps.
  */
 function makeStepDefault(kind) {
   switch (kind) {
@@ -2210,7 +2225,11 @@ function makeStepDefault(kind) {
     case 'modShield':    return { kind, target: 'target', formula: 'selfCha', cap: 'selfCha' };
     case 'applyEffect':
       return { kind, target: 'target', preset: 'restrained', durationPhases: DEFAULT_STATUS_DURATION };
-    case 'setFaction':   return { kind, target: 'target', actorType: 'Ally' };
+    case 'setFaction':   return [
+      { kind: 'applyEffect', target: 'target', preset: 'custom', linkAnimationTag: 'turned',
+        customData: turnedStatusTemplate() },
+      { kind, target: 'target', actorType: 'Ally', linkStatusTag: 'turned' }
+    ];
     case 'removeEffect': return { kind, target: 'target', name: '' };
     case 'animation':    return { kind, animation: { steps: [] } };
     case 'floatingText': return { kind, target: 'target', text: '' };
@@ -2224,7 +2243,6 @@ function makeStepDefault(kind) {
     case 'guard':        return { kind, target: 'target' };
     case 'terrainEdit':  return { kind, overwrite: true };
     case 'wait':         return { kind, ms: 500 };
-    case 'expr':         return { kind, expr: '' };
     case 'if':           return { kind, condition: null, then: [] };
     default:             return { kind };
   }
@@ -2323,7 +2341,8 @@ function effectHeaderHtml(entry, group) {
         <label class="ed-field" style="width:78px">
           ${labelSpan('delay', 'editor.effect.delay')}
           <span class="ed-with-unit" data-unit="ms">
-            <input type="number" min="0" step="1" data-entry-field="delayMs" value="${delay}" />
+            <input type="number" min="0" max="${MAX_EFFECT_DELAY_MS}" step="1" data-entry-field="delayMs"
+              value="${delay}" />
           </span>
         </label>
       </div>`;

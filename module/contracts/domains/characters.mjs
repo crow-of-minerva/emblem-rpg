@@ -246,6 +246,12 @@ export const FACTION_GROUPS = Object.freeze({
   neutral: Object.freeze(['Neutral'])
 });
 
+/**
+ * The flag, under the system's flags on a status's ActiveEffect, that holds what a change faction step tied to that
+ * status changed on the unit, so it can be changed back when the status is deleted (game/effects/faction-links.mjs).
+ */
+export const FACTION_LINK_FLAG = 'factionLink';
+
 /** The player-owned unit factions. An Ally fights on their side but isn't one of them. */
 export const OWNED_UNIT_FACTIONS = Object.freeze(['Lord', 'Retainer']);
 

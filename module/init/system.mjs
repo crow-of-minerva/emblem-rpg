@@ -110,6 +110,7 @@ import { DOWNTIME_PRESENTATION_KIND } from '../contracts/domains/downtime.mjs';
 import { createDowntimeCommandContribution, createDowntimeQueries } from '../engine/downtime/commands.mjs';
 import { FoundryDowntimeRepository } from '../foundry/adapters/document-writes/downtime.mjs';
 import { EffectExecutionService } from '../engine/effects/execution.mjs';
+import { createFactionLinkCommandContribution } from '../engine/effects/faction-links.mjs';
 import { ItemAuthoringService, PartyService, TerrainAuthoringService } from '../engine/authoring.mjs';
 
 import { TerrainPhaseService, createTerrainImpactPort } from '../engine/terrain/effects.mjs';
@@ -126,6 +127,7 @@ import { FoundryChatOutput, FoundryProgressionChatOutput } from '../foundry/adap
 import { createBoardLifecycle, createThreatHookHandlers } from '../foundry/hooks/board.mjs';
 import { createCoinpurseLifecycle } from '../foundry/hooks/economy.mjs';
 import { createInnateGrantLifecycle } from '../foundry/hooks/innate-grants.mjs';
+import { createFactionLinkLifecycle } from '../foundry/hooks/faction-links.mjs';
 import {
   createClassFeatureHookHandlers,
   createEquipmentEffectLifecycle,
@@ -181,7 +183,8 @@ import { FoundryCombatStateRepository } from '../foundry/adapters/projections/co
 import { FoundryCombatSettlementRepository } from '../foundry/adapters/document-writes/combat-settlement.mjs';
 import {
   FoundryEffectRepository,
-  FoundryItemActivationSettlement
+  FoundryItemActivationSettlement,
+  revertFactionLink
 } from '../foundry/adapters/document-writes/effect-execution.mjs';
 import { FoundryEncounterRepository } from '../foundry/adapters/document-writes/encounters.mjs';
 import { FoundryDevelopmentRepository } from '../foundry/adapters/document-writes/development.mjs';
@@ -608,6 +611,7 @@ export function createSystemRuntime() {
       INTERNAL_COMMAND_IDS.MOVEMENT.FORCE_CROSSING, intent, 'effect:crossing', parent) },
     wait: presentationDelivery.wait
   });
+  registerCommands(createFactionLinkCommandContribution({ factionLinks: { revert: revertFactionLink }, authority }));
   registerCommands(createClassCommandContribution({ diagnostics,
     classFeatures, events, authority, presentation: progressionPort, movements, progression,
     inventory: { diagnostics, toggleEquipment: (intent, parent) => invokeWithin(
@@ -1075,6 +1079,11 @@ export function createSystemRuntime() {
   const supportHooks = createSupportHookHandlers({ executeInternal: submitMaintenance });
   const coinpurseHooks = createCoinpurseLifecycle({ executeInternal: submitMaintenance, notify: notifications });
   const innateGrantHooks = createInnateGrantLifecycle({ executeInternal: submitMaintenance, notify: notifications });
+  // Read by EmblemActiveEffect._onDeleteOperation, so a faction change ends with the status it is tied to.
+  CONFIG.ActiveEffect.documentClass.factionLinks = createFactionLinkLifecycle({
+    revertWithin: payload => invokeWithin(INTERNAL_COMMAND_IDS.CHARACTER.FACTION.REVERT_LINK, payload, 'faction-link'),
+    executeInternal: submitMaintenance
+  });
   const encounterHooks = createEncounterLifecycle({
     executeInternal: submitMaintenance,
     deferring: () => !executionLifecycle.admits(COMMAND_LANES.MAINTENANCE),

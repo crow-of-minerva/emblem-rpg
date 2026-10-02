@@ -47,6 +47,7 @@ export const RESULT_CODES = Object.freeze({
   PROMOTION_FAILED: 'class.promotion-failed',
   INNATE_GRANTS_RECONCILED: 'character.innate-grants-reconciled',
   INNATE_GRANT_SETTLEMENT_FAILED: 'character.innate-grant-settlement-failed',
+  FACTION_LINK_REVERTED: 'character.faction-link-reverted',
   BOARD_MODIFIERS_RECONCILED: 'board.modifiers-reconciled',
   BOARD_MODIFIER_SETTLEMENT_FAILED: 'board.modifier-settlement-failed',
   BOARD_UNAVAILABLE: 'board.unavailable',

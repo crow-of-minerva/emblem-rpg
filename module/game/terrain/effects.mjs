@@ -32,14 +32,15 @@ const OVERWRITE_BEHAVIORS = new Set(['forbid', 'clear', 'clearRespawn']);
 
 /**
  * Build the patch an authored terrainEdit step applies to each square, grouped as stats, hazard, visual effect and
- * light. A stat set to its default value clears that field.
+ * light. A stat set to its default value clears that field. A movement cost of 0 or less, and a hazard that deals
+ * and restores nothing, leave the square's movement cost and hazards as they are.
  */
 export function buildTerrainEffectPatch(step, lightKey = 'terrain-edit') {
   const patch = {};
   const stats = {};
   for (const [source, target] of Object.entries(STAT_KEYS)) {
     const value = authored(step?.[source]);
-    if (value === undefined) continue;
+    if (value === undefined || (target === 'movementCost' && value <= 0)) continue;
     stats[target] = value === STAT_DEFAULTS[target] ? null : value;
   }
   if (Object.keys(stats).length) patch.stats = stats;
@@ -52,7 +53,7 @@ export function buildTerrainEffectPatch(step, lightKey = 'terrain-edit') {
       stn: Math.max(0, authored(step.stn) ?? 0),
       canKillPlayer: step.canKillPlayer === true
     });
-    patch.hazard = { tileEffects: tileEffectIsActive(effect) ? [effect] : null };
+    if (tileEffectIsActive(effect)) patch.hazard = { tileEffects: [effect] };
   }
 
   const vfx = typeof step?.vfxEffect === 'string' ? step.vfxEffect.trim() : '';

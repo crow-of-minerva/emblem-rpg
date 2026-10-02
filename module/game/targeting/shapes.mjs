@@ -169,9 +169,23 @@ export function generateLocationCells(input = {}) {
   return cells;
 }
 
+/** The largest radius an effect step's area reaches. A larger radius is held to this. */
+export const MAX_AREA_RADIUS = 99;
+
+/**
+ * An effect area's radius as a whole number of squares from 0 to MAX_AREA_RADIUS. A blank or non-numeric value is
+ * 0, and an infinite one is held to the maximum, so the loops over the area always end.
+ * @param {unknown} value The authored radius.
+ * @returns {number}
+ */
+export function effectAreaRadius(value) {
+  const radius = Math.floor(Number(value));
+  return Number.isNaN(radius) ? 0 : clamp(radius, 0, MAX_AREA_RADIUS);
+}
+
 /**
  * The cells within a radius of a footprint, counting straight steps (no diagonals) from its edge, with the footprint
- * itself kept or dropped.
+ * itself kept or dropped. The radius is held to MAX_AREA_RADIUS.
  * @param {object} input The source's top-left square, footprint, radius, whether the source squares count, and
  *   Scene bounds.
  * @returns {Set<string>} Cell keys inside the reach.
@@ -180,7 +194,7 @@ export function generateAreaCells(input = {}) {
   const cells = new Set();
   const bounds = sourceBounds(input);
   if (!bounds) return cells;
-  const radius = Math.max(0, Math.floor(Number(input.radius) || 0));
+  const radius = effectAreaRadius(input.radius);
   const columns = dimension(input.columns);
   const rows = dimension(input.rows);
   const includeSource = input.includeSource === true;

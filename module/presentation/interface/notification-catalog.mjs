@@ -721,6 +721,7 @@ export const NOTIFICATIONS = Object.freeze({
   [NOTIFICATION_IDS.BOARD_MODIFIERS_RECONCILED]: { silent: true, text: () => '' },
   [NOTIFICATION_IDS.BOARD_UNAVAILABLE]: { silent: true, text: () => '' },
   [NOTIFICATION_IDS.VISION_DOORS_RECONCILED]: { silent: true, text: () => '' },
+  [NOTIFICATION_IDS.FACTION_LINK_REVERTED]: { silent: true, text: () => '' },
   [NOTIFICATION_IDS.VISION_DOOR_SETTLEMENT_FAILED]: { backend: 'foundry/adapters/document-writes/vision.mjs',
     level: 'error',
     text: () => "A door's sight walls could not be updated. Reload the scene to try again."
@@ -1080,10 +1081,12 @@ function guardBondBreakReason(reason, actorName) {
 /** Why an effect step or entry was skipped, by the code engine/effects/execution.mjs reports. */
 const EFFECT_SKIP_REASONS = Object.freeze({
   [EFFECT_STEP_PRECONDITION_FAILURES.PRESET_MISSING]: 'it names no status to apply',
+  [EFFECT_STEP_PRECONDITION_FAILURES.FACTION_STATUS_MISSING]: 'there was no status to tie the faction change to',
   [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_TARGET_MISSING]: 'there was no unit to move',
   [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_PAIR_MISSING]: 'there was no unit to move against',
   [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_MODE_UNKNOWN]: 'its movement mode is unknown',
   [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_DESTINATION_MISSING]: 'there was no square to move to',
+  [EFFECT_STEP_PRECONDITION_FAILURES.MOVE_BLOCKED]: 'the square is taken or walled off',
   [EFFECT_STEP_PRECONDITION_FAILURES.SPAWN_SOURCE_MISSING]: 'the unit to summon, or the map, was not found',
   [EFFECT_STEP_PRECONDITION_FAILURES.SPAWN_LOCATION_MISSING]: 'there was no square to summon onto',
   [EFFECT_STEP_PRECONDITION_FAILURES.GUARD_TARGET_MISSING]: 'there was no unit to Guard',

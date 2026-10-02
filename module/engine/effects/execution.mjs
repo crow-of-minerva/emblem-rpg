@@ -12,6 +12,7 @@ import { isEffectPreconditionFailure } from '../../contracts/dsl/effects.mjs';
 import { normalizeGeometry } from '../../contracts/dsl/terrain-geometry.mjs';
 import { RESULT_CODES } from '../../contracts/results.mjs';
 import {
+  effectDamageType,
   resolveDamage,
   resolveHealing,
   resolveStanceBreak
@@ -41,6 +42,13 @@ const GUARD_BOND_NOTICES = new Set(Object.values(GUARD_BOND_REFUSALS));
 const SPAWN_UNPREPARED = Object.freeze({ ok: false, code: 'effect.spawn-failed' });
 /** Steps that write only the units they target, so they have nothing to do when every target is scenery or slain. */
 const UNIT_WRITING_STEPS = new Set(['modShield', 'applyEffect', 'setFaction', 'moveToken', 'restoreAction', 'unequip', 'guard']);
+/**
+ * The longest a `wait` step or an entry or step delay holds the run, in milliseconds. The command keeps the command
+ * slot while it waits, so nothing else at the table runs meanwhile.
+ */
+const MAX_EFFECT_WAIT_MS = 5000;
+/** The triggers fired by the striker's own blow. Only these deal a crit with damage whose `isCrit` is left unset. */
+const BLOW_CRIT_TRIGGERS = new Set(['onHit', 'onCrit', 'onHitOrCrit']);
 
 /**
  * Run effect entries. game/effects/planning.mjs plans the steps, and this service rolls their amounts, records what
@@ -96,14 +104,15 @@ export class EffectExecutionService {
     for (const warning of plan.warnings) {
       this.#report({ ...warning, path: 'entry', kind: '' }, entries, identities, context, { notify: false });
     }
-    const held = { runtime: executionRuntime, context, resources, audience: noticeAudience(audience), combatContext };
+    const held = {
+      runtime: executionRuntime, context, resources, audience: noticeAudience(audience), combatContext,
+      blowCrit: (triggers ?? []).some(trigger => BLOW_CRIT_TRIGGERS.has(trigger)) && context.isCrit === true
+    };
     const outcomes = [];
-    // Delays, and `wait` steps in #execute, run while the command holds the command slot, so nothing else at the
-    // table runs meanwhile. They have no upper limit.
     for (const entry of plan.entries) {
-      if (entry.delayMs > 0) await this.wait(entry.delayMs);
+      if (entry.delayMs > 0) await this.wait(effectWait(entry.delayMs));
       for (const operation of entry.operations) {
-        if (operation.delayMs > 0) await this.wait(operation.delayMs);
+        if (operation.delayMs > 0) await this.wait(effectWait(operation.delayMs));
         const addressed = { ...operation, entryIdentity: identities[entry.entryIndex] };
         const outcome = skippedPrecondition(await this.#execute(addressed, held), operation.kind);
         if (outcome?.skipped === PRECONDITION_SKIP) {
@@ -120,7 +129,7 @@ export class EffectExecutionService {
     return settledRun(outcomes, plan.errors, null);
   }
 
-  async #execute(operation, { runtime, context, resources, audience, combatContext }) {
+  async #execute(operation, { runtime, context, resources, audience, combatContext, blowCrit }) {
     const step = await this.#prepareStep(operation.step, context, operation);
     const prepared = Object.freeze({ ...operation, step: Object.freeze(step) });
     if (operation.channel === 'presentation') {
@@ -131,12 +140,11 @@ export class EffectExecutionService {
       return { ok: true, presentation: shown, kind: step.kind };
     }
     if (operation.channel === 'control') {
-      if (step.kind === 'wait') await this.wait(Math.max(0, await this.#rollAmount(step.ms ?? 0, context)));
-      if (step.kind === 'expr' && typeof step.expr === 'string') resolveEffectValue({ expr: step.expr }, context);
+      if (step.kind === 'wait') await this.wait(effectWait(await this.#rollAmount(step.ms ?? 0, context)));
       return { ok: true, control: true, kind: step.kind };
     }
     if (step.kind === 'damage' || step.kind === 'heal') {
-      return this.#settleHealth(prepared, runtime, context, resources, combatContext);
+      return this.#settleHealth(prepared, runtime, context, resources, combatContext, blowCrit);
     }
     if (step.kind === 'spawnToken') return this.#spawn(prepared, runtime, resources);
     if (aimsAtMissingTarget(step, runtime)) return noTargetOutcome({ kind: step.kind });
@@ -148,10 +156,11 @@ export class EffectExecutionService {
     if (busy) return busy;
     const executed = await this.effects.executeMechanical(prepared, runtime, writes, placementChoices(this.effects));
     const outcome = withMechanicalImpacts(step.kind, executed);
+    // Remember the status each linked tag put on each unit, for the later animation and change faction steps.
     for (const linked of outcome?.linkedAnimations ?? []) {
       const records = runtime.linkedAnimationTags ??= {};
       const record = records[linked.baseTag] ??= { byActor: {}, last: null };
-      const entry = { tag: linked.tag, created: linked.created === true };
+      const entry = { tag: linked.tag, created: linked.created === true, effectId: String(linked.effectId ?? '') };
       record.byActor[linked.actorUuid] = entry;
       record.last = entry;
     }
@@ -244,9 +253,11 @@ export class EffectExecutionService {
    * `ruleTarget` data, which the effect host reads under `combatContext` when an exchange fired the run, and is
    * written against the unit's data as it was read. Each unit's outcome lists its `impacts` (see `unitImpact`). A
    * heal echo lists none, because it is the caster's passive reacting to the heal rather than the step's own work.
-   * A heal skips slain units.
+   * A heal skips slain units. Damage with `isCrit` unset is a crit only when `blowCrit` says the run was fired by
+   * the striker's own critical blow, so an On Struck, On Death or On Kill reply never doubles on it. An unknown
+   * damage type deals untyped damage (effectDamageType).
    */
-  async #settleHealth(operation, runtime, context, resources = null, combatContext = null) {
+  async #settleHealth(operation, runtime, context, resources = null, combatContext = null, blowCrit = false) {
     const step = operation.step;
     const named = await this.effects.resolveTargets(step.target, runtime);
     const targets = livingTargets(named, runtime);
@@ -288,12 +299,13 @@ export class EffectExecutionService {
         });
         continue;
       }
-      const critical = step.isCrit === true || (step.isCrit === undefined && context.isCrit === true);
+      const critical = step.isCrit === true || (step.isCrit === undefined && blowCrit === true);
+      const damageType = effectDamageType(step.dmgType);
       const resolution = resolveDamage({
         policy: step.alt === false ? DAMAGE_POLICIES.WEAPON : DAMAGE_POLICIES.ABILITY,
         damage: amount,
         stanceDamage: stanceAmount,
-        damageType: String(step.dmgType ?? 'none'),
+        damageType,
         critical,
         criticalMultiplier: 2,
         target: snapshot.ruleTarget
@@ -313,7 +325,7 @@ export class EffectExecutionService {
         stanceAmount: resolution.stanceAmount,
         formula: rolledAmount.formula,
         rolled: rolledAmount.rolled,
-        damageType: String(step.dmgType ?? 'none'),
+        damageType,
         critical,
         hpDealt: Math.max(0, Number(resolution.hpBefore) - Number(persisted?.hpAfter ?? resolution.hpAfter)),
         stanceDealt: Math.max(0, Number(resolution.stanceBefore ?? 0)
@@ -495,6 +507,12 @@ function adoptSpawn(runtime, spawned) {
   if (!spawned?.tokenUuid) return;
   runtime.lastSpawnedTokenUuid = spawned.tokenUuid;
   runtime.lastSpawnedActorUuid = spawned.actorUuid;
+}
+
+/** A wait or delay in milliseconds, held between 0 and MAX_EFFECT_WAIT_MS. */
+function effectWait(milliseconds) {
+  const value = Number(milliseconds);
+  return Number.isNaN(value) ? 0 : Math.min(MAX_EFFECT_WAIT_MS, Math.max(0, value));
 }
 
 function settledRun(outcomes, errors, interrupted) {

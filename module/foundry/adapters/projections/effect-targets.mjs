@@ -1,9 +1,11 @@
 /** @layer foundry/adapters/projections */
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { SUMMON_REMAINING_FLAG, SUMMON_TICKS_ON_FLAG, SUMMONED_BY_FLAG } from '../../../contracts/domains/combat.mjs';
-import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
+import { AREA_FACTIONS, EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
 import { factionGroup } from '../../../game/character/rules.mjs';
+import { resolveMovementOccupancy } from '../../../game/movement/pathfinding.mjs';
 import { resolveTargetKind, TARGET_KINDS } from '../../../game/objects/rules.mjs';
+import { effectAreaRadius } from '../../../game/targeting/shapes.mjs';
 import { rectDistance } from '../../../lib/core/geometry.mjs';
 import { collectionValues } from '../../../lib/core/runtime.mjs';
 import { persistedTokenPosition, resolveActor, resolveScene, resolveToken } from '../services/host.mjs';
@@ -17,11 +19,11 @@ const SPAWN_SOURCE_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPAWN
 const SPAWN_LOCATION_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPAWN_LOCATION_MISSING });
 
 /**
- * The units an effect step's target names: 'self', 'target', an explicit actor or token, or an area. When the run
- * has no target, 'target' and an area centred on it name nobody.
+ * The units an effect step's target names: 'self' (or 'caster'), 'target', an explicit actor or token, or an
+ * area. When the run has no target, 'target' and an area centred on it name nobody.
  */
 export async function resolveEffectTargets(reference, runtime) {
-  if (reference === 'self') return identified(runtime.self);
+  if (reference === 'self' || reference === 'caster') return identified(runtime.self);
   if (reference === 'target') return identified(runtime.target);
   if (reference?.actorUuid || reference?.tokenUuid) return identified(reference);
   if (reference?.area) return areaTargets(reference.area, runtime);
@@ -107,7 +109,9 @@ function distinct(values) {
  * encounter finds the summons to remove. No Actor is created: the token points at the step's Actor by id, so that
  * Actor must be a world Actor; an unlinked token gets its own copy, deleted with the token. A timed summon also
  * carries its phase countdown. With "replace on recast", it also lists the caster's earlier summons of this Actor
- * (other than those in `placed`) so they can be removed, and every actor their removal writes.
+ * (other than those in `placed`) so they can be removed, and every actor their removal writes. A square another
+ * token takes is refused as no square to summon onto; the summons a recast replaces don't count, since they are
+ * removed before the new one is placed.
  * @param {object} step Prepared spawn step.
  * @param {object} runtime Effect runtime.
  * @param {{reserved?: object|null, randomId: function(): string, guardBonds?: object|null, placed?: Set<string>}}
@@ -142,6 +146,9 @@ export async function prepareEffectSpawn(step, runtime, {
   };
   data.flags = summonFlags(data.flags, runtime.self?.actorUuid, await summonTimer(step, runtime));
   const replaced = step.replaceOnRecast === true ? replacedSummons(scene, actor, runtime, guardBonds, placed) : null;
+  if (!existing && summonSquareTaken(scene, location, data, new Set(replaced?.tokenUuids ?? []))) {
+    return SPAWN_LOCATION_MISSING;
+  }
   const tokenUuid = String(existing?.uuid ?? `${scene.uuid}.Token.${tokenId}`);
   const actorUuid = existing?.actor?.uuid ?? (data.actorLink === true ? actor.uuid : `${tokenUuid}.Actor.${actor.id}`);
   return Object.freeze({
@@ -172,6 +179,35 @@ async function summonTimer(step, runtime) {
   const caster = await resolveActor(runtime.self?.actorUuid);
   const ticksOn = factionGroup(caster?.system?.faction?.role) === 'enemy' ? 'Player' : 'Enemy';
   return { [SUMMON_REMAINING_FLAG]: duration, [SUMMON_TICKS_ON_FLAG]: ticksOn };
+}
+
+/**
+ * Whether another token stands on the squares a new summon would cover. Tokens movement ignores (a hidden fixture,
+ * an open Door, a broken Destructible, a Convoy) don't count, nor do the summons a recast is about to remove.
+ */
+function summonSquareTaken(scene, location, data, leaving) {
+  const footprint = {
+    x: Number(location.x),
+    y: Number(location.y),
+    width: Math.max(1, Math.round(Number(data.width) || 1)),
+    height: Math.max(1, Math.round(Number(data.height) || 1))
+  };
+  return collectionValues(scene.tokens).some(token => !leaving.has(token.uuid)
+    && resolveMovementOccupancy(null, occupantFacts(token)).occupiesLanding
+    && rectDistance(footprint, tokenGridRect(token)) === 0);
+}
+
+/** What the movement rules read to decide whether a token takes its square. */
+function occupantFacts(token) {
+  const actor = token.actor;
+  if (!actor) return null;
+  return {
+    actorType: actor.type,
+    hidden: token.hidden === true,
+    objectType: actor.system?.objectType ?? '',
+    locked: actor.system?.locked !== false,
+    stance: Number(actor.system?.resources?.stn?.value) || 0
+  };
 }
 
 /** The caster's earlier summons of `actor` on the Scene a recast removes, with the Guard partners each leaves. */
@@ -222,28 +258,35 @@ export function tokenGridRect(token) {
   };
 }
 
+/**
+ * The units within an area's radius of its centre token. The faction filter is judged from the caster's side, not
+ * the centre's, and an unknown filter catches nobody. The centre unit is caught only with `includeCenter`.
+ */
 async function areaTargets(area, runtime) {
   const scene = await resolveScene(runtime.sceneUuid);
   const centre = (area.center ?? 'self') === 'target' ? runtime.target : runtime.self;
   const origin = await resolveToken(centre?.tokenUuid);
-  if (!scene || !origin) return [];
-  const radius = Math.max(0, Math.floor(Number(area.radius ?? 1)) || 0);
+  const filter = area.faction ?? 'all';
+  if (!scene || !origin || !AREA_FACTIONS.includes(filter)) return [];
+  const caster = await resolveActor(runtime.self?.actorUuid);
+  const radius = effectAreaRadius(area.radius ?? 1);
   const originRect = tokenGridRect(origin);
   return collectionValues(scene.tokens).filter(token => {
-    if (token.uuid === origin.uuid || token.actor?.type !== 'Character') return false;
+    if (token.actor?.type !== 'Character') return false;
+    if (token.uuid === origin.uuid && area.includeCenter !== true) return false;
     return rectDistance(originRect, tokenGridRect(token)) <= radius
-      && areaFactionAllowed(token.actor, origin.actor, area.faction);
+      && areaFactionAllowed(token.actor, caster, filter);
   }).map(token => ({ actorUuid: token.actor.uuid, tokenUuid: token.uuid }));
 }
 
-function areaFactionAllowed(candidate, origin, filter = 'all') {
+/** Whether a unit passes an area's faction filter, judged from the caster's side. */
+function areaFactionAllowed(candidate, caster, filter) {
   if (filter === 'all') return true;
   const candidateSide = factionGroup(candidate.system.faction.role ?? 'Neutral') ?? 'neutral';
-  const originSide = factionGroup(origin?.system?.faction?.role ?? 'Neutral') ?? 'neutral';
-  if (filter === 'allies') return candidateSide === originSide;
-  if (filter === 'enemies') return candidateSide !== 'neutral' && candidateSide !== originSide;
-  if (filter === 'enemiesAndNeutrals') return candidateSide !== originSide;
-  return true;
+  const casterSide = factionGroup(caster?.system?.faction?.role ?? 'Neutral') ?? 'neutral';
+  if (filter === 'allies') return candidateSide === casterSide;
+  if (filter === 'enemies') return candidateSide !== 'neutral' && candidateSide !== casterSide;
+  return candidateSide !== casterSide;
 }
 
 function identified(target) { return target?.actorUuid || target?.tokenUuid ? [target] : []; }

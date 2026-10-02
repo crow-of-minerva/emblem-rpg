@@ -25,4 +25,14 @@ export class EmblemActiveEffect extends ActiveEffect {
     if (!admitNativeWrite(user, this, 'delete')) return false;
     return super._preDelete(options, user);
   }
+
+  /**
+   * After effects are deleted, on every client, change back any faction change tied to them (`factionLinks`, set in
+   * init/system.mjs to the handlers in foundry/hooks/faction-links.mjs). Foundry awaits this before the deleting
+   * client's delete call returns, which a revert inside the running command relies on.
+   */
+  static async _onDeleteOperation(documents, operation, user) {
+    await super._onDeleteOperation(documents, operation, user);
+    await this.factionLinks?.onEffectsDeleted(documents, operation, user);
+  }
 }

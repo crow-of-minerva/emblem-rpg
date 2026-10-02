@@ -19,7 +19,7 @@ import { canonicalJson, digest } from '../../lib/core/runtime.mjs';
 const PRESENTATION_STEPS = new Set([
   'animation', 'floatingText', 'playVoice', 'playResist', 'refreshPathfinding'
 ]);
-const CONTROL_STEPS = new Set(['wait', 'expr']);
+const CONTROL_STEPS = new Set(['wait']);
 
 /** Choose the channel engine/effects/execution.mjs uses to execute a planned step. */
 function effectOperationChannel(kind) {

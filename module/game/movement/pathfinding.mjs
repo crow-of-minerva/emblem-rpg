@@ -817,12 +817,8 @@ function crossingLandingFacts(source, input = normalizeInput(source)) {
  */
 export function resolveForcedStep(source, from, to, { ignoreWalls = false } = {}) {
   const input = normalizeInput(source);
-  if (footprintOverlaps(to, input.footprint, new Set(input.occupiedCells))) {
-    return forcedStep(FORCED_STEP_OUTCOMES.OCCUPIED);
-  }
-  if (!crossingLandingIsLegal(crossingLandingFacts(source, input), from, to, { ignoreWalls })) {
-    return forcedStep(FORCED_STEP_OUTCOMES.BLOCKED);
-  }
+  const landing = landingOutcome(source, input, from, to, ignoreWalls);
+  if (landing !== FORCED_STEP_OUTCOMES.WALK) return forcedStep(landing);
   const fromElevation = finiteNumber(input.terrainElevations[cellKey(from.x, from.y)]);
   const toElevation = finiteNumber(input.terrainElevations[cellKey(to.x, to.y)]);
   if (input.airborne || fromElevation === toElevation) return forcedStep(FORCED_STEP_OUTCOMES.WALK);
@@ -830,6 +826,28 @@ export function resolveForcedStep(source, from, to, { ignoreWalls = false } = {}
   const crossing = crossingCandidates(source, from, to)
     .find(option => option.to.x === to.x && option.to.y === to.y);
   return crossing ? forcedStep(FORCED_STEP_OUTCOMES.DESCENT, crossing) : forcedStep(FORCED_STEP_OUTCOMES.BLOCKED);
+}
+
+/**
+ * Whether a unit sent straight from one square to another, ignoring height, may land there: OCCUPIED when another
+ * token takes the landing, BLOCKED when it is off the map, on a blocked square, or past a wall on the straight line,
+ * otherwise WALK. Effect teleports and swaps use this, since they do not walk or climb.
+ * @param {object} source Movement data of the unit being moved, with occupied squares worked out for that unit.
+ * @param {{x: number, y: number}} from The square being left.
+ * @param {{x: number, y: number}} to The square it is being sent to.
+ * @param {object} [options] `ignoreWalls` for a move authored to pass through walls.
+ * @returns {string} A FORCED_STEP_OUTCOMES value.
+ */
+export function resolveLanding(source, from, to, { ignoreWalls = false } = {}) {
+  return landingOutcome(source, normalizeInput(source), from, to, ignoreWalls);
+}
+
+function landingOutcome(source, input, from, to, ignoreWalls) {
+  if (footprintOverlaps(to, input.footprint, new Set(input.occupiedCells))) return FORCED_STEP_OUTCOMES.OCCUPIED;
+  if (!crossingLandingIsLegal(crossingLandingFacts(source, input), from, to, { ignoreWalls })) {
+    return FORCED_STEP_OUTCOMES.BLOCKED;
+  }
+  return FORCED_STEP_OUTCOMES.WALK;
 }
 
 function forcedStep(outcome, crossing = null) {
@@ -904,8 +922,8 @@ export function collectCrossingOptions(source, graph) {
 }
 
 /**
- * Whether a step crosses a wall, tested on each footprint square's centre-to-centre line. A wall running between
- * two rows or columns inside a large footprint is never tested.
+ * Whether a step crosses a wall, tested on each footprint square's centre-to-centre line, along its whole length.
+ * A wall running between two rows or columns inside a large footprint is never tested.
  */
 function stepCrossesWall(from, to, input) {
   if (input.wallsByCell.size === 0) return false;
@@ -918,7 +936,10 @@ function stepCrossesWall(from, to, input) {
         x2: to.x + dx + 0.5,
         y2: to.y + dy + 0.5
       };
-      for (const wall of wallsNearStep(buckets, from.x + dx, from.y + dy, to.x + dx, to.y + dy)) {
+      const near = buckets === input.wallsByCell
+        ? wallsNearStep(buckets, from.x + dx, from.y + dy, to.x + dx, to.y + dy)
+        : wallsAlongStep(buckets, from.x + dx, from.y + dy, to.x + dx, to.y + dy);
+      for (const wall of near) {
         if (segmentsIntersect(movement, wall)) return true;
       }
     }
@@ -933,6 +954,24 @@ function wallsNearStep(buckets, fromX, fromY, toX, toY) {
   if (near.length === 0) return beyond;
   if (beyond.length === 0) return near;
   return new Set([...near, ...beyond]);
+}
+
+/**
+ * The walls that could cross a step longer than one square, drawn from the wallsByBox bucket of every square in the
+ * box the step spans. A wall can only cross the line if its widened box shares one of those squares.
+ */
+function wallsAlongStep(buckets, fromX, fromY, toX, toY) {
+  const near = new Set();
+  const minX = Math.floor(Math.min(fromX, toX));
+  const maxX = Math.floor(Math.max(fromX, toX));
+  const minY = Math.floor(Math.min(fromY, toY));
+  const maxY = Math.floor(Math.max(fromY, toY));
+  for (let x = minX; x <= maxX; x += 1) {
+    for (let y = minY; y <= maxY; y += 1) {
+      for (const wall of buckets.get(cellKey(x, y)) ?? []) near.add(wall);
+    }
+  }
+  return near;
 }
 
 /**
