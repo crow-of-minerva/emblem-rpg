@@ -9,6 +9,7 @@ import {
 } from '../../contracts/domains/damage.mjs';
 import { GUARD_BOND_REFUSALS } from '../../contracts/domains/combat.mjs';
 import { isEffectPreconditionFailure } from '../../contracts/dsl/effects.mjs';
+import { normalizeGeometry } from '../../contracts/dsl/terrain-geometry.mjs';
 import { RESULT_CODES } from '../../contracts/results.mjs';
 import {
   resolveDamage,
@@ -138,6 +139,7 @@ export class EffectExecutionService {
       return this.#settleHealth(prepared, runtime, context, resources, combatContext);
     }
     if (step.kind === 'spawnToken') return this.#spawn(prepared, runtime, resources);
+    if (aimsAtMissingTarget(step, runtime)) return noTargetOutcome({ kind: step.kind });
     const resolved = await this.effects.resolveWrites(prepared, runtime);
     const writes = spareSlain(resolved, runtime);
     if (await this.#aimedOnlyAtSlain(step, resolved, writes, runtime)) return slainOutcome({ kind: step.kind });
@@ -547,6 +549,22 @@ function healthFailure(persisted, code) {
 /** The outcome of a unit-only step with no unit target, or of a heal aimed at a Destructible. */
 function sceneryOutcome(detail) {
   return { ok: true, skipped: 'scenery', ...detail };
+}
+
+/**
+ * Whether a unit-only step points at the other unit (as its target, its area's centre, its swap partner or its move
+ * anchor) in a run that has none, such as a phase passive or a use that caught nobody. Such a step has nothing to do.
+ */
+function aimsAtMissingTarget(step, runtime) {
+  if (!UNIT_WRITING_STEPS.has(step.kind) || runtime.target?.actorUuid || runtime.target?.tokenUuid) return false;
+  const ruled = step.kind === 'moveToken' && step.mode === 'terrainGeometry';
+  const anchor = ruled ? normalizeGeometry(step.geometry).anchor : '';
+  return [step.target, step.target?.area?.center, step.pair, anchor].includes('target');
+}
+
+/** The outcome of a unit-only step aimed at the other unit in a run that has none. */
+function noTargetOutcome(detail) {
+  return { ok: true, skipped: 'noTarget', ...detail };
 }
 
 /* -------------------------------------------- */

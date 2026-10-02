@@ -17,7 +17,8 @@ const SPAWN_SOURCE_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPAWN
 const SPAWN_LOCATION_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPAWN_LOCATION_MISSING });
 
 /**
- * The units an effect step's target names: 'self', 'target', an explicit actor or token, or an area.
+ * The units an effect step's target names: 'self', 'target', an explicit actor or token, or an area. When the run
+ * has no target, 'target' and an area centred on it name nobody.
  */
 export async function resolveEffectTargets(reference, runtime) {
   if (reference === 'self') return identified(runtime.self);

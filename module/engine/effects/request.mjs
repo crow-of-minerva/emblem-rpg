@@ -9,6 +9,9 @@ import { effectAttributeShorthands } from '../../game/effects/planning.mjs';
  * foundry/adapters/document-writes/effect-execution.mjs saves old values through it before it changes anything.
  *
  * `slainActorUuids` names the units killed so far in the exchange. EffectExecutionService spares them every write.
+ *
+ * `target` is null when the run has no other unit: a phase passive, On Use Item, or a use that caught nobody. A
+ * step aimed at 'target' then acts on nobody; it never falls back to the acting unit.
  * @param {object} input Scene, both sides, and the placement data an authored step may read.
  * @returns {Readonly<object>}
  */
@@ -29,10 +32,9 @@ export function effectRuntime({
     sceneUuid,
     operation,
     self: Object.freeze({ actorUuid: self.actorUuid ?? '', tokenUuid: self.tokenUuid ?? '' }),
-    target: Object.freeze({
-      actorUuid: target?.actorUuid ?? self.actorUuid ?? '',
-      tokenUuid: target?.tokenUuid ?? self.tokenUuid ?? ''
-    }),
+    target: target
+      ? Object.freeze({ actorUuid: target.actorUuid ?? '', tokenUuid: target.tokenUuid ?? '' })
+      : null,
     targetLocation,
     effectTiles,
     prePickedPlacement,

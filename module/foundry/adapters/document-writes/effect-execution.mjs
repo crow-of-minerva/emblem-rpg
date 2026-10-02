@@ -655,6 +655,10 @@ async function terrainEffectCellKeys(step, runtime, scene) {
     .filter(key => !grid[key]?.obstacle && !grid[key]?.impassable))];
 }
 
+/**
+ * The squares a terrain step names: an area, a unit's own squares, or else the cast area (the use's covered squares,
+ * then its clicked square). With no cast area it names none, rather than the squares under a unit.
+ */
 async function terrainEffectCoordinates(step, runtime, { size, columns, rows }) {
   const reference = step.target;
   if (reference?.area) {
@@ -683,8 +687,7 @@ async function terrainEffectCoordinates(step, runtime, { size, columns, rows }) 
     && Number.isFinite(Number(runtime.targetLocation.x)) && Number.isFinite(Number(runtime.targetLocation.y))) {
     return [{ x: Number(runtime.targetLocation.x), y: Number(runtime.targetLocation.y) }];
   }
-  const token = await resolveToken(runtime.target?.tokenUuid ?? runtime.self?.tokenUuid);
-  return token ? tokenFootprintCoordinates(token, size) : [];
+  return [];
 }
 
 function tokenFootprintCoordinates(token, size) {

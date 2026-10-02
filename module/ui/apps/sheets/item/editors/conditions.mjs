@@ -180,6 +180,11 @@ const COMPARE_OP_LABELS = {
 /** How the change-kind button names each leaf kind in its tooltip, in the order it steps through them. */
 const LEAF_KIND_LABELS = { compare: 'compare', truthy: 'truthy', chance: 'chance', status: 'status effect' };
 
+/** The leaf kinds the builder offers on a surface. Only an effect's conditions may use a chance. */
+function leafKindsFor(surface) {
+  return surface === 'effect' ? LEAF_KINDS : LEAF_KINDS.filter(kind => kind !== 'chance');
+}
+
 /** How the status leaf names each side in its selector. */
 const STATUS_SIDE_LABELS = { self: 'self', target: 'target' };
 
@@ -240,13 +245,16 @@ function renderRightOperand(operand, op) {
 /** The leaves that carry their own `negate`. A comparison is negated by its operator, a chance by its percent. */
 const NEGATABLE_KINDS = Object.freeze(['truthy', 'status']);
 
-/** The controls a leaf carries: change kind and delete, plus negate on the leaves in `NEGATABLE_KINDS`. */
-function leafButtons(kind) {
+/**
+ * The controls a leaf carries: change kind and delete, plus negate on the leaves in `NEGATABLE_KINDS`.
+ * @param {ReadonlyArray<string>} leafKinds  The kinds the change-kind button steps through on this surface.
+ */
+function leafButtons(kind, leafKinds) {
   const negate = NEGATABLE_KINDS.includes(kind) ? `
       <button type="button" class="mod-leaf-kind-btn" data-action="negate-node" data-tooltip="Negate">
         <span class="mod-not-glyph">¬</span>
       </button>` : '';
-  const cycle = LEAF_KINDS.map(entry => LEAF_KIND_LABELS[entry]).join(' → ');
+  const cycle = leafKinds.map(entry => LEAF_KIND_LABELS[entry]).join(' → ');
   return `
     <div class="mod-actions-cluster">${negate}
       <button type="button" class="mod-leaf-kind-btn" data-action="change-kind" data-tooltip="Change leaf type (${cycle})">
@@ -262,8 +270,9 @@ function leafButtons(kind) {
  * One leaf row, by kind. A comparison takes a path, an operator and a value. A truthy leaf takes only a path, a
  * chance leaf only a percentage, and a status leaf a side and a status name. The truthy and status leaves keep
  * their `negate` on the row as `data-negate`, which the negate button flips and `readLeafFromDom` reads back.
+ * A chance leaf still renders on a surface that doesn't offer chance, so the GM can delete it.
  */
-function renderLeaf(node) {
+function renderLeaf(node, leafKinds) {
   const id = node._id;
   switch (node.kind) {
     case 'compare': {
@@ -276,7 +285,7 @@ function renderLeaf(node) {
                  value="${escapeHtml(node.left)}" placeholder="property path or expression" autocomplete="off" />
           <select class="mod-compare-op" data-compare-op>${opOptions}</select>
           ${renderRightOperand(node.right, node.op)}
-          ${leafButtons('compare')}
+          ${leafButtons('compare', leafKinds)}
         </div>`;
     }
     case 'truthy': {
@@ -287,7 +296,7 @@ function renderLeaf(node) {
           <input type="text" class="mod-left-input" data-left-input data-path-input="path"
                  value="${escapeHtml(node.expr)}" placeholder="property path" autocomplete="off" />
           <span class="mod-unary-verb">${negated ? 'is falsy' : 'is truthy'}</span>
-          ${leafButtons('truthy')}
+          ${leafButtons('truthy', leafKinds)}
         </div>`;
     }
     case 'chance': {
@@ -296,7 +305,7 @@ function renderLeaf(node) {
           <input type="number" class="mod-chance-input" data-chance-input min="0" max="100" step="1"
                  value="${escapeHtml(String(node.percent ?? 0))}" />
           <span class="mod-unary-verb">% chance</span>
-          ${leafButtons('chance')}
+          ${leafButtons('chance', leafKinds)}
         </div>`;
     }
     case 'status': {
@@ -312,7 +321,7 @@ function renderLeaf(node) {
           <span class="mod-unary-verb">${negated ? 'does not have' : 'has'}</span>
           <input type="text" class="mod-left-input" data-status-name
                  value="${escapeHtml(node.name ?? '')}" placeholder="status effect name" autocomplete="off" />
-          ${leafButtons('status')}
+          ${leafButtons('status', leafKinds)}
         </div>`;
     }
   }
@@ -322,14 +331,15 @@ function renderLeaf(node) {
 /**
  * Render a condition node and everything under it. The root group has no delete control.
  * @param {string} [rootActionsHtml]      Caller markup placed first in the root group's action cluster.
+ * @param {ReadonlyArray<string>} [leafKinds] The leaf kinds offered on this surface.
  */
-function renderNode(node, depth = 0, rootActionsHtml = '') {
+function renderNode(node, depth = 0, rootActionsHtml = '', leafKinds = LEAF_KINDS) {
   if (!node) return '';
   if (node.kind === 'group') {
     const opOptions = GROUP_OPS.map(op =>
       `<option value="${op}"${op === node.op ? ' selected' : ''}>${op}</option>`
     ).join('');
-    const children = (node.children || []).map(c => renderNode(c, depth + 1)).join('');
+    const children = (node.children || []).map(c => renderNode(c, depth + 1, '', leafKinds)).join('');
     const isRoot = depth === 0;
     return `
       <div class="mod-group" data-node-id="${node._id}" data-depth="${depth}">
@@ -352,7 +362,7 @@ function renderNode(node, depth = 0, rootActionsHtml = '') {
         <div class="mod-group-children">${children}</div>
       </div>`;
   }
-  return renderLeaf(node);
+  return renderLeaf(node, leafKinds);
 }
 
 /**
@@ -496,10 +506,13 @@ function newLeafOfKind(kind) {
   return null;
 }
 
-/** The next leaf kind in the cycle the change-kind button steps through. It opens no prompt. */
-function promptChangeKind(currentKind) {
-  const idx = LEAF_KINDS.indexOf(currentKind);
-  return LEAF_KINDS[(idx + 1) % LEAF_KINDS.length];
+/**
+ * The next leaf kind in the cycle the change-kind button steps through. It opens no prompt. A kind the surface
+ * doesn't offer steps to the first one.
+ */
+function promptChangeKind(currentKind, leafKinds) {
+  const idx = leafKinds.indexOf(currentKind);
+  return leafKinds[(idx + 1) % leafKinds.length];
 }
 
 /**
@@ -513,7 +526,7 @@ function paintTreeInternal(state, containerEl, summaryEls) {
 
   _nextNodeId = 0;
   assignIds(state.tree);
-  containerEl.innerHTML = renderNode(state.tree, 0, state.rootActionsHtml);
+  containerEl.innerHTML = renderNode(state.tree, 0, state.rootActionsHtml, state.leafKinds);
 
   paintConditionLine(summaryEls?.summary, state.tree);
   if (summaryEls?.json) summaryEls.json.value = JSON.stringify(stripIds(state.tree), null, 2);
@@ -542,9 +555,10 @@ export function readConditionTree(containerEl) {
  * @param {string} action    The edit the clicked control asked for.
  * @param {number|null} nodeId  The node it was clicked on, where the edit names one.
  * @param {HTMLElement} btn  The clicked control (unused).
+ * @param {ReadonlyArray<string>} leafKinds  The leaf kinds offered on this surface.
  * @returns {Promise<object|null>} The edited tree, or null for an unknown action.
  */
-async function applyConditionEdit(tree, action, nodeId, btn) {
+async function applyConditionEdit(tree, action, nodeId, btn, leafKinds) {
   if (action === 'add-rule') {
     const group = findNode(tree, nodeId);
     if (group?.kind === 'group') {
@@ -570,7 +584,7 @@ async function applyConditionEdit(tree, action, nodeId, btn) {
   } else if (action === 'change-kind') {
     const node = findNode(tree, nodeId);
     if (node && node.kind !== 'group') {
-      const next = await promptChangeKind(node.kind);
+      const next = await promptChangeKind(node.kind, leafKinds);
       const replacement = newLeafOfKind(next);
       replacement._id = node._id;
       const currentExpr = node.expr ?? node.left ?? '';
@@ -598,8 +612,8 @@ async function applyConditionEdit(tree, action, nodeId, btn) {
  * @param {string} [options.rootActionsHtml]      Markup placed first in the root group's action cluster, repainted
  *                                                with the tree. The caller handles its events.
  * @param {string} [options.surface]              Which editor the condition belongs to (effect, modifier, aura,
- *                                                requirement or damageType), for checking pasted JSON. Defaults
- *                                                to effect.
+ *                                                requirement or damageType), for checking pasted JSON. Only
+ *                                                effect offers the chance rule. Defaults to effect.
  * @returns {{getTree: Function, isEmpty: Function, setTree: Function, repaint: Function}}
  */
 export function mountConditionTreeBuilder(containerEl, options = {}) {
@@ -611,7 +625,8 @@ export function mountConditionTreeBuilder(containerEl, options = {}) {
     tree: options.initialTree
       ? foundry.utils.deepClone(options.initialTree)
       : emptyTree(),
-    rootActionsHtml: options.rootActionsHtml || ''
+    rootActionsHtml: options.rootActionsHtml || '',
+    leafKinds: leafKindsFor(surface)
   };
 
   const repaint = () => paintTreeInternal(state, containerEl, summaryEls);
@@ -626,7 +641,7 @@ export function mountConditionTreeBuilder(containerEl, options = {}) {
     const nodeId = container ? parseInt(container.dataset.nodeId) : null;
     const action = btn.dataset.action;
 
-    const edited = await applyConditionEdit(state.tree, action, nodeId, btn);
+    const edited = await applyConditionEdit(state.tree, action, nodeId, btn, state.leafKinds);
     if (!edited) return;
     state.tree = edited;
 
