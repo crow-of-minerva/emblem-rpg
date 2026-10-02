@@ -6,24 +6,25 @@ import { CROSSING_DC_MULT_DEFAULT, CROSSING_DIRECTIONS } from '../../../../contr
 /* -------------------------------------------- */
 
 /**
- * One authored per-square field of the Terrain Builder.
+ * One per-square field of the Terrain Builder.
  *
  * - `name` is the control's `name=` attribute in `templates/editors/terrain-builder.hbs` and the key the template
- *   reads from its `fields` context. Adding a field means one entry here plus its markup, nothing else.
+ *   reads from its `fields` context. A new field also needs its markup and a line in `_selectionSquares` (app.mjs),
+ *   which copies each value into the saved square by hand.
  * - `kind` says how the control is read and written: `number`, `text`, `select`, `color`, `checkbox` or `list`.
- * - `value` is the authored default, used for a blank control, a preset that omits the field and a selection whose
- *   squares disagree.
- * - `path` is where the value sits in the form object `_selectionSquares` writes cells from and a preset stores.
- *   It defaults to `name`.
- * - `cell` is where the value sits on a stored terrain cell, defaulting to `path`. A `derived` field has no stored
- *   counterpart: the application computes it (the spans, the transition arms and the row lists).
- * - `cellRead` picks how a stored value is coerced back onto the form (see `coerceCellValue`).
- * - `fromAnchor` marks the effect fields a spanned selection reads from its rectangle anchor rather than from
- *   agreement across deliberately empty member squares.
- * - `sparse` marks a control whose form value a sibling list descriptor already writes: the crossing directions,
- *   which `TerrainBuilder._readCrossingRows` reads only where an elevation boundary allows editing.
- *   Such a control is applied from a preset only when that preset carries it, so a preset that says nothing about
- *   a direction leaves the value the selection's own elevation suggested.
+ * - `value` is the default, used for a blank control, a preset that omits the field and a selection whose squares
+ *   disagree.
+ * - `path` is where the value sits in the form object that Save, presets and Copy use. It defaults to `name`.
+ * - `cell` is where the value sits on a saved terrain square, defaulting to `path`. A `derived` field isn't read
+ *   from one saved path: app.mjs works it out from the whole selection (the spans, the transition directions and the
+ *   row lists).
+ * - `cellRead` picks how a saved value is turned back into a control value (see `coerceCellValue`).
+ * - `fromAnchor` marks the visual effect fields. A spanned effect is saved only on its rectangle's top-left square,
+ *   so these are read from that square.
+ * - `sparse` marks the per-direction crossing controls; a preset sets them only when it names them, otherwise they
+ *   keep the value the selection's heights suggested.
+ * - `trim` and `normalize` clean typed text, `min` is the lowest number a saved value opens at, and `empty` is a
+ *   list's blank value (`array` or `object`).
  * @typedef {object} TerrainFormField
  */
 
@@ -97,17 +98,16 @@ const TERRAIN_FORM_FIELDS = Object.freeze([
 export const TERRAIN_SCALAR_FIELDS = Object.freeze(TERRAIN_FORM_FIELDS.filter(field => field.kind !== 'list'));
 
 /**
- * Every field's authored default, keyed by control name. `_selectionSquares` reads the audio radius from here so
- * the fallback it stores and the value the form offers cannot drift apart.
+ * Every field's default, keyed by control name.
  * @type {Readonly<Object<string, *>>}
  */
 export const TERRAIN_FIELD_DEFAULTS = Object.freeze(
   Object.fromEntries(TERRAIN_SCALAR_FIELDS.map(field => [field.name, field.value])));
 
-/** Where a field sits in the form object a preset stores and `_selectionSquares` writes cells from. */
+/** Where a field sits in the form object that Save, presets and Copy use. */
 const formPath = (field) => field.path ?? field.name;
 
-/** Where a field sits on a stored terrain cell, or null when the application derives it instead. */
+/** Where a field sits on a saved terrain square, or null for derived and sparse fields, which app.mjs reads itself. */
 const cellPath = (field) => (field.derived || field.sparse ? null : (field.cell ?? formPath(field)));
 
 /* -------------------------------------------- */
@@ -115,9 +115,8 @@ const cellPath = (field) => (field.derived || field.sparse ? null : (field.cell 
 /* -------------------------------------------- */
 
 /**
- * Turn the raw control values of the per-square trays into the form object that `_selectionSquares` writes cells
- * from and the preset files store. `TerrainBuilder._readPerSquareForm` collects `raw` from the DOM and supplies
- * `lists` from the three row editors, the transition compass and the crossing rows.
+ * Turn the raw tray control values into the form object that Save, presets and Copy use. `lists` holds the values
+ * that aren't single controls: the three row lists, the transition directions and the crossing rows.
  * @param {Object<string, *>} raw     Control values by name: `value` for all but checkboxes, `checked` for those.
  * @param {Object<string, *>} lists   Row and compass values by field name.
  * @returns {object} The per-square form.
@@ -136,7 +135,7 @@ export function readTerrainFormValues(raw, lists = {}) {
 
 /**
  * Coerce one raw control value. A blank number reads as zero, as the browser gives it. Only an unreadable or absent
- * control falls back to the authored default. A checkbox reads what it shows, never its default.
+ * control falls back to the default. A checkbox reads what it shows, never its default.
  * @param {TerrainFormField} field
  * @param {*} rawValue
  * @returns {*}
@@ -157,12 +156,12 @@ function readControlValue(field, rawValue) {
 /* -------------------------------------------- */
 
 /**
- * Project a stored preset, or a copied tile, onto the values the per-square controls should show.
+ * Turn a saved preset, or a copied tile, into the values the per-square controls should show.
  *
- * `TerrainBuilder._applyPresetToForm` writes the result into the DOM and leaves any control this omits alone. The
- * row lists are rebuilt separately by the row editors, which own their own markup.
+ * `TerrainBuilder._applyPresetToForm` writes the result into the form and leaves any control left out alone. The
+ * row lists are rebuilt separately by the row editors.
  * @param {object} preset             Preset parameters, in the shape `readTerrainFormValues` returns.
- * @returns {Object<string, *>} Control values by name, without the sparse controls the preset says nothing about.
+ * @returns {Object<string, *>} Control values by name, leaving out crossing controls the preset doesn't name.
  */
 export function projectPresetToFormValues(preset) {
   const values = {};
@@ -181,11 +180,10 @@ export function projectPresetToFormValues(preset) {
 /* -------------------------------------------- */
 
 /**
- * Project the selected squares onto the values the per-square controls open at, for the template context
- * `TerrainBuilder._prepareContext` builds.
+ * The values the per-square controls open at for the selected squares, for `TerrainBuilder._prepareContext`.
  * @param {object} sources
- * @param {function(string, *): *} sources.common   Reads one stored path, returning the default unless every
- *                                                  selected square agrees on it.
+ * @param {function(string, *): *} sources.common   Reads one saved path, returning the default unless every
+ *                                                  selected square has the same value.
  * @param {object|null} sources.anchor              The spanned rectangle's top-left square.
  * @param {boolean} sources.spanActive              Whether the selection currently spans one effect.
  * @returns {Object<string, *>} Field values by control name.
@@ -204,11 +202,11 @@ export function projectSelectionFieldValues({ common, anchor, spanActive = false
 }
 
 /**
- * Coerce one stored value onto its control.
+ * Turn one saved value into its control's value.
  *
- * `raw` keeps whatever the cell holds, `nonzero` treats a stored zero as unauthored, `strict-true` and `not-false`
- * distinguish a deliberately cleared flag from a missing one, and the remaining modes fall back on an unreadable
- * number or an empty string.
+ * `raw` keeps whatever the square holds, `nonzero` treats a saved zero as unset, `strict-true` and `not-false`
+ * tell a flag that was turned off apart from a missing one, and the remaining modes fall back to the default on an
+ * unreadable number or an empty string.
  * @param {TerrainFormField} field
  * @param {*} stored
  * @returns {*}
@@ -231,7 +229,10 @@ function coerceCellValue(field, stored) {
   }
 }
 
-/** The coercion a field uses when it names none: a true checkbox keeps a cleared flag, a number must be readable. */
+/**
+ * The read mode a field gets when it names none: a checkbox that defaults on stays on unless saved as false, and a
+ * number falls back to its default when unreadable.
+ */
 function defaultCellRead(field) {
   if (field.kind === 'checkbox') return field.value === true ? 'not-false' : 'truthy';
   return field.kind === 'number' ? 'finite' : 'value';

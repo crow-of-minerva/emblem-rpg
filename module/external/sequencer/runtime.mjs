@@ -9,9 +9,8 @@ import { pageHidden } from '../../lib/dom/visibility.mjs';
 /* -------------------------------------------- */
 
 /**
- * Small wrappers over Sequencer's globals, for animation-dispatch.mjs, the terrain document writer
- * (foundry/adapters/document-writes/terrain.mjs) and this file's terrain effects. Sequencer is a required module,
- * but a database key may be missing or not loaded yet, so lookups return null or false instead of throwing.
+ * Small wrappers over Sequencer's globals. Sequencer is a required module, but a database key may be missing or
+ * not loaded yet, so lookups return null or false instead of throwing.
  */
 export const SequencerRuntime = {
   get SequenceClass() { return globalThis.Sequence; },
@@ -66,8 +65,7 @@ export const SequencerRuntime = {
   /**
    * Turn a file path or Sequencer database key into a file path. A path (anything with a slash) comes back as is.
    * A key is looked up, and its entry (a string, a file object or an array of them) gives its first file. Returns
-   * null when the key has no entry. Used for terrain sounds (document-writes/terrain.mjs) and, despite the name,
-   * for the destruction smoke's effect file.
+   * null when the key has no entry. It works for any file, not only sounds.
    */
   resolveSoundPath(ref) {
     if (!ref || typeof ref !== 'string') return null;
@@ -127,7 +125,7 @@ export function transientSoundsAudible() {
 /* -------------------------------------------- */
 /**
  * Play the four-layer JB2A stance-break impact and a camera shake at the token, on this client only.
- * StanceBreakPresentation calls it through its `impact` port (wired in init/system.mjs).
+ * StanceBreakPresentation calls it as its `impact` function (passed in from init/system.mjs).
  */
 export async function playStanceBreakImpact(token) {
   if (!token || typeof globalThis.Sequence !== 'function') return false;

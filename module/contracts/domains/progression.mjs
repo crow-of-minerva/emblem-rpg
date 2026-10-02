@@ -103,9 +103,9 @@ export const SUPPORT_UNRANKED_LETTER = '--';
 export const SUPPORT_NONE_TIER = 'None';
 
 /**
- * The resource key the Support commands in engine/support/commands.mjs name for mirror writes. A mirror sweep may
- * rewrite any Character's partners, so the key stands for the whole world. Like every resource key, it records
- * what a command touches and locks nothing.
+ * The resource key the Support commands in engine/support/commands.mjs claim when they copy bonds to each partner's
+ * side. That copy may rewrite any Character's partners, so the key stands for the whole world. Like every resource
+ * key, it records what a command touches and locks nothing.
  */
 export const SUPPORT_MIRROR_RESOURCE_KEY = 'support-mirror:world';
 
@@ -157,7 +157,7 @@ const SUPPORT_XP_INTENT_KEYS = new Set(['sourceActorUuid', 'partnerActorUuids', 
 const SUPPORT_PARTNERS_INTENT_KEYS = new Set(['actorUuid', 'partners']);
 const SUPPORT_PARTNER_ENTRY_KEYS = new Set(['actorUUID', 'name', 'rank', 'xp']);
 
-/** Validate and detach a promotion request. The promotion rules check every requirement again against fresh state. */
+/** Check a promotion request and return a frozen copy. The promotion rules check every requirement again later. */
 export function normalizePromotionIntent(payload = {}) {
   if (!plainRecord(payload) || Object.keys(payload).some(key => !PROMOTION_INTENT_KEYS.has(key))) return null;
   const actorUuid = String(payload.actorUuid ?? '');
@@ -177,7 +177,7 @@ export function normalizePromotionIntent(payload = {}) {
   });
 }
 
-/** Validate and detach a Support XP grant request. It names the units and the amount, and nothing about ranks. */
+/** Check a Support XP grant request. It names the units and the amount, and nothing about ranks. */
 export function normalizeSupportXpGrantIntent(payload = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
   if (Object.keys(payload).some(key => !SUPPORT_XP_INTENT_KEYS.has(key))) return null;
@@ -203,7 +203,7 @@ export function normalizeSupportXpGrantIntent(payload = {}) {
   });
 }
 
-/** Validate and detach a whole replacement partner list for one unit's own side of its bonds. */
+/** Check a whole replacement partner list for one unit's own side of its bonds. */
 export function normalizeSupportPartnersIntent(payload = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
   if (Object.keys(payload).some(key => !SUPPORT_PARTNERS_INTENT_KEYS.has(key))) return null;
@@ -272,7 +272,7 @@ export const PROGRESSION_PRESENTATION_BEATS = Object.freeze({
   PROMOTION_FLOURISH: 'promotion-flourish'
 });
 
-/** Build the serializable progression overlay message every client renders. */
+/** Build the progression overlay message every client shows. */
 export function progressionPresentationMessage(beat, data = {}) {
   if (!Object.values(PROGRESSION_PRESENTATION_BEATS).includes(beat)) {
     throw new TypeError(`Unknown progression presentation beat: ${beat}`);
@@ -280,7 +280,7 @@ export function progressionPresentationMessage(beat, data = {}) {
   return Object.freeze({ kind: PROGRESSION_PRESENTATION_KIND, beat, ...structuredClone(data) });
 }
 
-/** Accept only a bounded progression overlay message at the presentation socket. */
+/** Check a progression overlay message received over the socket. */
 export function isProgressionPresentationMessage(value) {
   if (!plainRecord(value) || value.kind !== PROGRESSION_PRESENTATION_KIND) return false;
   if (!Object.values(PROGRESSION_PRESENTATION_BEATS).includes(value.beat)) return false;
@@ -296,7 +296,7 @@ export const PROGRESSION_FEATURE_NOTICE_KIND = 'progression-feature-notice';
 const FEATURE_NOTICE_NAME_LIMIT = 64;
 
 /**
- * Build the serializable class feature notice addressed to the user who asked for the change.
+ * Build the class feature notice sent to the user who asked for the change.
  * @param {{actorName?: string, gained?: string[], replaced?: string[], missing?: object|null,
  *   uniqueRemoved?: object|null}} changes The names each notice line reports.
  * @returns {Readonly<object>} The message.
@@ -312,7 +312,7 @@ export function progressionFeatureNoticeMessage({ actorName = '', gained = [], r
     gained: names(gained), replaced: names(replaced), missing: group(missing), uniqueRemoved: group(uniqueRemoved) });
 }
 
-/** Accept only a bounded class feature notice at the presentation socket. */
+/** Check a class feature notice received over the socket. */
 export function isProgressionFeatureNoticeMessage(value) {
   if (!plainRecord(value) || value.kind !== PROGRESSION_FEATURE_NOTICE_KIND) return false;
   const names = list => Array.isArray(list) && list.length <= FEATURE_NOTICE_NAME_LIMIT

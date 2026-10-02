@@ -67,8 +67,8 @@ export function renderSkillRankCard({ actorName, actorImage, avatarScale, skillK
 
 /**
  * Show the economy's verdicts for the presentation handler in init/system.mjs. A theft plays its cue on every client
- * and gets a card, a settled basket gets a receipt, and a haggle plays a cue when the disposition moved and gets its
- * card. FoundryChatOutput posts cards from the active GM only.
+ * and gets a card, a finished purchase or sale gets a receipt, and a haggle plays a cue when the disposition moved
+ * and gets its card. FoundryChatOutput posts cards from the active GM only.
  */
 export class EconomyOutcomePresentation {
   constructor({ audio, chat }) {
@@ -315,7 +315,7 @@ const SOCIAL_BEAT_EVENTS = new Set([
 ]);
 
 /**
- * How long one downtime beat holds the table, read by presentationHoldMs in delivery.mjs: a band's opening, or its
+ * How long one downtime beat holds the table, read by presentationHoldMs in delivery.mjs: a banner's opening, or its
  * close once the work is done. The spar holds nothing here; engine/downtime/resolvers.mjs waits out its passes on
  * its own clock.
  * @param {object} message Downtime presentation message.
@@ -330,7 +330,7 @@ export function downtimeBeatHoldMs(message) {
 }
 
 /**
- * Play a downtime activity's beats on every client: the working or conversation band and its close, the training
+ * Play a downtime activity's beats on every client: the working or conversation banner and its close, the training
  * spar, and the card the GM posts. `conversation` is a ConversationBanner, `animation` plays one authored animation
  * locally, and `faceTokens` turns the sparring pair toward each other where this client may write it (init gates it
  * to the active GM).
@@ -348,7 +348,10 @@ export class DowntimePresentation {
     this.diagnostics = diagnostics;
   }
 
-  /** A hidden client opens no band and pans nowhere, but still closes a band it opened and the host posts its card. */
+  /**
+   * A hidden browser tab skips the banner and camera pan, but still closes a banner it opened, and the host still
+   * posts the card.
+   */
   async show(message) {
     const event = message?.event;
     if (SOCIAL_BEAT_EVENTS.has(event)) return this.#showSocialBeat(message);
@@ -402,14 +405,15 @@ export class DowntimePresentation {
   async #focus(tokenUuid) {
     const token = tokenUuid ? await this.tokens?.placeable?.(String(tokenUuid)) : null;
     if (!token?.center) return;
+    // The camera pan is cosmetic, so an error starting it is ignored.
     try {
       canvas.animatePan({ x: token.center.x, y: token.center.y, duration: 400 });
     } catch {  }
   }
 
   /**
-   * The socialize and training beats: the conversation band opens on the driving unit and closes on the social-end
-   * beat; the training spar plays on its own. A training close has nothing open to close.
+   * The socialize and training beats: the conversation banner opens with the camera on the acting unit and closes on
+   * the social-end beat; the training spar plays on its own. A training close has nothing open to close.
    */
   async #showSocialBeat(message) {
     const events = DOWNTIME_PRESENTATION_EVENTS;
@@ -473,8 +477,8 @@ function sleep(milliseconds) {
 }
 
 /**
- * How WorkBanner.finish closes a band: a performance whose track plays on closes without the success sound, and one
- * whose track was cut off greys its icon in a dark red glow as the band leaves.
+ * How WorkBanner.finish closes a banner: a performance whose track plays on closes without the success sound, and
+ * one whose track was cut off greys its icon in a dark red glow as the banner leaves.
  */
 function workClose(message) {
   const success = message.success !== false;
@@ -777,7 +781,7 @@ function renderRequisitionCard({
 
 /**
  * The socialize card: both units' Sociability rolls, and the Support experience their sum banked. The speaker is the
- * driving unit, and the first total is its own roll.
+ * acting unit, and the first total is its own roll.
  */
 function renderSocialCard({
   actorName, actorImage, avatarScale, partnerName, partnerImage, partnerAvatarScale, firstTotal = 0,

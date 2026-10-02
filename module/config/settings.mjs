@@ -110,7 +110,11 @@ const DIFFICULTY_OPTIONS = Object.freeze({
   default: 'normal'
 });
 
-/** System settings registered by init/registrations.mjs. */
+/**
+ * System settings registered by init/registrations.mjs. The hidden world settings (operation record, movement lock,
+ * Enemy AI map hold, karma ledger, campaign parties) hold live shared state. Only a GM's client can write a world
+ * setting, and each write fires updateSetting on every client.
+ */
 export const SETTING_DEFINITIONS = Object.freeze([
   Object.freeze({ id: OPERATION_RECORD_SETTING,
     options: Object.freeze({ name: 'Operation record', scope: 'world', config: false, type: Object, default: null }) }),

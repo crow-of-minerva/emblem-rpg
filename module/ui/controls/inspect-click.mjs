@@ -20,17 +20,18 @@ import { playUiSound } from '../../presentation/audio/service.mjs';
 /* -------------------------------------------- */
 
 /*
- * A player's left click on a unit opens its read-only BG3 HUD and draws a selection frame around it (the facade
- * selection in presentation/token/rendering.mjs), because a player can't control a unit just to look at it.
+ * A player's left click on a unit opens its read-only BG3 HUD and draws the system's own selection frame around it
+ * (presentation/token/rendering.mjs), because a player can't control a unit just to look at it.
  * movement.mjs installs the canvas listener on every canvasReady, and hands onTokenClickInspect to
  * foundry/patches/token-drag.mjs for the clicks its Token wrappers see first.
  */
 let inspectPointerView = null;
 
 /**
- * Listen for a player's click on the canvas ahead of Foundry, because Foundry refuses a click on a unit the player
- * doesn't own before any Token patch can see it. movement.mjs calls this on every canvasReady and drops the old
- * listener first.
+ * Listen for a player's click on the canvas element itself, because Foundry refuses a click on a unit the player
+ * doesn't own before any Token patch can see it. PIXI put its own capture listener on the same element first, so
+ * Foundry has already handled the click when this runs, and stopping the event here does not stop Foundry.
+ * movement.mjs calls this on every canvasReady and drops the old listener first.
  */
 export function installCanvasInspectClick() {
   disposeCanvasInspectClick();
@@ -69,7 +70,7 @@ export function inspectHoveredMovementToken() {
 }
 
 /**
- * Open a unit's read-only BG3 HUD and draw the facade selection frame around it. The Cycle Units key uses this
+ * Open a unit's read-only BG3 HUD and draw the selection frame around it. The Cycle Units key uses this
  * for players too (unit-cycle.mjs).
  * @param {object} token The placed Token to look at.
  * @returns {boolean} Whether it opened. A unit whose read-only HUD is already showing is left alone.
@@ -82,7 +83,7 @@ export function inspectMovementToken(token) {
 }
 
 /**
- * The token the facade selection frames, or null. selectOrConfirmMovement in movement.mjs prefers it over the
+ * The token inside the system's selection frame, or null. selectOrConfirmMovement in movement.mjs prefers it over the
  * hovered token when the Confirm key is pressed.
  */
 export function pseudoSelectedToken() {
@@ -90,7 +91,7 @@ export function pseudoSelectedToken() {
   return tokenId ? globalThis.canvas?.tokens?.get?.(tokenId) ?? null : null;
 }
 
-/** Give the unit this user is moving its acting HUD back, and clear the facade selection frame. */
+/** Give the unit this user is moving its acting HUD back, and clear the selection frame. */
 function restoreActingHud(token) {
   if (!restoreActingHudForToken(token)) return false;
   clearFacadeSelection();
@@ -103,6 +104,8 @@ function onInspectPointerDown(event) {
   if (!processingActive() && tokenPickAwaitingClick()) return;
   const token = hoveredCanvasToken();
   if (!token || (game.user.isGM && tokenControlAllowed(token))) return;
+  // A GM who may control the unit selects it the normal way. A click on the unit this client is moving only gets
+  // its acting HUD back and carries on, since it may be the start of a drag.
   if (movementPlanForToken(token) && !processingActive()) {
     restoreActingHud(token);
     return;

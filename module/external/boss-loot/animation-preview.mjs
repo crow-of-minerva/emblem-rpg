@@ -6,6 +6,7 @@ import { reportFoundryError } from '../../foundry/adapters/services/diagnostics.
 /*  Animations Preview                          */
 /* -------------------------------------------- */
 const MODULE_ID = 'boss-loot-assets-premium';
+// A file inside the premium module, not a published API, so a module update may move or change it.
 const PREVIEW_SCRIPT = `modules/${MODULE_ID}/scripts/apps/AnimationPreview.js`;
 
 /** Whether the Boss Loot asset module is active, so the scene controls can offer its Animations Preview. */

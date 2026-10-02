@@ -28,8 +28,9 @@ const DAMAGE_TYPE_SET = new Set(DAMAGE_TYPES);
 
 /**
  * The GM-only damage and healing command definitions behind api.combat.applyDamage and applyHealing, which
- * init/system.mjs registers with CommandDispatcher. `objects` drops a slain unit's loot, as an attack does, and
- * StanceBreakService applies or clears Stance Break after the hit or heal.
+ * init/system.mjs registers with CommandDispatcher. Other commands also run them as child commands, for status
+ * ticks, terrain, a resting unit's stance and fall damage. `objects` drops a slain unit's loot, as an attack does,
+ * and StanceBreakService applies or clears Stance Break after the hit or heal.
  */
 export function createHealthCommandContribution({ health, presentation, events, stanceBreaks, objects, authority,
   wait }) {
@@ -53,7 +54,7 @@ export function createHealthCommandContribution({ health, presentation, events, 
 }
 
 /* -------------------------------------------- */
-/*  Damage settlement                           */
+/*  Damage                                      */
 /* -------------------------------------------- */
 async function damageActor(context, health, presentation, events, stanceBreaks, wait, objects) {
   const intent = damageIntent(context.payload);
@@ -106,6 +107,7 @@ async function damageActor(context, health, presentation, events, stanceBreaks, 
       requestId: context.requestId,
       userId: context.userId
     };
+    // Published straight away, not held until the command commits.
     events.publish(EVENT_IDS.ACTOR_DAMAGED, outcome);
     const hitPresentation = presentSafely(presentation, damageMessage(snapshot, resolution));
     const stancePresentation = presentStanceSafely(stanceBreaks, stanceBreak);
@@ -126,13 +128,13 @@ async function damageActor(context, health, presentation, events, stanceBreaks, 
 }
 
 /* -------------------------------------------- */
-/*  Defeat settlement                           */
+/*  Defeat                                      */
 /* -------------------------------------------- */
 
 /**
  * Finish a claimed defeat through the shared defeat pipeline after the pause that follows a lethal hit.
- * The loot drop and the Token removal capture into this command's operation, and the defeat event waits for that
- * operation to commit so a restored defeat cannot count toward objectives.
+ * The loot drop and the Token removal are undone if this command fails, and the defeat event waits for the command
+ * to commit, so an undone defeat never counts toward objectives.
  */
 async function settleLethalDamage({ health, objects, presentation, events, wait, snapshot, committed, context }) {
   const status = committed.defeatStatus ?? null;
@@ -151,7 +153,7 @@ async function settleLethalDamage({ health, objects, presentation, events, wait,
 }
 
 /* -------------------------------------------- */
-/*  Healing settlement                          */
+/*  Healing                                     */
 /* -------------------------------------------- */
 async function healActor(context, health, presentation, events, stanceBreaks) {
   const intent = healthIntent(context.payload);
@@ -186,6 +188,7 @@ async function healActor(context, health, presentation, events, stanceBreaks) {
       requestId: context.requestId,
       userId: context.userId
     });
+    // Published straight away, not held until the command commits.
     events.publish(EVENT_IDS.ACTOR_HEALED, outcome);
     const [healingPresented, stancePresented] = await Promise.all([
       presentSafely(presentation, healingMessage(snapshot, resolution)),
@@ -271,7 +274,7 @@ function healthIntent(payload) {
   return Object.freeze({ actorUuid, tokenUuid, amount, stanceAmount });
 }
 
-/** The health write's attribution and the operation FoundryHealthRepository captures its before-images through. */
+/** Who asked for the change, and the operation the health write saves its undo data on. */
 function settlementContext(context) {
   return {
     requestId: context.requestId,

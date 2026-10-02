@@ -32,7 +32,7 @@ const DIAGONALS = Object.freeze([
 
 /**
  * The cells a line-shaped Item can fire along, traced outward from the footprint's own edges.
- * @param {object} input Plain source anchor, footprint, range band, and Scene bounds.
+ * @param {object} input The source's top-left square, footprint, range band, and Scene bounds.
  * @returns {Set<string>} Cell keys on every legal ray.
  */
 export function generateLineCells(input = {}) {
@@ -54,9 +54,11 @@ export function generateLineCells(input = {}) {
 }
 
 /**
- * Resolve the ray used by game/items/activation.mjs from a clicked cell.
- * Try footprint edges and corners in order. Diagonal rays reach one square less than straight rays.
- * @param {object} input Plain source anchor, footprint, target cells, targetable keys, band, and Scene bounds.
+ * Resolve the ray game/items/activation.mjs fires at a clicked cell. Edge squares are tried in order, each firing
+ * straight out from its own edge, then the corners diagonally, as generateLineCells draws them. Diagonal rays reach
+ * one square less than straight rays.
+ * @param {object} input The source's top-left square, footprint, target cells, targetable keys, band, and Scene
+ *   bounds.
  * @returns {{origin: object, direction: object, cells: Set<string>, endPoint: object}|null}
  */
 export function resolveLineRay(input = {}) {
@@ -79,7 +81,7 @@ export function resolveLineRay(input = {}) {
 
 /**
  * The footprint edge a cone projects from, and the direction it faces, for one aim cell.
- * @param {object} input Plain source anchor, footprint, and aim cell.
+ * @param {object} input The source's top-left square, footprint, and aim cell.
  * @returns {{x: number, y: number, dx: number, dy: number}|null}
  */
 export function resolveConeAim(input = {}) {
@@ -98,7 +100,8 @@ export function resolveConeAim(input = {}) {
 }
 
 /**
- * The cells a cone covers, widening every other band off a flat side and stepping off a corner.
+ * The cells a cone covers: aimed straight, it widens by one square on each side every two rows; aimed diagonally,
+ * it is a triangle.
  * @param {object} input Plain origin cell, facing, depth, and Scene bounds.
  * @returns {Set<string>} Cell keys inside the cone.
  */
@@ -138,7 +141,8 @@ export function generateConeCells(input = {}) {
 /* -------------------------------------------- */
 
 /**
- * The cells an effect covers around one aim cell, measured in the Item's own metric.
+ * The cells an effect covers around one aim cell, counting straight steps, or diagonal (chess king) steps when the
+ * shape is Square.
  * @param {object} input Plain centre cell, radius, shape, and Scene bounds.
  * @returns {Set<string>} Cell keys inside the area.
  */
@@ -166,8 +170,10 @@ export function generateLocationCells(input = {}) {
 }
 
 /**
- * The cells within a radius of a footprint in the game's own footprint metric, with the footprint kept or dropped.
- * @param {object} input Plain source anchor, footprint, radius, whether the source squares count, and Scene bounds.
+ * The cells within a radius of a footprint, counting straight steps (no diagonals) from its edge, with the footprint
+ * itself kept or dropped.
+ * @param {object} input The source's top-left square, footprint, radius, whether the source squares count, and
+ *   Scene bounds.
  * @returns {Set<string>} Cell keys inside the reach.
  */
 export function generateAreaCells(input = {}) {
@@ -193,7 +199,7 @@ export function generateAreaCells(input = {}) {
 
 /**
  * The ring of squares touching a footprint, which is the grid a cone picks its direction from.
- * @param {object} input Plain source anchor, footprint, and Scene bounds.
+ * @param {object} input The source's top-left square, footprint, and Scene bounds.
  * @returns {Set<string>} Adjacent cell keys.
  */
 export function generateAdjacentCells(input = {}) {
@@ -221,9 +227,9 @@ export function generateAdjacentCells(input = {}) {
 /**
  * Select targets for game/items/activation.mjs when any footprint cell intersects the area.
  * Exclude unknown kinds and scenery. Admit living Destructibles only when requested, without faction checks.
- * @param {object} input Plain unit facts, cell keys, target type, source faction, one excluded Token, and whether
- *   Destructibles are admitted.
- * @returns {object[]} The caught units, in board order.
+ * @param {object} input The units on the map, cell keys, target type, source faction, one excluded Token, and
+ *   whether Destructibles are admitted.
+ * @returns {object[]} The caught units, in the order given.
  */
 export function selectUnitsInCells(input = {}) {
   const cells = keySet(input.cells);
@@ -361,10 +367,8 @@ export function geometryPlacementBudget(geometry, facts = {}) {
 }
 
 /**
- * Resolve candidate placements for authored geometry steps, applying their filters and ranking. Used by the
- * moveToken step in foundry/adapters/document-writes/effect-execution.mjs, the placement stage in
- * ui/controls/targeting.mjs, and createGeometryResolver.
- * @param {object} source The mover's board: `columns`, `rows`, `current` (null for a hypothetical unit),
+ * Resolve candidate placements for authored geometry steps, applying their filters and ranking.
+ * @param {object} source The moving unit's map data: `columns`, `rows`, `current` (null for a hypothetical unit),
  *   `footprint`, occupancy, terrain, and `sight` when the geometry asks for line of sight.
  * @param {object} anchorRect The square or footprint the geometry is measured from.
  * @param {object} geometry Normalized geometry spec.
@@ -393,7 +397,7 @@ export function resolveGeometryPlacements(source, anchorRect, geometry, budget =
  * @param {object} anchorRect The square or footprint the geometry is measured from.
  * @param {{width: number, height: number}} footprint The placed unit's footprint.
  * @param {object} geometry Normalized geometry spec.
- * @param {{columns: number, rows: number}} bounds The board.
+ * @param {{columns: number, rows: number}} bounds The map size in squares.
  * @returns {{centers: string[], cells: Set<string>}}
  */
 export function geometrySightCells(anchorRect, footprint, geometry, bounds) {
@@ -407,17 +411,18 @@ export function geometrySightCells(anchorRect, footprint, geometry, bounds) {
 }
 
 /**
- * Build the detached placement resolver passed to game/effects/requirements.mjs, using each mover's own board.
+ * Build the placement counter passed to game/effects/requirements.mjs; each moving unit is measured on its own
+ * movement data.
  * @param {object} [boards]
- * @param {object|null} [boards.self] The caster's movement snapshot.
- * @param {(tokenUuid: string) => object|null} [boards.target] A named target's movement snapshot.
+ * @param {object|null} [boards.self] The caster's movement data.
+ * @param {(tokenUuid: string) => object|null} [boards.target] A named target's movement data.
  * @param {(board: object, anchor: object, footprint: object, spec: object) => object|null} [boards.sight] The
- *   sight facts a line-of-sight geometry is filtered by.
+ *   sight data a line-of-sight geometry is filtered by.
  * @param {string|number} [boards.effectRange] The range a caster-moving path budget is priced from.
  * @param {string|number} [boards.targetEffectRange] The range a target-moving path budget is priced from.
  * @returns {(request: {anchor: object, mover: object, spec: object}) => {count: number, reason?: string}} A count
- *   of 0 names why when nothing was measured: `no-board` without a movement snapshot, `no-sight` when the geometry
- *   needs line of sight and no sight snapshot was supplied.
+ *   of 0 names why when nothing was measured: `no-board` without movement data, `no-sight` when the geometry needs
+ *   line of sight and no sight data was supplied.
  */
 export function createGeometryResolver({
   self = null, target = () => null, sight = () => null, effectRange = '', targetEffectRange = effectRange
@@ -442,13 +447,13 @@ export function createGeometryResolver({
 }
 
 /**
- * Predict pre-combat movement for combat projections by simulating authored self-moves in order.
+ * Predict where an attacker's preCombat self-moves will put it, for the combat preview, by running them in order.
  * Skip failed conditions and resolve random placement as nearest to keep previews deterministic.
  * @param {object} input
  * @param {readonly object[]} input.entries The Item's authored effect entries.
- * @param {object} input.movement The mover's movement snapshot, standing where it is now.
+ * @param {object} input.movement The mover's movement data, standing where it is now.
  * @param {object} input.anchorRect The target's square or footprint.
- * @param {object} input.context Condition facts as the board stands, `distance` among them.
+ * @param {object} input.context Condition values as the map stands now, `distance` among them.
  * @param {object} [input.budgetFacts] The `totalMovement` and `effectRange` a path budget is priced from.
  * @returns {{moved: boolean, position: {x: number, y: number}}}
  */
@@ -476,7 +481,7 @@ export function predictGeometryApproach({ entries, movement, anchorRect, context
   return { moved, position };
 }
 
-/** Chebyshev distance between two rectangles, the `king` metric an author may pick instead of Emblem's. */
+/** Diagonal-step (chess king) distance between two rectangles, used when the author picks the `king` metric. */
 function kingRectDistance(a, b) {
   const x = Math.max(0, a.x - (b.x + b.width - 1), b.x - (a.x + a.width - 1));
   const y = Math.max(0, a.y - (b.y + b.height - 1), b.y - (a.y + a.height - 1));
@@ -549,7 +554,10 @@ function keepInSight(candidates, footprint, anchor, sight) {
   return candidates.filter(candidate => placementKeys(candidate, footprint).every(key => visible.has(key)));
 }
 
-/** Price the walk to each candidate. An effect's walk is not the mover's own move, so it ignores a stranding. */
+/**
+ * Price the walk to each candidate. An effect's walk is not the mover's own move, so a flier stuck on the ground by
+ * a stance break can still be moved.
+ */
 function priceWalk(candidates, source, origin, budget) {
   const graph = buildMovementGraph({
     ...source, start: origin, allowance: budget, movementPlanning: false, groundedByStanceBreak: false

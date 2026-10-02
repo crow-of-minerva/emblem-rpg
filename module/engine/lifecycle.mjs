@@ -13,7 +13,7 @@ const ORDER = Object.freeze([
   EXECUTION_LIFECYCLE.READY
 ]);
 
-/** Lanes startup never holds back: reading, the table-management commands, and children of an admitted command. */
+/** Command lanes (kinds of command) startup never holds back: read-only, table recovery, and child commands. */
 const ALWAYS_ADMITTED = Object.freeze([COMMAND_LANES.INSPECT, COMMAND_LANES.RECOVERY, COMMAND_LANES.CHILD]);
 const MAINTENANCE_LANES = Object.freeze([COMMAND_LANES.MAINTENANCE, COMMAND_LANES.STARTUP]);
 
@@ -25,9 +25,10 @@ const ADMITTED_LANES = Object.freeze({
 });
 
 /**
- * Gate CommandDispatcher startup admission. RECOVERING is where the host restores whatever operation an
- * interrupted page left open. MAINTAINING admits the ready-time reconciliations and the startup sweeps, and READY
- * admits gameplay. State moves forward only, and a reloaded host gets a new lifecycle from init/system.mjs.
+ * Decide which kinds of command CommandDispatcher accepts while the host client starts up. RECOVERING is where the
+ * host restores whatever undo record an interrupted page left open. MAINTAINING allows the ready-time clean-up jobs
+ * and startup sweeps, and READY allows gameplay. State only moves forward; a reloaded host gets a new lifecycle
+ * from init/system.mjs.
  */
 export class ExecutionLifecycle {
   #state = EXECUTION_LIFECYCLE.STARTING;
@@ -47,7 +48,7 @@ export class ExecutionLifecycle {
     return true;
   }
 
-  /** Whether a command in this execution lane may be admitted in the current state. */
+  /** Whether a command in this lane may run in the current state. */
   admits(lane) {
     return ADMITTED_LANES[this.#state].has(lane);
   }

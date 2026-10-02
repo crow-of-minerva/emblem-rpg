@@ -30,7 +30,8 @@ function effectOperationChannel(kind) {
 
 /**
  * Turn an authored amount into a fixed number, or into a dice formula for the Foundry dice adapter to roll, for
- * engine/effects/execution.mjs. Embedded expressions and shorthands such as casterMgt are filled in first.
+ * engine/effects/execution.mjs. Embedded expressions and shorthands such as casterMgt are filled in first. A
+ * `${...}` expression that fails becomes 0.
  */
 export function resolveEffectAmountFormula(value, context = {}) {
   if (typeof value === 'number') return { fixed: value, formula: String(value) };
@@ -66,8 +67,8 @@ export function resolveEffectValue(value, context = {}) {
 
 /**
  * Flatten both units' stat totals into the authored `casterMgt` / `targetDef` shorthands.
- * @param {object} self Acting unit's facts.
- * @param {object} target Opposing unit's facts.
+ * @param {object} self The acting unit's condition data.
+ * @param {object} target The target's condition data.
  * @returns {object} One numeric entry per stat and prefix.
  */
 export function effectAttributeShorthands(self, target) {
@@ -86,19 +87,18 @@ export function effectAttributeShorthands(self, target) {
 const HEAL_ECHO_STAFF_SUBTYPES = new Set(['Staff', 'Staff (U)']);
 
 /**
- * Resolve the heal echo engine/effects/execution.mjs grants the caster after one heal step, from the policies
- * projectHealEchoPolicies reads off the caster's Items. The echo is a fraction of the rolled amount, so overhealing
- * counts. It applies only when the step came from the activated Item's own entry, not a passive running beside it,
- * and healed someone besides the caster. A policy matches that Item by name through `items`, or by kind through
- * `sources`: `spell` names a Spell document and `staff` any staff subtype, and other keywords match nothing. The best
- * matching fraction wins.
+ * How much HP the caster gets back after healing someone else with a matching item, for
+ * engine/effects/execution.mjs. It is a fraction of the rolled heal, so overhealing counts, and only a heal from the
+ * activated Item's own entry counts, not a passive running beside it. A policy (from projectHealEchoPolicies)
+ * matches the Item by name in `items`, or by kind in `sources`: `spell` for a Spell, `staff` for either staff
+ * subtype. The best matching fraction wins.
  * @param {object} input
  * @param {number} input.rolledAmount The step's rolled heal, before the target's missing HP caps it.
  * @param {string} input.casterActorUuid
  * @param {string[]} [input.healedActorUuids] Units the step healed.
- * @param {{uuid?: string, name?: string, type?: string, itemType?: string}} [input.activatedItem] Detached facts.
- * @param {string} [input.healEntryIdentity] The identity effectEntryIdentities gave the step's entry, which begins
- *   with that entry's source Item UUID.
+ * @param {{uuid?: string, name?: string, type?: string, itemType?: string}} [input.activatedItem] Plain item data.
+ * @param {string} [input.healEntryIdentity] The id effectEntryIdentities gave the step's entry, which begins with
+ *   that entry's source Item UUID.
  * @param {object[]} [input.policies]
  * @returns {number} HP the caster regains, or 0.
  */
@@ -133,7 +133,7 @@ export function resolveHealEchoAmount({
 }
 
 /* -------------------------------------------- */
-/*  Entry identity                              */
+/*  Entry ids                                   */
 /* -------------------------------------------- */
 
 const ENTRY_IDENTITY_FIELDS = Object.freeze([
@@ -141,11 +141,11 @@ const ENTRY_IDENTITY_FIELDS = Object.freeze([
 ]);
 
 /**
- * One stable identity per authored effect entry, built from its item and content, then its place among identical
- * copies. engine/effects/execution.mjs uses it to name the step it's running. Adding, removing or reordering other
- * entries leaves each identity unchanged.
+ * A stable id for each authored effect entry, built from its item and content plus its place among identical
+ * copies, so adding, removing or reordering other entries doesn't change it. engine/effects/execution.mjs uses it to
+ * name the step it's running.
  * @param {object[]} entries Authored entries, each carrying its `sourceItemUuid`.
- * @returns {string[]} One identity per entry, aligned with the input.
+ * @returns {string[]} One id per entry, aligned with the input.
  */
 export function effectEntryIdentities(entries) {
   const contents = (Array.isArray(entries) ? entries : []).map(entry =>
@@ -345,8 +345,7 @@ function chanceRollFor(chanceRolls, key) {
 /**
  * Check a Guard pair before a bond is made: both units placed and unbonded, the guarder at least as wide and as
  * tall as the guardee, and no grounded unit guarding a flier. Flying means the flying unit type, not whether the
- * unit is airborne right now. Called by engine/items/activation.mjs before any write, and by the bond writer in
- * foundry/adapters/document-writes/effect-execution.mjs.
+ * unit is airborne right now. Checked before any write when the item is used, and again when the bond is written.
  * @param {object} facts Both halves as `{tokenUuid, name, flying, width, height, bonded}`.
  * @returns {{ok: boolean, code?: string, actorName?: string}}
  */
@@ -372,9 +371,8 @@ function refusedBond(code, named = null) {
 
 /**
  * Whether every use of an Item reaches a Guard step: an entry with no condition that runs on `onActivation` lists
- * one among its top-level steps. The item projection (projections/items.mjs) uses it so engine/items/activation.mjs
- * checks such a use's bonds with resolveGuardBond before it writes anything. A Guard step behind a save outcome or a
- * condition is checked by the bond writer only when its effect runs.
+ * one among its top-level steps. When it does, engine/items/activation.mjs checks the bonds with resolveGuardBond
+ * before it writes anything. A Guard step behind a save outcome or a condition is checked only when its effect runs.
  * @param {readonly object[]} entries The Item's activation entries.
  * @returns {boolean}
  */
@@ -418,7 +416,7 @@ function bondHalf(side, role, partner) {
 }
 
 /**
- * Check Guard-bond geometry for Foundry reconciliation. The guardee must remain inside the guarder's footprint.
+ * Whether a Guard bond still holds: the guardee must stay inside the guarder's footprint.
  * @param {object} facts Both halves as `{x, y, width, height}` in grid cells.
  * @returns {boolean}
  */

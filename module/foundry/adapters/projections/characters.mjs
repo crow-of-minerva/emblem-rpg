@@ -1,4 +1,9 @@
 /** @layer foundry/adapters/projections */
+/*
+ * Reads a Character for the Character compiler (compileCharacterData in game/character/compilation.mjs).
+ * projectCharacterSource runs every time a Character prepares; compileCharacterAs compiles one in an imagined
+ * situation without saving anything. Also builds the promotion preview.
+ */
 import {
   ALL_UNIT_TYPE_KEYS,
   COMBAT_FLAG_KEYS,
@@ -32,10 +37,9 @@ import { reportFoundryError } from '../services/diagnostics.mjs';
 /* -------------------------------------------- */
 
 /**
- * Build the promotion facts shared by the preview and class-feature writer: requirements, target Classes and art.
- * `gains` holds each growth stat's level-up gains and `caps` each growth cap's total and class part, because the
- * preview's bars compare gains plus class base against the current and promoted class caps. The writer checks the
- * preview fingerprint before committing.
+ * What the promotion preview and the class-feature writer read: the unit's level, ranks and turn state for the
+ * requirements, its Class and the Classes it can promote to, and its art. `gains` and `caps` feed the preview's stat
+ * bars. The writer refuses the promotion if `fingerprint` no longer matches.
  * @param {string} actorUuid Unit being promoted.
  * @param {{usedItemId?: string, tokenUuid?: string}} [options]
  * @returns {Promise<Readonly<object>|null>}
@@ -86,9 +90,9 @@ export async function projectPromotionPreview(actorUuid, { usedItemId = '', toke
 }
 
 /**
- * A fingerprint of the unit's level, stored items and class choices. The class-feature writer
- * (document-writes/class-features.mjs) puts it in each snapshot so a stale plan is refused. Derived values are left
- * out, so a change that writes nothing doesn't invalidate the plan.
+ * A fingerprint of the unit's level, saved Items and class choices. The class-feature writer
+ * (document-writes/class-features.mjs) refuses a promotion whose fingerprint no longer matches. Prepared values are
+ * left out, so a change that saves nothing doesn't invalidate it.
  */
 export function classStateFingerprint(actor) {
   return JSON.stringify({
@@ -106,7 +110,7 @@ export function classStateFingerprint(actor) {
 }
 
 /* -------------------------------------------- */
-/*  Class projection                            */
+/*  Classes                                     */
 /* -------------------------------------------- */
 
 /** Every Class a path points at, resolved once per uuid however many paths name it. */
@@ -158,7 +162,7 @@ async function projectClassMount(system) {
 }
 
 /* -------------------------------------------- */
-/*  Projection helpers                          */
+/*  Helpers                                     */
 /* -------------------------------------------- */
 
 function projectUsedItem(item) {
@@ -179,16 +183,17 @@ function findSceneCombat(scene) {
 }
 
 /* -------------------------------------------- */
-/*  Compiler source projection                  */
+/*  Compiler input                              */
 /* -------------------------------------------- */
 const MAGE_ARMOR_EFFECT_NAME = 'MageArmor';
 const PROTECTION_CHANGE_KEY = /^system\.equipment\.(prots|vulns|imms)\.([^.]+)$/;
 
 /**
- * The input compileCharacterData reads for one Character, built from its stored data and its effects. Chance
- * modifiers use the draws passed in or the ones an action installed on the actor, and ordinary preparation has none.
- * A borrowed Armament is added as a wielded weapon. Called by Character preparation
- * (data-models/actor/character.mjs), FoundryActorRepository, the BG3 HUD and compileCharacterAs below.
+ * The input compileCharacterData reads for one Character, built from its saved data and its effects. Chance
+ * modifiers use the rolls passed in, or the ones withFoundryCombatContext set on the Actor; ordinary preparation has
+ * none. A borrowed Armament is added as a wielded weapon. Runs every time a Character prepares
+ * (data-models/actor/character.mjs). `support`, `special` and modifier condition trees are the saved data itself,
+ * not copies, so the compiler must not change them.
  * @param {{chanceRolls?: object|null}} [options]
  * @returns {object}
  */
@@ -258,7 +263,7 @@ export function projectCharacterSource(actor, { chanceRolls = null } = {}) {
 }
 
 /* -------------------------------------------- */
-/*  Projection helpers                          */
+/*  Helpers                                     */
 /* -------------------------------------------- */
 
 function pickStats(source) {
@@ -287,14 +292,14 @@ function worldDifficulty() {
   }
 }
 
-/** Read the terrain modifiers the Scene last settled onto this Actor. */
+/** The terrain modifiers the host client last saved on this Actor for the ground it stands on. */
 function projectTerrainModifiers(actor) {
   const flags = actor._source?.flags?.[SYSTEM_ID] ?? actor.flags?.[SYSTEM_ID] ?? {};
   return Object.fromEntries(Object.entries(TERRAIN_STAT_FLAGS)
     .map(([stat, flag]) => [stat, Number(flags?.[flag]) || 0]));
 }
 
-/** Read the map scaling the board last settled onto this Actor. */
+/** The map's movement scaling the host client last saved on this Actor. */
 function projectMoveScaling(actor) {
   const flags = actor._source?.flags?.[SYSTEM_ID] ?? actor.flags?.[SYSTEM_ID] ?? {};
   return normalizeMoveScaling(flags?.[UNIT_MOVE_SCALING_FLAG]);
@@ -462,7 +467,10 @@ function collection(value) {
   return [];
 }
 
-/** An Item as a compile's modifier context carries it, with its own copy of the prepared system data. */
+/**
+ * An Item as `modifierContext` carries it for the compiler, with its own copy of the prepared system data
+ * (combat-context.mjs copies the saved data instead).
+ */
 function projectContextItem(item) {
   if (!item) return null;
   const prepared = sharedItemCopy(item, 'prepared', () => item.system?.toObject?.(false) ?? item.system ?? {});
@@ -515,7 +523,7 @@ function projectArmor(source) {
 }
 
 /**
- * Project one carried Item for compileCharacterData from its persisted data. An Equipment copy's refinement tier and
+ * One carried Item as compileCharacterData reads it, from its saved data. An Equipment copy's refinement tier and
  * armor breakage are applied through projectEquipmentStats, so combat reads the stats the Item sheet shows.
  */
 function projectItem(item) {
@@ -567,15 +575,13 @@ function projectItem(item) {
 }
 
 /**
- * Compile a unit as it would be in a what-if situation, without writing anything: another weapon in hand, a given
- * opponent, distance and side, and optionally the ground of a square it is considering. The threat, measurement and
- * loadout projections in attack-targeting.mjs use it, and so does the inspection tooltip's attack preview
- * (tokens.mjs).
+ * Compile a unit as it would be in an imagined situation, without saving anything: another weapon in hand, a given
+ * opponent, distance and side, and optionally the ground of a square it is considering.
  * @param {Actor} actor The unit.
- * @param {object} [matchup] The wielded item id, the unit it fights as `target`, the combat distance, whether the two
- *   stand in melee range, the side, the Weapon Art it strikes through as `activeItem` (the wielded weapon when none
- *   is named), and optionally the `terrainModifiers` and `auraFields` of a square the unit is only considering,
- *   which replace the ones it currently carries.
+ * @param {object} [matchup] The wielded item id (null or left out keeps the weapon in hand), the unit it fights as
+ *   `target`, the combat distance, whether the two stand in melee range, the side, the Weapon Art it strikes through
+ *   as `activeItem` (the wielded weapon when none is named), and optionally the `terrainModifiers` and `auraFields`
+ *   of a square the unit is only considering, which replace the ones it currently carries.
  * @returns {object} The compiled result, shaped as the compiler shapes it.
  */
 export function compileCharacterAs(actor, matchup = {}) {
@@ -617,7 +623,7 @@ export function compileCharacterAs(actor, matchup = {}) {
  * @param {Actor} actor The unit.
  * @param {string} heldId The weapon in hand.
  * @param {object} [matchup] compileCharacterAs's matchup, naming the Weapon Art in use as `activeItem`.
- * @returns {object[]} projectWeapon's facts (combat-context.mjs) for each weapon.
+ * @returns {object[]} projectWeapon's values (combat-context.mjs) for each weapon.
  */
 export function projectWeaponChoicesAs(actor, heldId, matchup = {}) {
   const items = [...(actor.items ?? [])];
@@ -634,6 +640,7 @@ export function projectWeaponChoicesAs(actor, heldId, matchup = {}) {
 /**
  * Swap in the terrain and aura values of the square being considered. Every aura field is overwritten, with 0
  * where the square gets nothing, so an aura that can't reach that square doesn't carry over into the measurement.
+ * Each aura path is a `stats.<key>` built from the same STATS list as pickStats, so every target already exists.
  */
 function applyHypotheticalGround(projected, matchup) {
   if (matchup.terrainModifiers) {

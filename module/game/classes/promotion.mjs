@@ -51,7 +51,7 @@ const DEFAULT_PREVIEW_IMAGE = 'icons/svg/mystery-man.svg';
  * engine/character/progression.mjs. Blocked paths stay listed with their missing requirements, and `refusal` says
  * why none can be taken. A GM-driven promotion can skip the item requirement (`bypassItem`), and the GM Macros
  * compendium's Promote Unit skips every requirement (`bypassRequirements`).
- * @param {object} snapshot Detached promotion facts.
+ * @param {object} snapshot A detached copy of the unit's promotion data.
  * @param {{bypassItem?: boolean, bypassRequirements?: boolean}} [options]
  * @returns {Readonly<{options: object[], available: object[], refusal: string|null}>}
  */
@@ -137,7 +137,11 @@ function usedItemMatches(usedItem, ref) {
   return Boolean(refName) && normal(usedItem.name) === refName;
 }
 
-/** The proficiency ranks a unit would hold in the new class: its own earned ranks plus the class grant. */
+/**
+ * The proficiency ranks a unit would hold in the new class. Weapon ranks are its own earned and passive ranks plus
+ * the new class's grant. Riding becomes 2 for a flying class, at least 1 for a riding class, and otherwise stays at
+ * the current total. Armor is the new class's grant alone.
+ */
 function promotedProficiencies(actorProficiencies, classProficiencies) {
   const promoted = {};
   for (const key of PROMOTION_PROFICIENCY_KEYS) {
@@ -273,8 +277,8 @@ export function mountSummary(mount) {
 }
 
 /**
- * The old and new class base stats for the stat screen shown after a promotion (the PROMOTION_STATS presentation
- * beat in engine/character/progression.mjs). Personal stat caps don't apply here, so `zenith` is always false.
+ * The old and new class base stats for the stat screen shown after a promotion (PROMOTION_STATS in
+ * engine/character/progression.mjs). Personal stat caps don't apply here, so `zenith` is always false.
  */
 export function promotionStatResults(oldBaseStats, newBaseStats) {
   return Object.freeze(Object.fromEntries(PROMOTION_STAT_KEYS.map(key => {
@@ -284,7 +288,10 @@ export function promotionStatResults(oldBaseStats, newBaseStats) {
   })));
 }
 
-/** Plan promotion-item consumption for engine/character/progression.mjs: spend one use or remove the last copy. */
+/**
+ * Plan promotion-item consumption for engine/character/progression.mjs: spend one use while more than one is left,
+ * otherwise remove the item. An Infinite-use item is always removed.
+ */
 export function planPromotionItemConsumption(item) {
   if (!item) return null;
   const uses = item.uses ?? {};
@@ -301,7 +308,7 @@ export function planPromotionItemConsumption(item) {
  * The bar rows the promotion window draws for one path: gains + class base now and after, the mount's bonus, and
  * the class caps before and after, each as a value and as a fraction of the stat's fixed ceiling.
  * ui/apps/menus/promote-app.mjs repaints its bars from these rows whenever the chosen path changes.
- * @param {object} snapshot The promotion projection (gains, caps, classItem).
+ * @param {object} snapshot The unit's promotion data (gains, caps, classItem).
  * @param {object} option One resolved path from resolvePromotionOptions (baseStats, baseCaps, mount).
  * @returns {{left: object[], right: object[]}}
  */

@@ -65,10 +65,8 @@ export function skillCheckFor(performer, skillKey, dc = null) {
 }
 
 /**
- * Roll the check through FoundryCharacterCheckService, post the skill check card, then wait
- * DOWNTIME_CHECK_TIMING.diceSettleHold before the activity writes anything. A karmic check books its debt in the
- * karma ledger setting, which the check service captures in the operation first. At a station,
- * FoundryDowntimeRepository.stagePerformer has already captured it.
+ * Roll the check, show its card, then pause for DOWNTIME_CHECK_TIMING.diceSettleHold so players can read the dice
+ * before the activity writes anything.
  */
 async function rollCheck(context, services, performer, check, { effectName, targetName, detail }) {
   const roll = await services.checks.roll(performer.actorUuid, check,
@@ -182,7 +180,7 @@ export async function workNode(context, services, snapshot, performer, plan) {
 /* -------------------------------------------- */
 /**
  * Resolve forging for downtime/commands.mjs: roll the skill check, then write the uses restored, forging XP,
- * materials spent and Energy through FoundryDowntimeRepository.settleForging. A staff is repaired, not forged.
+ * materials spent and Energy through FoundryDowntimeRepository.settleForging. A Staff is repaired, not forged.
  */
 export async function workForge(context, services, snapshot, performer, plan) {
   const item = plan.item;
@@ -593,7 +591,7 @@ function performanceCardMessage(context, snapshot, performer, song, outcome) {
 /**
  * Resolve a requisition for downtime/commands.mjs. The requisitioner rolls Civics against the faction's DC on its
  * own card. FoundryDowntimeRepository.settleRequisition then spends its whole downtime and locks the faction
- * whatever the answer, and a granted demand joins its Convoy's inbound gold for staff to deliver. Civics XP
+ * whatever the answer, and a granted demand joins its Convoy's inbound gold for the GM to deliver. Civics XP
  * follows, then the result card and REQUISITION_SETTLED.
  */
 export async function draftRequisition(context, services, snapshot, performer, plan) {
@@ -747,8 +745,8 @@ function portrait(unit) {
 /*  Training                                    */
 /* -------------------------------------------- */
 /**
- * Resolve a training session for engine/downtime/commands.mjs. The pair spars using an item animation the snapshot
- * picked for the proficiency (`snapshot.spar`), then the trainer rolls Command and the trainee earns the whole total
+ * Resolve a training session for engine/downtime/commands.mjs. The pair spars using an item animation chosen for
+ * the proficiency (`snapshot.spar`), then the trainer rolls Command and the trainee earns the whole total
  * as proficiency XP through planProficiencyExperienceGrant. FoundryDowntimeRepository.settleTraining spends both
  * units' downtime and writes the trainee's proficiency. A rank-up shows the combat rank-up card. Both units' level
  * XP from the spar goes through the combat progression service, trainer first, and may level either up. The pair's
@@ -810,8 +808,8 @@ export async function spar(context, services, snapshot, plan) {
 }
 
 /**
- * The spar's opening message: both tokens by role and the passes DowntimePresentation plays between them. If the
- * snapshot found no playable animation, the session opens with no passes.
+ * The spar's opening message: both tokens by role and the passes DowntimePresentation plays between them. If no
+ * playable animation was found, the session opens with no passes.
  */
 function sparOpening(snapshot, plan) {
   const tokenOf = unit => (unit.actorUuid === snapshot.cursor.actorUuid

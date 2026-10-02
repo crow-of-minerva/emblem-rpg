@@ -10,15 +10,15 @@ import { clone, resolveActor, resolveArmamentActor, resolveItem, resolveToken } 
 const settlementOptions = () => ({ emblemCombatSettlement: true });
 
 /**
- * The world settings an exchange may rewrite: the karma ledger, and the board lock released when the attacker's
- * movement plan closes. captureExchange records both up front, because either may be written long after the first
- * Actor write.
+ * The world settings an exchange may rewrite: the karma ledger, and the movement lock (USER_LOCK_SETTING) released
+ * when the attacker's movement plan closes. captureExchange saves both for undo up front, because either may be
+ * written long after the first Actor write.
  */
 const EXCHANGE_SETTINGS = Object.freeze([KARMA_LEDGER_SETTING, USER_LOCK_SETTING]);
 
 /**
  * An exchange changes only the uses of a weapon, Weapon Art or armor, and the durability of a rack armament, so
- * captureExchange records just those fields rather than whole Item sources. commitItemUses and
+ * captureExchange saves just those fields for undo rather than the whole Item. commitItemUses and
  * FoundryHealthRepository write exactly these paths.
  */
 const ITEM_USE_PATHS = Object.freeze(['system.uses']);
@@ -27,10 +27,11 @@ const ARMAMENT_DURABILITY_PATHS = Object.freeze(['system.armament.durability']);
 /**
  * Saves the results of a combat exchange for engine/combat/exchanges (resolution.mjs, blows.mjs, settlement.mjs).
  *
- * Each write first records its before-images on the command's operation, which the engine passes in. Most methods
- * take it as an argument (the exchange carries it as `exchange.operation`), and settleSourceContinuation reads it
- * from `snapshot.operation`. commitKarma records nothing itself, since captureExchange already recorded the ledger.
- * CommandDispatcher commits the operation when the command returns ok and restores it otherwise.
+ * Each write first saves the old values on the command's operation (its undo record), which the engine passes in.
+ * Most methods take it as an argument (the exchange carries it as `exchange.operation`), and
+ * settleSourceContinuation reads it from `snapshot.operation`. commitKarma saves nothing itself, since
+ * captureExchange already saved the ledger. CommandDispatcher keeps the changes when the command returns ok and puts
+ * the old values back otherwise.
  */
 export class FoundryCombatSettlementRepository {
   constructor({ health, movements }) {
@@ -39,17 +40,17 @@ export class FoundryCombatSettlementRepository {
   }
 
   /* -------------------------------------------- */
-  /*  Opening capture                             */
+  /*  Undo record for the exchange                */
   /* -------------------------------------------- */
 
   /**
-   * Record, in one capture, the before-images of everything an exchange always touches: both units' Actors and
+   * Save for undo, in one call, the old values of everything an exchange always touches: both units' Actors and
    * Tokens whole, the uses of the Items the blows spend and of each side's worn armor, the durability of the
    * armament Actor behind a rack weapon, and the two world settings. resolveExchange (exchanges/resolution.mjs)
-   * calls this before its first write. Later writers capture only what this leaves out, such as other fields of
-   * these Items.
-   * @param {object} snapshot The exchange's opening snapshot, read again just before the exchange.
-   * @param {object|null} operation The dispatcher operation, or null outside a command.
+   * calls this before its first write. Later writes save only what this leaves out, such as other fields of these
+   * Items.
+   * @param {object} snapshot The exchange's starting state, read again just before the exchange.
+   * @param {object|null} operation The dispatcher operation (the command's undo record), or null outside a command.
    */
   async captureExchange(snapshot, operation = null) {
     if (!operation) return true;
@@ -77,7 +78,7 @@ export class FoundryCombatSettlementRepository {
   /*  Blows                                       */
   /* -------------------------------------------- */
 
-  /** Commit a resolved blow through FoundryHealthRepository under the exchange's operation. */
+  /** Save a resolved blow through FoundryHealthRepository, with undo through the exchange's operation. */
   async commitBlow(side, resolution, operation = null) {
     return this.health.commitDamage(side.healthSnapshot, resolution, { operation });
   }
@@ -169,7 +170,7 @@ export class FoundryCombatSettlementRepository {
   }
 
   /* -------------------------------------------- */
-  /*  Settlement                                  */
+  /*  Exchange results                            */
   /* -------------------------------------------- */
 
   /** Spend the uses the blows added up, once every blow is resolved. A rack armament loses durability instead. */
@@ -206,7 +207,7 @@ export class FoundryCombatSettlementRepository {
 
   /**
    * Book the exchange's own karma, in the order its blows decided it, only once the exchange is otherwise complete.
-   * The bookings replay over the ledger as it stands, so a booking another operation made meanwhile is kept.
+   * Karma is booked on top of the ledger as it stands now, so a booking another command made meanwhile is kept.
    * @returns {Promise<ReadonlyArray<object>>} Each `KarmaBooking` with the debt it read and left as booked.
    */
   async commitKarma(bookings = []) {
@@ -215,9 +216,9 @@ export class FoundryCombatSettlementRepository {
 
   /**
    * Apply the attacker's automatic follow-up to the exchange, such as resuming movement or ending the turn. A
-   * follow-up that waits for a choice or for presentation is saved on the turn as `continuationPending`. An Extra
-   * Action choice also saves `cantersAfter`, whether the action that offered it lets a declining unit Canter. Writes
-   * under the exchange's operation, read from `snapshot.operation`.
+   * follow-up that waits for a choice or for an animation is saved on the turn as `continuationPending`. An Extra
+   * Action choice also saves `cantersAfter`, whether the action that offered it lets a declining unit Canter. Undo
+   * goes through the exchange's operation, read from `snapshot.operation`.
    */
   async settleSourceContinuation(snapshot, movementResolution, continuation, requestId, { cantersAfter = false } = {}) {
     const operation = snapshot.operation ?? null;
@@ -266,7 +267,7 @@ export class FoundryCombatSettlementRepository {
   }
 
   /**
-   * Settle a follow-up saved as pending, once the player has chosen or the presentation it waited for has played. An
+   * Carry out a follow-up saved as pending, once the player has chosen or the animation it waited for has played. An
    * Extra Action spends one from the pool, gives the Action and Bonus Action back, and adds one square to the
    * movement the turn has left (`movementBonus`). An end of turn keeps the slots effects gave the attacker during
    * the exchange (`keptSlots`).
@@ -339,12 +340,12 @@ export class FoundryCombatSettlementRepository {
 /*  Writes                                      */
 /* -------------------------------------------- */
 
-/** The options `FoundryMovementRepository.commit` takes, with the operation its own writers capture through. */
+/** The options `FoundryMovementRepository.commit` takes, with the operation its own writes save their undo on. */
 function movementSettlement(operation, options) {
   return { ...options, operation };
 }
 
-/** Capture one Actor, then write the settlement's changes to it with the option its hooks read. */
+/** Save one Actor for undo, then write the changes with the combat marker its hooks check. */
 async function writeCombatActor(operation, actor, changes) {
   await operation?.capture({ documents: [actor] });
   await actor.update(changes, settlementOptions());
@@ -377,6 +378,10 @@ async function applyFlankedEffect(operation, actorUuid) {
   if (!created?.length) throw new Error('The Flanked status could not be applied.');
 }
 
+/**
+ * Remove the defender's effects that end when attacked, but only those still at the apply count read before the
+ * exchange, so an effect applied again meanwhile stays.
+ */
 async function removeCapturedEffects(operation, actorUuid, checkpoints = []) {
   const actor = await resolveActor(actorUuid);
   if (!actor) throw new Error('Combat target Actor disappeared.');
@@ -387,7 +392,10 @@ async function removeCapturedEffects(operation, actorUuid, checkpoints = []) {
   await removeActorEffects(operation, actorUuid, ids);
 }
 
-/** Drop or thin every stack a landed blow spends, one effect at a time, capturing each before it changes. */
+/**
+ * Drop or thin every stack a landed blow spends, one effect at a time, saving each for undo before it changes. Only
+ * `add` changes are scaled to the new stack count; other change types keep their value at any stack size.
+ */
 async function removeEffectStacks(operation, actorUuid) {
   const actor = await resolveActor(actorUuid);
   if (!actor) throw new Error('Combat target Actor disappeared.');

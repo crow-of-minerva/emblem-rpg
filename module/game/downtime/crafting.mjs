@@ -58,9 +58,8 @@ export function forgeableKind(itemType) {
 }
 
 /**
- * Whether a carried copy is something this station forges: a kind the station takes, forging enabled, and a copy a
- * forge can act on at all. An innate grant stands in for a rule rather than being carried, and an infinite copy never
- * spends durability, so neither has anything to restore or to tally toward a tier.
+ * Whether a carried copy is something this station forges: a kind the station takes, with forging enabled. Innate
+ * grants and infinite-durability copies are left out, since they have no durability to restore or tier to earn.
  */
 export function stationForges(stationType, item) {
   const kinds = STATION_FORGE_KINDS[stationType] ?? [];
@@ -117,9 +116,8 @@ export function materialNeeds(materials = [], totals = {}) {
 }
 
 /**
- * Plan which stacks each material is drawn from, in the order given, which reachableStacks makes pockets before the
- * Convoy. The forging, brewing and cooking plans carry the draws to the downtime writer. Nothing is drawn if any
- * material is short.
+ * Plan which stacks each material is drawn from, in the order given (reachableStacks lists the performer's pockets
+ * before the Convoy). Nothing is drawn if any material is short.
  */
 export function planMaterialDraw(materials = [], stacks = []) {
   const remaining = stacks.map(stack => ({ ...stack, amount: Math.max(0, Math.floor(numeric(stack.amount))) }));
@@ -169,8 +167,8 @@ export function forgeState(source) {
 }
 
 /**
- * Work out a forge's result for workForge in engine/downtime/resolvers.mjs: durability restored, forging XP, the new
- * tier, and any durability top-up from that tier's higher maximum.
+ * Work out a forge's result: durability restored, forging XP, the new tier, and any durability top-up from that
+ * tier's higher maximum.
  */
 export function forgeOutcome({ source, roll }) {
   const crafting = source?.craftingData ?? {};
@@ -225,8 +223,8 @@ function formatBonus(value) {
 }
 
 /**
- * Validate forging for engine/downtime/commands.mjs. Check station, free exploration, reach, performer Energy,
- * item eligibility and equipment state, then materials.
+ * Validate forging. Check station, free exploration, reach, performer Energy, item eligibility and equipment state,
+ * then materials.
  */
 export function planForging(facts = {}) {
   const gate = craftingGate(facts);
@@ -302,9 +300,9 @@ export function brewedProductData(data) {
 }
 
 /**
- * Validate brewing for engine/downtime/commands.mjs. Require a reachable Laboratory in free exploration, an
- * available performer, a known recipe, materials and room for the first product before charging costs. The room
- * counts the pockets the draw itself empties.
+ * Validate brewing. Require a reachable Laboratory in free exploration, an available performer, a known recipe,
+ * materials and room for the first product before charging costs. The room counts the pockets the draw itself
+ * empties.
  */
 export function planBrewing(facts = {}) {
   if (facts.station?.objectType !== DOWNTIME_STATION_TYPES.LABORATORY) return refuse(RESULT_CODES.DOWNTIME_STATION_INVALID);
@@ -350,7 +348,7 @@ function craftingGate(facts) {
   return { ok: true, performer };
 }
 
-/** The Convoy a performer draws on: the driving unit's party Convoy first, then the performer's own. */
+/** The Convoy a performer draws on: the acting unit's party Convoy first, then the performer's own. */
 function reachConvoy(facts, performer) {
   return String(facts.convoyUuid || performer.convoyUuid || '');
 }

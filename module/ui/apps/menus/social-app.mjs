@@ -29,15 +29,15 @@ const EMPTY_GRID = Object.freeze([]);
 /*  Social menu                                 */
 /* -------------------------------------------- */
 /**
- * Show the pair a socialize pick chose, the driving unit and the unit it visited, and let the player socialize or
- * train them. openSocialFor (ui/controls/interaction.mjs) opens it. On submit the window closes and one
- * api.downtime.socialize or api.downtime.train command runs, which plays the conversation or the spar and posts
- * the roll and result cards. The window's height follows its content, so switching to Train grows it by the
- * proficiency grid.
+ * Show the pair a socialize pick chose, the acting unit and the unit it visited, and let the player socialize or
+ * train them. The button sends one api.downtime.socialize or api.downtime.train command, which plays the
+ * conversation or the spar and posts the roll and result cards. A refusal made on this client, such as a busy host
+ * or a paused table, leaves the window open with the picks; otherwise the window closes while the host runs the
+ * command. The window's height follows its content, so switching to Train grows it by the proficiency grid.
  * @param {object} view The downtime query's social view (api.downtime.inspectSocial).
  * @param {{refresh?: Function}} [handlers] Re-reads the view before the window is rebuilt.
  * @returns {Promise<boolean>} Whether the command succeeded. Unlike the other downtime menus, this one waits for the
- *   answer, so openSocialFor knows whether the pick was spent.
+ *   answer, so the caller knows whether the pick was spent.
  */
 export async function openSocialMenu(view, { refresh = null } = {}) {
   if (menuShown(WINDOW_CLASS)) return false;
@@ -58,17 +58,13 @@ export async function openSocialMenu(view, { refresh = null } = {}) {
 /*  View                                        */
 /* -------------------------------------------- */
 /**
- * Map the social view and the local choices into the social-menu.hbs context. The two unit columns face each other
- * around the mode's icon and reminder. In Socialize both show their Sociability check. In Train they show Command
- * until a proficiency is picked, then the trainer stands left and the student right, whichever of the pair teaches.
- * Train also gets the ten-cell weapon proficiency grid, where only the rows view.training offers can be picked.
+ * Build the social template's data: the two unit columns, the mode's icon and reminder, and in Train mode the
+ * weapon proficiency grid, where only the rows view.training offers can be picked. In Socialize both columns show
+ * their Sociability check. In Train they show Command, and once a proficiency is picked the trainer stands left and
+ * the student right.
  * @param {object} view The view from api.downtime.inspectSocial.
  * @param {{mode: string, proficiencyKey: string|null, busy?: boolean}} state
- * @returns {Readonly<{isTrain: boolean, modes: object[], centerIcon: string, reminder: string, left: object,
- *   right: object, grid: object[], hasProficiencies: boolean, canBegin: boolean, buttonLabel: string,
- *   buttonTitle: string}>} The frozen template context. Each column is {name, image, avatarStyle, eligible,
- *   blocked, role, check: {label, line}|null, trainingXp: number|null}, and each grid cell is {key, label, icon,
- *   trainable, selected, badge, title}.
+ * @returns {object} The frozen template context.
  */
 function prepareSocialView(view, state) {
   const isTrain = state.mode === SOCIAL_MODES.TRAIN;
@@ -104,7 +100,7 @@ function blockReason(view, isTrain, training, selected) {
 }
 
 /**
- * The left and right unit columns. The driving unit stands left and the partner right, except once a training row
+ * The left and right unit columns. The acting unit stands left and the partner right, except once a training row
  * is picked. Then its trainer, matched by actorUuid, moves left with the Command check and the spar's level XP, and
  * its trainee stands right as the student with only its level XP.
  */
@@ -195,9 +191,8 @@ function selectProficiency(menu, cell) {
 }
 
 /**
- * Close the window, then send the socialize or train command with the pair and, for training, the proficiency. The
- * public API's command path shows the result, refusals included, through its notification service. openSocialMenu
- * waits for this answer so the pick knows whether anything was spent.
+ * Send the socialize or train command with the pair and, for training, the proficiency. The API shows the result,
+ * including any refusal, as a notification. openSocialMenu waits for this answer.
  */
 function beginActivity(menu) {
   const { view, state } = menu;

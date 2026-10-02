@@ -8,7 +8,7 @@ const BUILTIN_PREFIX = 'builtin-';
 
 /**
  * The id a shipped cookbook or songbook entry is stored under: its authored id, or a slug of its name when it has
- * none, carrying the built-in prefix once. parseCookbook in cooking.mjs and parseSongbook in performance.mjs use it.
+ * none, carrying the built-in prefix once.
  */
 export function builtinId(authoredId, name) {
   const authored = String(authoredId ?? '').trim() || slug(name);
@@ -19,11 +19,7 @@ function slug(name) {
   return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-/**
- * The built-in entries a library no longer holds, matched by id. The library windows use it to offer a restore, and
- * the song library window to send the removed ids on save. The library views in engine/downtime/commands.mjs list
- * the missing ids.
- */
+/** The built-in entries a library no longer holds, matched by id, so a library window can offer to restore them. */
 export function missingBuiltins(entries = [], builtins = []) {
   const present = new Set(entries.map(entry => entry.id));
   return builtins.filter(entry => !present.has(entry.id));
@@ -31,7 +27,7 @@ export function missingBuiltins(entries = [], builtins = []) {
 
 /**
  * The library with every missing built-in put back at the front, each normalised into a fresh copy, or the same
- * list when nothing is missing. The library windows in ui/apps/menus/library-app.mjs restore with it.
+ * list when nothing is missing.
  */
 export function withBuiltinsRestored(entries = [], builtins = [], normalize) {
   const missing = missingBuiltins(entries, builtins);
@@ -56,7 +52,10 @@ export function defineLibrary({ key, fallbackPrefix, normalize, signature }) {
   const normalizeEntries = (stored = []) => (Array.isArray(stored) ? stored : [])
     .map((entry, index) => normalize(entry, `${fallbackPrefix}-${index}`));
   return Object.freeze({
-    /** Every stored entry normalised, each keeping its own id so a unit's link to it holds. */
+    /**
+     * Every stored entry normalised, each keeping its own id so a unit's link to it holds. An entry with no id gets
+     * `<fallbackPrefix>-<index>`, which shifts if the list changes.
+     */
     normalizeEntries,
 
     /** A world's stored changes, coerced: its entries normalised and the built-ins it removed as distinct ids. */
@@ -80,7 +79,7 @@ export function defineLibrary({ key, fallbackPrefix, normalize, signature }) {
       ];
     },
 
-    /** What document-writes/downtime.mjs stores for a whole library: new and edited entries, and removals. */
+    /** What is saved for a whole library: new and edited entries, and removals. */
     planChanges(builtins = [], entries = []) {
       const shipped = new Map(builtins.map(entry => [entry.id, entry]));
       const kept = new Set(entries.map(entry => entry.id));

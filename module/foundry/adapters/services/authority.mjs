@@ -26,9 +26,9 @@ export function projectFoundryUserAuthority(user, roles = CONST.USER_ROLES) {
 }
 
 /**
- * The identity port CommandGateway reads: request and session ids, the local user, the chat message mode, and the
- * command host from projectHostAuthority (the connected users plus HOST_PAGE_PEERS). Each page load gets a new
- * session id, so requests addressed to an earlier host page are rejected.
+ * What the command gateway needs to know about this client: new request ids, this browser tab's session id, the
+ * local user, the chat message mode, and who the host is. Each page load gets a new session id, so requests
+ * addressed to an earlier host tab are rejected.
  */
 export function createFoundryGatewayIdentity() {
   const sessionId = globalThis.crypto?.randomUUID?.() ?? foundry.utils.randomID(32);
@@ -49,8 +49,8 @@ export function createFoundryGatewayIdentity() {
 /* -------------------------------------------- */
 
 /**
- * The authority port behind the command definitions' `authorize` checks (engine/authorization.mjs): GM status, the
- * control lock, and whether a user may own, control or author a unit or draw from a Convoy.
+ * The permission checks behind each command's `authorize` (engine/authorization.mjs): is the user a GM, who holds
+ * the control lock, and may the user own, control or edit a unit or take from a Convoy.
  */
 export function createFoundryCommandAuthority() {
   const owner = () => globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER;
@@ -59,7 +59,7 @@ export function createFoundryCommandAuthority() {
     isGm: userId => user(userId)?.isGM === true,
     getControlLock: () => game.settings.get(SYSTEM_ID, USER_LOCK_SETTING),
 
-    /** Whether `userId` is the command host and this client is its page. */
+    /** Whether `userId` is the host and this browser tab is the host client. */
     isActiveGm(userId) {
       const host = projectHostAuthority();
       return host.localIsHost && host.hostUserId === String(userId ?? '');
@@ -75,8 +75,8 @@ export function createFoundryCommandAuthority() {
 
     /**
      * Whether the user controls the token's actor, or null when the token no longer exists. While a control lock is
-     * held, only its holder controls, and only the locked token. `requirePlan` also demands the holder's own open
-     * movement plan.
+     * held, only the user holding it controls, and only the locked token. `requirePlan` also demands that user's own
+     * open movement plan; with it, a missing token gives false rather than null.
      */
     async canUserControlToken(tokenUuid, userId, { requirePlan = false } = {}) {
       const caller = user(userId);
@@ -94,8 +94,8 @@ export function createFoundryCommandAuthority() {
     },
 
     /**
-     * Whether the user may author the actor directly: staff, or a Trusted Player who owns it. The compendium lock
-     * isn't checked here, because Foundry refuses a write to a locked pack itself.
+     * Whether the user may edit the actor directly: a GM or Assistant GM, or a Trusted player who owns it. The
+     * compendium lock isn't checked here, because Foundry refuses a write to a locked pack itself.
      */
     async canUserAuthorActor(actorUuid, userId) {
       const caller = user(userId);
@@ -103,7 +103,7 @@ export function createFoundryCommandAuthority() {
       return actor?.documentName === 'Actor' && canFoundryUserAuthorIgnoringLock(caller, actor);
     },
 
-    /** Whether the user may author the Token's Actor: staff, or a Trusted Player who owns it. */
+    /** Whether the user may edit the Token's Actor directly: a GM or Assistant GM, or a Trusted player who owns it. */
     async canUserAuthorToken(tokenUuid, userId) {
       const caller = user(userId);
       const token = caller ? await resolveDocument(tokenUuid) : null;
@@ -124,7 +124,7 @@ export function createFoundryCommandAuthority() {
   });
 }
 
-/** The party state and Convoy lookup a unit's Convoy links are projected through. */
+/** The party data and Convoy lookup used to find which Convoys a unit's party is linked to. */
 const PARTY_CONVOY_LINKS = Object.freeze({
   readState: () => readPartyState(),
   resolveConvoy: uuid => {
@@ -134,15 +134,16 @@ const PARTY_CONVOY_LINKS = Object.freeze({
 });
 
 /* -------------------------------------------- */
-/*  Document authoring                          */
+/*  Direct document edits                       */
 /* -------------------------------------------- */
 const REFUSAL_NOTICE_MS = 1500;
 const refusalNotices = new Map();
 
 /**
- * Whether a user may edit a document directly, through its sheet or another native edit. Staff may edit any
- * document, and a Trusted Player the documents they own. Players go through system commands. An embedded Item or
- * effect follows the document that carries it. Nobody, the GM included, edits a document in a locked compendium.
+ * Whether a user may edit a document directly, through its sheet or another native edit. A GM or Assistant GM may
+ * edit any document, and a Trusted player the documents they own. A player's changes go through the host's
+ * commands instead. An embedded Item or effect follows the ownership of the document it belongs to. Nobody, the GM
+ * included, edits a document in a locked compendium.
  * @param {object} user A Foundry User.
  * @param {object} document The document to change.
  * @returns {boolean}
@@ -152,8 +153,8 @@ export function canFoundryUserAuthorDocument(user, document) {
 }
 
 /**
- * The same tier rule without the compendium lock. It decides who sees the Item sheet's Copy As Staff, which asks for
- * an import in a locked pack, and serves the command authority, whose writes Foundry refuses there.
+ * The same check, ignoring compendium locks. The Item sheet's Copy As Staff button uses it to offer an import from a
+ * locked pack, and the command permission checks use it, since Foundry refuses writes to a locked pack by itself.
  * @param {object} user A Foundry User.
  * @param {object} document The document to read or change.
  * @returns {boolean}
@@ -165,9 +166,9 @@ export function canFoundryUserAuthorIgnoringLock(user, document) {
 }
 
 /**
- * Whether a user may play a document: use the gameplay controls that reach its unit through system commands.
- * Staff play every unit. Anyone else plays only what they own, and inspecting another unit isn't play. Nobody
- * plays a document in a locked compendium, since every one of those controls writes to it.
+ * Whether a user may use a unit's gameplay controls, which act through the host's commands. A GM or Assistant GM may
+ * for every unit, anyone else only for units they own; viewing another unit doesn't count. Nobody may for a
+ * document in a locked compendium, since every one of those controls writes to it.
  * @param {object} user A Foundry User.
  * @param {object} document The unit, or a part of it.
  * @returns {boolean}
@@ -180,8 +181,9 @@ export function canFoundryUserPlayDocument(user, document) {
 }
 
 /**
- * Whether a native create, update or delete may leave this client. A Trusted Player creates world documents they
- * will own, and embedded ones only inside what they already own. A Player writes none of them.
+ * Whether this client lets a native create, update or delete go out. A Trusted player creates world documents they
+ * will own, and embedded ones only inside what they already own. A player's client sends none of them; see
+ * admitNativeWrite for what this check can and can't stop.
  * @param {object} user The user issuing the write.
  * @param {object} document The document being written.
  * @param {'create'|'update'|'delete'} action The native operation.
@@ -198,9 +200,15 @@ function canFoundryUserWriteDocument(user, document, action) {
 /**
  * Decide whether a native create, update or delete of a system document may go ahead. The _preCreate, _preUpdate
  * and _preDelete of EmblemActor, EmblemItem, EmblemActiveEffect and EmblemActorDelta call it, so it covers sheet
- * saves, macros, API and HUD writes alike. The processing blocker is checked first. A refused write warns the user,
- * at most once per document every REFUSAL_NOTICE_MS, except a flags-only update, which modules write during HUD
- * refreshes. That one is refused quietly.
+ * saves, macros, API and HUD writes made through those documents. Token documents are not covered.
+ *
+ * This is a fair-play guard on the client sending the write, not a security boundary. Foundry's server checks only
+ * document ownership, and players own their units, so a player who bypasses these methods from the console can
+ * still write to them.
+ *
+ * While the host client is busy, writes from other clients are refused first, without a warning. Otherwise a
+ * refused write warns the user, at most once per document every REFUSAL_NOTICE_MS, except a flags-only update,
+ * which modules write during HUD refreshes. That one is refused quietly.
  * @param {object} user The user issuing the write.
  * @param {object} document The document being written.
  * @param {'create'|'update'|'delete'} action The native operation.
@@ -215,8 +223,8 @@ export function admitNativeWrite(user, document, action, changes = null, blocker
 }
 
 /**
- * The document an embedded one belongs to, or null for a world document. That's its Actor or Item, or for a token's
- * synthetic actor, the ActorDelta and then the Token, which takes its ownership from the actor it stands for.
+ * The document an embedded one belongs to, or null for a world document: its Actor or Item, or for an unlinked
+ * token's actor, its ActorDelta and then its Token (a Token takes its ownership from the actor it stands for).
  */
 function carrierOf(document) {
   const parent = document?.parent;
@@ -232,7 +240,7 @@ export function inLockedCompendium(document) {
   return Boolean(pack) && game.packs.get(pack)?.locked === true;
 }
 
-/** Whether the user owns the outermost document carrying this one, where Foundry keeps the ownership. */
+/** Whether the user owns the top-level document this one belongs to, which is where Foundry keeps ownership. */
 function ownsCarrier(user, document) {
   const owner = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER;
   if (owner === undefined || !user || !document) return false;

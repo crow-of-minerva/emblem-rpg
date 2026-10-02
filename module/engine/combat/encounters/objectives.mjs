@@ -78,8 +78,9 @@ export async function snapshotObjectiveTargets(board, services, { resetProgress 
 /* -------------------------------------------- */
 
 /**
- * Update counted-rout progress from committed defeat events. Use the event's saved faction or
- * initial roster evidence, since the Token is gone. Ignore repeats and events for Tokens still on the board.
+ * Count a defeated enemy toward a rout objective, from a defeat event whose command has committed. The Token is
+ * gone, so use the faction the event carries or, failing that, the enemy roster saved when the encounter began.
+ * Ignore repeats and Tokens still on the map.
  */
 async function recordObjectiveKill(board, trigger, services) {
   const tokenId = String(trigger.defeatedTokenId ?? '');
@@ -167,11 +168,11 @@ export async function runObjectiveCheck(sceneUuid, services, trigger = {}) {
 /* -------------------------------------------- */
 
 /**
- * Persist a pending end through the encounter writer instead of interrupting the current resolution.
+ * Save a pending end on the encounter instead of interrupting what is resolving now.
  *
- * The flag is forward gameplay state, not a recovery record: while it stands the map refuses every further
- * advance, pause and check, and `resolveObjectiveEnd` rechecks live state after remaining experience, level-up
- * and effect work settles. foundry/hooks/scene.mjs dispatches that resolution as its own command.
+ * This flag is real game state, not crash-recovery data: while it is set the GM can't advance, pause or re-check
+ * the map. `resolveObjectiveEnd` checks the map again once the remaining XP, level-up and effect work is done;
+ * foundry/hooks/scene.mjs runs that as its own command.
  */
 export async function queueObjectiveEnd(board, reason, services, trigger = {}) {
   if (!board?.started || board.hasPendingEnd) return null;
@@ -201,7 +202,7 @@ export async function queueObjectiveEnd(board, reason, services, trigger = {}) {
 }
 
 /**
- * Finish a pending end under CommandDispatcher execution. The decided outcome is written before it is announced,
+ * Finish a pending end inside a command. The decided outcome is written before it is announced,
  * then the map is torn down. Deleting the encounter is what prevents a second completion. A pause also runs
  * through this path, deleting the encounter, but leaves the map's statuses and summons for the resume.
  * @param {string} sceneUuid The map whose end is pending.
@@ -269,7 +270,7 @@ async function completeTeardown(sceneUuid, services, { pausing = false } = {}) {
 }
 
 /**
- * The one cleanup every ending shares, whether an objective settled it or the GM ended the map: every Guard bond
+ * The one cleanup every ending shares, whether an objective decided it or the GM ended the map: every Guard bond
  * breaks, every status the map's units wear goes, every unit's record of the Rallies it cast this map clears, and
  * every summoned Token leaves, all through FoundryEncounterRepository under the ending command's operation, so a
  * refused end puts them back. Which effects count as statuses is `isEncounterStatus` in game/effects/statuses.mjs.
@@ -348,7 +349,7 @@ function declaredReason(pending) {
 
 /**
  * Fingerprint objective definitions and resolved targets for resolveObjectiveEnd.
- * Exclude live condition values, which game/combat/objectives.mjs re-evaluates at settlement.
+ * Exclude live condition values, which game/combat/objectives.mjs checks again when the end is resolved.
  */
 function endFingerprint(board) {
   return JSON.stringify({

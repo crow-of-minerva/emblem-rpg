@@ -13,13 +13,13 @@ const FENCED_METHODS = Object.freeze([
 ]);
 
 /**
- * Refuse this page's database writes while its dispatcher still holds world execution but the page is no longer the
- * command host. Native edits made outside a running command are left to the document authoring guards
- * (admitNativeWrite). Installed from init/system.mjs at startup.
- * @param {object} ports
- * @param {Function} ports.executionHeld Whether this client's dispatcher holds world execution.
- * @param {Function} ports.isHost Whether this client is still the eligible host.
- * @param {Function} [ports.onFenced] Told about every refused write.
+ * Block this client's document writes if it is still running a command after it stopped being the host client.
+ * Foundry and sheet edits made outside a running command are left to the document write guards (admitNativeWrite).
+ * Installed from init/system.mjs at startup.
+ * @param {object} options
+ * @param {Function} options.executionHeld Whether this client is in the middle of running a system command.
+ * @param {Function} options.isHost Whether this client is still the host client.
+ * @param {Function} [options.onFenced] Told about every refused write.
  * @returns {boolean} Whether libWrapper was present to install the fence.
  */
 export function installAuthorityFence({ executionHeld, isHost, onFenced = () => {} }) {

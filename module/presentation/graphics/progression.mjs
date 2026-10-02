@@ -19,6 +19,10 @@ import { pageHidden } from '../../lib/dom/visibility.mjs';
 /* -------------------------------------------- */
 /*  Presentation timing                         */
 /* -------------------------------------------- */
+/**
+ * The overlays' own timings, in milliseconds. Not the same as PROGRESSION_PRESENTATION_TIMING in
+ * contracts/domains/progression.mjs, which sets how long the engine waits.
+ */
 const PROGRESSION_PRESENTATION_TIMING = Object.freeze({
   reveal: 50,
   fadeOut: 300,
@@ -91,7 +95,7 @@ function experienceBarSteps({ currentLevel, maxLevel, currentExperience, experie
 /*  Progression presentation                    */
 /* -------------------------------------------- */
 /**
- * Show XP gains and level-ups from committed progression results, and post the class-feature notices and the
+ * Show XP gains and level-ups once they are saved, and post the class-feature notices and the
  * Budding Talent card. The presentation message handler in init/system.mjs sends progression messages here, and
  * PromotionPresentation borrows its stat panel.
  */
@@ -128,7 +132,7 @@ export class ProgressionPresentation {
     }
   }
 
-  /** Notify the requester about class features granted, replaced or missing during reconciliation. */
+  /** Tell this client's user which class features the unit gained, had replaced, lost, or is missing. */
   async presentFeatureChanges({ actorName, gained = [], replaced = [], missing = null, uniqueRemoved = null }) {
     if (!this.notifications) return false;
     for (const featureName of gained) {
@@ -146,7 +150,7 @@ export class ProgressionPresentation {
     return true;
   }
 
-  /** Animate one committed XP award without reading or changing an Actor. */
+  /** Animate one saved XP award without reading or changing an Actor. */
   async showExperienceGain({
     actorName,
     currentLevel,
@@ -198,7 +202,7 @@ export class ProgressionPresentation {
     overlay.remove();
   }
 
-  /** Show the LEVEL UP splash after the progression writer commits the level. */
+  /** Show the LEVEL UP splash after the new level is saved. */
   async showLevelUpSplash() {
     if (pageHidden()) return false;
     const splash = this.#mount({ id: 'levelup-splash' });
@@ -220,7 +224,7 @@ export class ProgressionPresentation {
   }
 
   /**
-   * Reveal the committed stat results one by one, then play the voice clip the host picked, if any.
+   * Reveal the saved stat results one by one, then play the voice clip the host picked, if any.
    *
    * Serves level-ups and promotions, which is why the stat set, labels and container class are overridable.
    */

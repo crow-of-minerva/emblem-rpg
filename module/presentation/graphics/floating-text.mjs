@@ -29,6 +29,7 @@ function floatLayer() {
   if (existing) return existing;
   const layer = new globalThis.PIXI.Container();
   layer.name = FLOAT_LAYER;
+  // canvas.stage doesn't sort its children, so this zIndex has no effect: layers stack in the order they were made.
   layer.zIndex = 999999;
   layer.eventMode = 'none';
   stage.addChild(layer);
@@ -54,6 +55,7 @@ export function addFloat(display, { floatDistance = 0, durationMs = 1000, maxSca
   const duration = Math.max(1, Number(durationMs) || 1);
   let elapsed = 0;
   const tick = frame => {
+    // PIXI 7 passes a ticker callback a frame delta number, not the ticker, so the milliseconds come from the ticker.
     elapsed += Number(frame?.deltaMS ?? ticker.deltaMS) || (1000 / 60);
     if (elapsed < POP_MS) {
       display.scale.set(Math.min(easeOutBack(elapsed / POP_MS) * maxScale, maxScale));

@@ -101,6 +101,7 @@ export function createEconomyCommandContribution({
     {
       id: COMMAND_IDS.ECONOMY.STEAL,
       authorize: authorize.tokenController(payload => payload.sourceTokenUuid),
+      // The steal check has a DC, so it may be karmic and write the world's karma ledger.
       concurrencyKeys: async context => [...await trades.resourceKeys(context.payload), KARMA_LEDGER_RESOURCE_KEY],
       handler: context => steal(context, services)
     },
@@ -179,14 +180,14 @@ function actorKeys(...uuids) {
   return [...new Set(uuids.map(uuid => String(uuid ?? '')).filter(Boolean).map(uuid => `actor:${uuid}`))].sort();
 }
 
-/** Keys for a Convoy, vendor or purse settlement: every actor it writes, plus the shared economy ledger key. */
+/** Keys for a Convoy, vendor or coinpurse change: every actor it writes, plus the shared economy ledger key. */
 function economyKeys(...uuids) {
   return [...actorKeys(...uuids), ECONOMY_LEDGER_RESOURCE_KEY];
 }
 
 /**
- * Keys for a shop line or a haggle: the economy keys plus the movement board. Either leaves the unit's plan open (see
- * settleShopVisit), so no write here touches the board.
+ * Keys for a shop line or a haggle: the economy keys plus the movement key, because a flying unit at the counter
+ * may be landed (settleShopVisit). Its movement plan stays open.
  */
 function shopKeys(...uuids) {
   return [...economyKeys(...uuids), MOVEMENT_BOARD_KEY];
@@ -197,8 +198,8 @@ function shopKeys(...uuids) {
 /* -------------------------------------------- */
 
 /**
- * Refuse a settlement the repository could not finish: stale facts before anything was written, or a failed write
- * whose partial effects CommandDispatcher puts back before this refusal reaches the caller.
+ * Turn a failed save into a refusal. Out-of-date data means nothing was written; a write that failed part-way is
+ * logged, and the dispatcher undoes what it wrote.
  */
 function refuseSettlement(services, outcome, code) {
   const reasonCode = outcome.reasonCode ?? outcome.code;
@@ -210,7 +211,7 @@ function refuseSettlement(services, outcome, code) {
   return refuse(code, { reasonCode, diagnostic });
 }
 
-/** Whether a settlement failed part-way, so the writes the basket already made must not stand either. */
+/** Whether a save failed part-way, so the whole basket is abandoned and undone. */
 function settlementFailed(outcome) {
   return outcome?.code === ECONOMY_SETTLEMENT_OUTCOMES.REVERTED;
 }
@@ -244,6 +245,7 @@ async function convoyWithdraw(context, services) {
   if (!intent) return refuse(RESULT_CODES.CONVOY_WITHDRAWAL_INVALID);
   const snapshot = await services.trades.getWithdrawalSnapshot(intent);
   if (!snapshot) return refuse(RESULT_CODES.CONVOY_WITHDRAWAL_UNAVAILABLE);
+  // The GM can withdraw during an encounter, and from a Convoy the unit's party isn't linked to.
   const gm = services.authority.isGm(context.userId) === true;
   if (handoverLockedByEncounter({ inCombat: snapshot.encounterActive, isGM: gm })) {
     return refuse(RESULT_CODES.CONVOY_LOCKED_IN_COMBAT, { convoyName: snapshot.convoy.name });
@@ -280,10 +282,10 @@ async function convoyWithdraw(context, services) {
 /* -------------------------------------------- */
 
 /**
- * Deliver a Convoy's inbound content, the staff command behind the Convoy sheet's Inbound view: everything, the
- * named inbound Items, or the inbound gold. FoundryTradeRepository.deliverInbound plans the delivery from the
- * Convoy's fresh state and moves the gold into `system.gp` and the Items into the stored inventory. A selection
- * that finds nothing inbound is refused as empty before anything is written.
+ * The GM's command behind the Convoy sheet's Inbound view: deliver everything inbound, the chosen inbound items, or
+ * the inbound gold. FoundryTradeRepository.deliverInbound reads the Convoy fresh and moves the gold into
+ * `system.gp` and the items into its stored inventory. A selection that finds nothing inbound is refused before
+ * anything is written.
  */
 async function convoyDeliver(context, services) {
   const intent = normalizeConvoyDeliveryIntent(context.payload);
@@ -391,7 +393,7 @@ async function convoyDeposit(context, services) {
 /*  Trade and loot                              */
 /* -------------------------------------------- */
 
-/** Move what each side set down across to the other, then settle what the exchange cost the acting unit. */
+/** Move what each side set down across to the other, then charge the acting unit's turn for the trade. */
 async function trade(context, services) {
   const intent = normalizeTradeIntent(context.payload);
   if (!intent) return refuse(RESULT_CODES.TRADE_INPUT_INVALID);
@@ -422,6 +424,7 @@ async function trade(context, services) {
       reasonCode: error instanceof CombatPersistenceError ? error.code : 'economy.trade-failed', diagnostic
     });
   }
+  // A loot drop chest left with nothing in it is removed from the map.
   const emptied = plan.mode === TRADE_MODES.LOOT && snapshot.target.isDropChest === true
     && take.length >= snapshot.target.items.length;
   if (emptied) await services.trades.removeEmptiedContainer(snapshot.target.actorUuid, operation);
@@ -447,8 +450,8 @@ async function trade(context, services) {
 }
 
 /**
- * Charge the acting unit's turn for a trade: its bonus action for a trade in an encounter (spendBonusAction), or
- * for looting outside free exploration, closing its open plan on its square (commitSquare).
+ * Charge the acting unit's turn for a trade: its bonus action for a trade in an encounter (spendBonusAction), or,
+ * for looting outside free exploration, fix the square it walked to while its turn goes on (commitSquare).
  */
 async function settleTradeTurn(services, snapshot, plan, standing) {
   if (!plan.spendsBonusAction && !(plan.commitsSquare && standing.planning)) return;
@@ -480,8 +483,8 @@ async function steal(context, services) {
 
 /**
  * Roll the theft check and post its card, wait STEAL_ATTEMPT_TIMING.diceSettleHold, then grant the skill XP, move
- * the items on a success, settle the Steal Ability's level XP (settleStealExperience), show the verdict and end the
- * turn when the plan says so. The XP beat plays once the theft has been published.
+ * the items on a success, award the Steal Ability's level XP (settleStealExperience), show the verdict and end the
+ * turn when the plan says so. The level XP card plays after the theft's event is published.
  */
 async function attemptSteal(context, services, { snapshot, plan, standing, intent, items }) {
   let roll;
@@ -537,11 +540,10 @@ async function attemptSteal(context, services, { snapshot, plan, standing, inten
 }
 
 /**
- * Grade a theft against its Steal Ability's activation XP entry with the rules an item use follows
- * (settleTableExperience in engine/items/activation.mjs): Lords and Retainers only, nothing outside a running
- * encounter, and the same per-encounter counter, written through FoundryTradeRepository.recordExperienceUse. Steal
- * runs no effect steps, so an Item actually taken is reported as a harmful status on the mark; a missed theft reports
- * nothing, which a flat entry still pays for. Both writes join the steal command's operation.
+ * Award Steal's level XP with the same rules and per-encounter counter as an item use (settleTableExperience):
+ * Lords and Retainers only, and nothing outside a running encounter. Steal runs no effect steps, so a successful
+ * theft counts as a harmful status on the target; a missed theft counts nothing, though a flat XP entry still pays.
+ * Both writes are undone if the steal fails.
  */
 async function settleStealExperience(services, snapshot, stolen) {
   const table = snapshot.stealExperience;
@@ -582,6 +584,7 @@ function presentStealVerdict(services, snapshot, roll, items, context) {
 
 /** A theft ends the turn whether or not it lands, so it takes every remaining slot with it. */
 async function settleStealTurn(services, snapshot, standing) {
+  // A unit with no movement plan has no turn to end here.
   if (!snapshot.source.movement) return;
   if (!standing.resolution) throw new CombatPersistenceError('economy.turn-settlement-failed');
   if (await services.trades.spendTurn(snapshot, standing.resolution) !== true) {
@@ -620,7 +623,7 @@ async function presentUnitCheck(services, context, unit, { check, roll, effectNa
   }
 }
 
-/** The check a unit rolls with one of its skills (buildSkillCheck), from its projected ranks and attributes. */
+/** The check a unit rolls with one of its skills (buildSkillCheck), from its skill ranks and attributes. */
 function unitSkillCheck(unit, skillKey, dc) {
   const skill = SKILL_BY_KEY[skillKey];
   return buildSkillCheck({
@@ -763,9 +766,9 @@ async function vendorCheckout(context, services) {
 }
 
 /**
- * Settle one purchase or sale per unit of a discrete good and one per Resource stack. A line's first refusal ends
- * that line, and the basket keeps what already settled. A line whose writes failed part-way abandons the whole
- * basket instead, because every line shares one operation and CommandDispatcher restores all of it.
+ * Buy or sell a discrete good one unit at a time, and a Resource stack in one go. A line's first refusal ends that
+ * line, and the basket keeps what already went through. A line whose writes failed part-way abandons the whole
+ * basket instead, because every line is undone together when the command fails.
  */
 async function settleBasket(intent, services, context) {
   const selling = intent.mode === VENDOR_CHECKOUT_MODES.SELL;
@@ -787,6 +790,7 @@ async function settleBasket(intent, services, context) {
         break;
       }
       recordBasketLine(receipt, settled, line.itemId, selling);
+      // A Resource line goes through in one pass; a discrete good goes one unit per pass.
       remaining -= Math.max(1, Number(settled.plan.units) || 1);
     }
     if (receipt.aborted) break;
@@ -841,8 +845,8 @@ function shopReceiptMessage(intent, receipt) {
 }
 
 /**
- * Land a flying unit that reached down to the counter once its line or haggle has settled. The plan stays open, and
- * leaving the shop settles the turn (ui/controls/interaction.mjs), so the unit keeps its movement lock while it shops.
+ * Land a flying unit that reached down to the counter, once its purchase, sale or haggle is done. Its movement plan
+ * stays open until it leaves the shop (ui/controls/interaction.mjs), so it keeps its movement lock while it shops.
  */
 async function settleShopVisit(services, facts, unit, detail, operation = null) {
   const grounded = groundsOnInteraction({
@@ -873,12 +877,9 @@ async function vendorMerchandise(context, services) {
 /* -------------------------------------------- */
 
 /**
- * The haggle the vendor shop offers in free exploration (ui/apps/menus/vendor-app.mjs through api.economy.haggle).
- * The unit at the counter spends its Downtime Action on a Trading check with no DC, and the check total's
- * disposition shift (planHaggleOutcome) is stored on the Vendor under the unit's party, or the unit alone when it has
- * none. FoundryTradeRepository.settleHaggle rechecks the facts, then writes the commitment and the Vendor's haggles
- * under one capture. The shop's next inspectShop prices every member of that party at the shifted disposition until
- * the table's Reset Downtime clears it.
+ * Haggle at a vendor during free exploration (the vendor shop's Haggle button): the unit at the counter spends its
+ * Downtime Action and rolls Trading with no DC. The total shifts this vendor's prices for the unit's party, or the
+ * unit alone if it has none, until the GM's Reset Downtime clears it.
  */
 async function haggle(context, services) {
   const intent = normalizeHaggleIntent(context.payload);
@@ -959,10 +960,10 @@ function haggleCardMessage(facts, roll, planned, context) {
 /* -------------------------------------------- */
 
 /**
- * Supply read-only shop and trade views through the economy API in api/facade.mjs. A shop view prices at the
- * disposition the buyer's party sees (FoundryTradeRepository.getShopSnapshot), except a shelf entry the party sold
- * here, which it buys back at what it was paid (shelfPrice). A possession this Vendor sold is shown as not accepted
- * (`soldHere`). The view also carries the Haggle standing the vendor shop's button reads.
+ * Read-only Convoy, shop and trade views for the menus (the economy API in api/facade.mjs). Shop prices follow the
+ * disposition the buyer's party sees, except that items the party sold here can be bought back for what it got
+ * (shelfPrice). Goods this vendor sold are shown as not accepted (`soldHere`). The shop view also says whether the
+ * Haggle button is available.
  */
 export function createEconomyQueries({ trades }) {
   return Object.freeze({

@@ -171,9 +171,8 @@ export function normalizeTerrainProfile(raw) {
 const TERRAIN_STAT_KEYS = Object.freeze(['evasionMod', 'defMod', 'resMod']);
 
 /**
- * The terrain stat modifiers under a footprint, for planTerrainStatFields and projectTerrainModifiersAt in
- * foundry/adapters/projections/board.mjs. For each stat, the strongest positive and the strongest negative tile
- * values combine, instead of every occupied cell adding up.
+ * The terrain stat modifiers under a footprint. For each stat, the strongest positive and the strongest negative
+ * tile values combine, instead of every occupied cell adding up.
  * @param {object} grid Persisted terrain grid.
  * @param {Array<[number, number]>} cells Footprint cells as column and row pairs.
  * @param {object|null} profile Normalized exception profile for the unit standing there.
@@ -206,9 +205,9 @@ export function footprintCells(footprint) {
 }
 
 /**
- * Plan the terrain stat fields each changed unit should carry, for engine/board.mjs. Airborne and unplaced units
- * get zero modifiers, so stale terrain bonuses are cleared.
- * @param {{grid: object, units: object[]}} board Detached terrain board snapshot.
+ * Plan the terrain stat fields each changed unit should carry. Airborne and unplaced units get zero modifiers, so
+ * stale terrain bonuses are cleared.
+ * @param {{grid: object, units: object[]}} board The Scene's terrain grid and the units on the map.
  * @returns {Array<{actorUuid: string, fields: Record<string, number>}>}
  */
 export function planTerrainStatFields(board) {
@@ -234,7 +233,7 @@ export function planTerrainStatFields(board) {
 }
 
 /* -------------------------------------------- */
-/*  Movement projection                         */
+/*  Terrain for movement                        */
 /* -------------------------------------------- */
 
 /** Build the terrain costs and blocked cells consumed by game/movement/pathfinding.mjs. */
@@ -284,7 +283,7 @@ export function projectTerrainMovement(grid, profile, {
   });
 }
 
-/** Build detached terrain views consumed by presentation/canvas/terrain.mjs. */
+/** Copies of the terrain cells and zones for drawing the terrain layer (presentation/canvas/terrain.mjs). */
 export function projectTerrainPresentation(grid, zones = {}, {
   showHiddenSpawns = false,
   spawnImages = {}
@@ -355,10 +354,10 @@ function resolveCrossingSkill(skillType, odds = {}) {
 }
 
 /**
- * Build the crossing check and odds for movement previews and engine settlement.
+ * Build the crossing check and odds for movement previews and the crossing roll.
  * Compare full skill chances, including stat bonuses, before choosing an Either skill.
  * @param {object} crossing The crossing, carrying `skillType` and `dc`.
- * @param {object} unit Detached unit facts: `skills`, `attributes`, `factionRole`, `blessed`.
+ * @param {object} unit The unit's `skills`, `attributes`, `factionRole` and `blessed`.
  * @returns {{skillKey: string, check: object|null, chance: number}} Chance as a whole percentage.
  */
 export function resolveCrossingCheck(crossing, unit = {}) {
@@ -386,7 +385,8 @@ export function resolveCrossingCheck(crossing, unit = {}) {
 }
 
 /**
- * Calculate failed-descent damage for engine crossing settlement from height and failure margin.
+ * Damage from a failed descent, from the levels dropped and how far the roll missed. Past the fraction table, the
+ * multiplier is the levels dropped minus 3.
  * @param {object} input Levels descended, the miss, and the unit's maximum health.
  * @returns {number} Damage, rounded.
  */
@@ -398,7 +398,7 @@ export function crossingFallDamage({ levels = 0, miss = 0, maxHp = 0 } = {}) {
   return Math.round(Math.max(0, Number(maxHp) || 0) * base * shortfall);
 }
 
-/** Identify bridge cells for crossingBridgeLandings: an impassable gap with an authored crossing direction. */
+/** Whether a square is a bridge square: an obstacle or impassable square with this crossing direction authored. */
 function crossingBridges(board, x, y, direction) {
   const cell = board[terrainKey(x, y)];
   if (!cell?.blocking) return false;
@@ -406,9 +406,9 @@ function crossingBridges(board, x, y, direction) {
 }
 
 /**
- * The crossing board projectTerrainMovement hands out as `crossings`: only the fields the crossing rules read
- * (elevation, transition directions, per-direction overrides, standing blockers and zone name), in one frozen entry
- * per square that says anything about crossing it.
+ * The map's crossing data, handed out by projectTerrainMovement as `crossings`: one frozen entry per square that
+ * matters to crossings, with its height, crossing directions, per-direction overrides, whether it blocks, and its
+ * zone name.
  */
 function projectTerrainCrossings(grid, zones = {}) {
   const board = {};
@@ -432,7 +432,7 @@ function projectTerrainCrossings(grid, zones = {}) {
 /**
  * Find bridge-network exits for movement crossing choices. The walk follows authored entry and exit directions
  * through stacked or branching bridge cells, so one attempt can offer several landings.
- * @param {object} board The crossing board from projectTerrainMovement's `crossings`.
+ * @param {object} board The map's crossing data (projectTerrainMovement's `crossings`).
  * @param {{x: number, y: number}} from The square being left.
  * @param {string|null} [firstDirection] Only walk routes that begin this way.
  * @returns {object[]} One landing per reachable square, carrying its first and last step.
@@ -484,7 +484,7 @@ export function crossingStepDirection(from, to) {
 /**
  * Validate a crossing requested by movement commands. Non-adjacent targets must be bridge exits,
  * and the origin's first-step override governs the whole attempt.
- * @param {object} board The crossing board from projectTerrainMovement's `crossings`.
+ * @param {object} board The map's crossing data (projectTerrainMovement's `crossings`).
  * @param {{x: number, y: number}} from The square being left.
  * @param {{x: number, y: number}} to The square aimed at.
  * @returns {object|null}
@@ -537,8 +537,9 @@ export function crossingTargets(board, from) {
 /* -------------------------------------------- */
 
 /**
- * The teleport pads projectTerrainMovement hands out, in cell-key order: each pad's square, letter, price and
- * partner square. A pad pairs with the first other pad of the same letter. Unpaired pads are kept so activation can
+ * The teleport pads projectTerrainMovement hands out, in the order the grid saved their squares (not sorted): each
+ * pad's square, letter, price and partner square. A pad pairs with the first other pad of the same letter, so with
+ * three or more pads of one letter the pairing follows that saved order. Unpaired pads are kept so activation can
  * explain the missing exit. A pad authored No Flying or No Mounted is marked `restricted` for a unit that flies or
  * rides, and refuses it.
  */
@@ -576,11 +577,11 @@ export function teleportPadAt(pads = [], cell) {
 }
 
 /**
- * Choose a teleport destination before engine movement settlement spends its cost. A blockable exit refuses an
- * occupied cell, and any other exit searches for a free footprint on the exit floor.
- * Trust the authored exit itself and do not treat type-restricted transitions as standing blockers.
- * @param {object} board Detached placement board: `grid`, `bounds`, `occupied` cell keys, `blocked` cell keys
- *   and `elevations`.
+ * Choose where a teleport lands, before its cost is spent. A blockable exit refuses when occupied; any other exit
+ * moves the arrival to the nearest clear square on the exit's floor. The exit square itself is not checked for level
+ * floor, and crossings barred to fliers or mounts don't count as blockers.
+ * @param {object} board Placement data: `grid`, `bounds`, `occupied` cell keys, `blocked` cell keys and
+ *   `elevations`.
  * @param {object} pad The pad being used, carrying its `exit`.
  * @param {{width: number, height: number}} footprint The passenger's footprint.
  * @returns {{ok: boolean, code: string, destination?: object}}
@@ -602,10 +603,10 @@ export function resolveTeleportLanding(board, pad, footprint) {
 }
 
 /**
- * Plan teleport costs for engine/movement/commands.mjs. Movement-cost pads continue planning,
- * bonus-cost pads close movement, and action-cost pads end the turn. Exploration pays nothing.
+ * Plan what a teleport costs. Movement-cost pads let the unit keep moving, bonus-cost pads end its movement, and
+ * action-cost pads end the turn. Exploration pays nothing.
  * @param {object} pad The pad being used.
- * @param {object} turn Detached turn facts: what remains of the action, the bonus and the movement.
+ * @param {object} turn What the unit's turn has left: its action, its bonus action and its movement.
  * @returns {{ok: boolean, code: string, movementSpent?: number, resume?: boolean, endTurn?: boolean,
  *   anchors?: boolean}}
  */
@@ -648,9 +649,9 @@ function charge(movementSpent, resume, endTurn, spends = {}) {
 /* -------------------------------------------- */
 
 /**
- * Choose a spawn destination for engine/terrain/effects.mjs. A blockable arrival refuses an occupied cell, and any
- * other searches for the nearest legal footprint.
- * @param {object} board Detached placement board: `grid`, `bounds` and `occupied` cell keys.
+ * Choose where a spawned unit lands. A blockable arrival refuses an occupied cell, and any other searches for the
+ * nearest legal footprint.
+ * @param {object} board Placement data: `grid`, `bounds` and `occupied` cell keys.
  * @param {{x: number, y: number, width: number, height: number}} footprint Authored placement.
  * @param {boolean} blockable Whether an occupied square refuses instead of displacing.
  * @returns {{x: number, y: number}|null}
@@ -662,7 +663,7 @@ export function resolveSpawnPlacement(board, footprint, blockable) {
   return blockable ? null : nearestClearPlacement(board, footprint);
 }
 
-/** The cell keys a settled placement takes out of circulation for the arrivals after it. */
+/** The squares a placed unit now takes, so later arrivals avoid them. */
 export function placementOccupancyKeys(footprint) {
   return footprintCells(footprint).map(([x, y]) => cellKey(x, y));
 }

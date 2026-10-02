@@ -45,9 +45,10 @@ import {
   tokenGridRect
 } from '../projections/effect-targets.mjs';
 
+/** Marks effect writes, so the Stance hook and the placed-token fill leave them alone. */
 const effectOptions = () => ({ emblemEffectSettlement: true });
 
-/** The summon Tokens each running command's operation has placed, which a recast in that command leaves standing. */
+/** Summon Tokens already placed by each running command, so a second cast in the same command keeps them. */
 const placedSummons = new WeakMap();
 
 /** The only field `FoundryItemActivationSettlement.settleActivation` writes on the Item a use activates. */
@@ -62,11 +63,11 @@ const FACTION_DISPOSITIONS = Object.freeze({
 /* -------------------------------------------- */
 
 /**
- * The Foundry writers behind EffectExecutionService (engine/effects/execution.mjs), wired as its `effects` port.
+ * Writes for effect steps, used by EffectExecutionService (engine/effects/execution.mjs).
  *
- * Every writer here captures the before-images of what it is about to change through `runtime.operation`, the
- * dispatcher operation the running command carries, and then performs ordinary Foundry writes. The parameter named
- * `operation` in the step-facing methods is the prepared effect step, not that handle.
+ * Each writer records what it is about to change in `runtime.operation` (the running command's undo record), so a
+ * failed command can be undone, then makes ordinary Foundry writes. In the step methods, the argument named
+ * `operation` is the prepared effect step, not that undo record.
  */
 export class FoundryEffectRepository {
   constructor({ health, movements = null, unitAudio = null, guardBonds = null, crossings = null, wait = delay }) {
@@ -87,12 +88,8 @@ export class FoundryEffectRepository {
   randomId() { return documentId(); }
 
   /**
-   * Capture the unit the health write is about to change, then read its health. A unit an area or echo step reaches
-   * that the command didn't capture up front is recorded here, right before its first write.
-   * FoundryHealthRepository checks and commits against this snapshot. Its `ruleTarget` is what EffectExecutionService
-   * resolves the damage or healing against. For a combatant of the exchange that fired the run, that is
-   * projectExchangeHealthTarget's reading under the exchange's `combatContext`. Otherwise it is the snapshot's
-   * `target`.
+   * Record the unit before its first health change, then read its health. `ruleTarget` is the health the damage or
+   * healing is worked out against: as the current combat exchange sees it if the unit is in one, otherwise its own.
    */
   async healthSnapshot(actorUuid, tokenUuid, runtime = null, combatContext = null) {
     await captureUnit(runtime, actorUuid, tokenUuid);
@@ -102,7 +99,7 @@ export class FoundryEffectRepository {
     return Object.freeze({ ...snapshot, ruleTarget });
   }
 
-  /** Commit health through the operation the effect runtime names, which FoundryHealthRepository captures into. */
+  /** Write damage through FoundryHealthRepository, recorded in the running command's undo record. */
   commitDamage(snapshot, resolution, runtime = null) {
     return this.health.commitDamage(snapshot, resolution, { operation: runtime?.operation ?? null });
   }
@@ -137,15 +134,12 @@ export class FoundryEffectRepository {
     });
   }
 
-  /**
-   * Create a prepared summon, reserving its identity in the run's operation before the Token exists, after removing
-   * the earlier summons it replaces.
-   */
+  /** Remove the summons this one replaces, then create the new summon Token under its pre-picked id. */
   createSpawn(spawn, operation, runtime) {
     return createEffectSpawn(spawn, operation.step, runtime, this.guardBonds);
   }
 
-  /** Add the voice clip or linked status only the host can read to a presentation step, or null to skip it. */
+  /** Add the voice clip or linked status only the host client can read to a presentation step, or null to skip it. */
   async preparePresentation(operation, runtime) {
     if (operation.step.kind === 'playVoice') {
       const [target] = await this.resolveTargets(operation.step.target, runtime);
@@ -163,8 +157,8 @@ export class FoundryEffectRepository {
   }
 
   /**
-   * Execute one non-health mechanical operation against the writes resolved for it, which its command holds.
-   * `choices` supplies the step's board choices, such as the random placement EffectExecutionService draws once.
+   * Run one non-health mechanical step against the documents resolved for it earlier. `choices` carries choices
+   * already made for the step, such as the random square EffectExecutionService draws once.
    */
   async executeMechanical(operation, runtime, writes, choices = null) {
     const step = operation.step;
@@ -189,16 +183,16 @@ export class FoundryEffectRepository {
 /* -------------------------------------------- */
 
 /**
- * Record the before-images of everything one step is about to write, in one durable save.
- * A document the running command already recorded adds nothing and costs no save. A capture that cannot be saved
- * throws `OperationCaptureError`, which stops the step before it writes.
+ * Record everything one step is about to write in the command's undo record, in one save. Documents already
+ * recorded are skipped. If the record can't be saved this throws `OperationCaptureError`, so the step stops before
+ * writing.
  */
 async function captureDocuments(runtime, documents) {
   const named = documents.filter(Boolean);
   if (named.length) await runtime?.operation?.capture({ documents: named });
 }
 
-/** Record one unit's Actor and Token together, for the health boundary and for forced movement. */
+/** Record one unit's Actor and Token together, before a health change or a forced move. */
 async function captureUnit(runtime, actorUuid, tokenUuid) {
   if (!runtime?.operation) return;
   await captureDocuments(runtime, [await resolveActor(actorUuid), await resolveToken(tokenUuid)]);
@@ -237,10 +231,9 @@ async function modifyShield(targets, step, runtime) {
 }
 
 /**
- * Decide each target's application first, so the whole step captures in one save, then write them in order.
- * `planEffectApplication` names the ActiveEffect it creates or updates. A refusal writes nothing. Each application
- * says whether it created the status and whether the status is flagged beneficial, which EffectExecutionService
- * turns into the unit impacts activation XP reads.
+ * Plan every target's status first, so the whole step is recorded in one save, then write them in order. A refused
+ * application (immunity or a full stack) writes nothing. Each result says whether the status was created and whether
+ * it is beneficial; activation XP uses both.
  */
 async function applyEffects(targets, step, repository, runtime) {
   const definition = step.preset === 'custom' ? step.customData
@@ -392,6 +385,8 @@ async function moveTokens(targets, step, runtime, repository, choices = null) {
   const scene = moving.parent;
   const gridSize = scene.grid.size;
   const teleport = step.bypassWalls === true;
+  // A wall-ignoring move is an instant 'displace'. Other forced moves use the system's 'charge' action, which
+  // animates the slide and has no wall or cost check of its own. Foundry v14 ignores the `teleport` option.
   const moveOptions = teleport
     ? { teleport, animate: false, emblemEffectSettlement: true }
     : { teleport, animate: true, animation: { ...EFFECT_MOVE_ANIMATION }, emblemEffectSettlement: true };
@@ -472,14 +467,12 @@ function displacedUnits(tokens) {
   return Object.freeze(tokens.map(token => String(token.actor?.uuid ?? '')).filter(Boolean));
 }
 
-/** Move modes that force a unit onto a square it did not choose. judgeForcedStep checks the board for these first. */
+/** Move modes that force a unit onto a square it did not choose. judgeForcedStep checks the map for these first. */
 const FORCED_STEP_MODES = new Set(['push', 'pull', 'shift']);
 
 /**
- * Judge a forced step on the mover's own movement board.
- *
- * A board the rules cannot read, which is a Scene without a square grid, leaves the step as authored: nothing
- * about its terrain could be known either way.
+ * Check a forced step against the mover's scene with the movement rules. A scene without a square grid can't be
+ * checked, so the step goes ahead as written.
  */
 async function judgeForcedStep(moving, destination, ignoreWalls, repository) {
   const board = await repository.movements?.getSnapshot?.(moving.uuid);
@@ -488,9 +481,8 @@ async function judgeForcedStep(moving, destination, ignoreWalls, repository) {
 }
 
 /**
- * Run forced descents through the movement crossing command, which the dispatcher runs inside this command's
- * execution and hands the same operation. That command owns the check, movement and fall damage, including Token
- * removal on defeat.
+ * Hand a forced drop to the movement crossing command, which runs inside this command and shares its undo record.
+ * That command rolls the check, moves the unit and applies fall damage, removing the Token if the unit is defeated.
  */
 async function forceCrossing(moving, destination, runtime, repository) {
   if (typeof repository.crossings?.force !== 'function') {
@@ -515,9 +507,9 @@ async function forceCrossing(moving, destination, runtime, repository) {
 }
 
 /**
- * Wait the slide duration on the engine clock before the next effect step. Host canvas animation may be absent or
- * interrupted.
- * @param {{wait?: Function}} repository The effect repository, whose clock paces the slide.
+ * Wait as long as the slide takes before the next effect step. This uses a timer, not the canvas animation, which
+ * may not play on the host client or may be cut short.
+ * @param {{wait?: Function}} repository The effect repository, whose `wait` times the slide.
  * @param {{x: number, y: number}|null|undefined} from Grid square the unit left.
  * @param {{x: number, y: number}|null|undefined} to Grid square the unit was written to.
  * @param {boolean} teleport Whether the move was written without animation.
@@ -534,7 +526,8 @@ async function awaitTokenSlide(repository, from, to, teleport, speed = EFFECT_MO
 }
 
 /**
- * Full health and stance for an unlinked unit or Object a settlement has just placed, as a placement fill gives it.
+ * Full HP and Stance for an unlinked unit or Object an effect has just placed, as fillPlacedToken gives a token
+ * placed by hand.
  * @param {object} token The placed Token.
  * @param {object} actor Its Actor.
  * @returns {object} Actor changes, empty when the unit is linked, of another type, or already whole.
@@ -551,9 +544,9 @@ function placementFill(token, actor) {
 }
 
 /**
- * Create the reserved summon Token, or adopt the one already standing under its id, then initialize it.
- * A Token this run creates is removed whole if the command fails, so only an adopted one is captured.
- * The earlier summons it replaces leave first, through the same removal as a timed summon's expiry.
+ * Create the summon Token under its pre-picked id, or reuse one already on the scene with that id, then set it up.
+ * The summons it replaces are removed first, the same way an expired summon is. A failed command deletes a Token
+ * created here outright, so only a reused one has its current state recorded.
  */
 async function createEffectSpawn(spawn, step, runtime, guardBonds = null) {
   const scene = await resolveScene(spawn.sceneUuid);
@@ -607,8 +600,8 @@ async function createEffectSpawn(spawn, step, runtime, guardBonds = null) {
 }
 
 /**
- * Write the terrain cells an effect edits onto the Scene. The Scene is captured by the exact flag paths the two
- * writes below name, because its whole source is far too large to record.
+ * Write the terrain cells an effect edits onto the scene. Each cell is deleted first so no old keys survive the
+ * merge, then its new value is written. Only those flag paths are recorded for undo; the whole scene is too large.
  */
 async function applyTerrainEffect(step, runtime, repository) {
   const scene = await resolveScene(runtime.sceneUuid);
@@ -706,7 +699,7 @@ function tokenFootprintCoordinates(token, size) {
 }
 
 /* -------------------------------------------- */
-/*  Movement settlement helpers                 */
+/*  Effect move helpers                         */
 /* -------------------------------------------- */
 
 async function resolveGeometryDestination(moving, step, runtime, repository, choices = null) {
@@ -823,7 +816,7 @@ function activeEffectData(definition, step, caster, randomId) {
 /**
  * Decide what applying one status to one unit writes, without writing it: an immunity or a full stack refuses, a
  * new status names the id it will be created under, and a repeat names the ActiveEffect it updates.
- * `applyEffects` captures every plan in one save before `applyPlannedEffect` performs them.
+ * `applyEffects` records every plan in one save before `applyPlannedEffect` writes them.
  */
 function planEffectApplication(actor, data) {
   const incomingFlags = data.flags?.[SYSTEM_ID] ?? {};
@@ -886,7 +879,7 @@ function planEffectApplication(actor, data) {
   return { actor, data, effect: existing, update };
 }
 
-/** Perform one application planEffectApplication planned, after applyEffects has captured it. */
+/** Write one application planEffectApplication planned, after applyEffects has recorded it. */
 async function applyPlannedEffect({ actor, data, outcome, createId, effect, update }) {
   if (outcome) return outcome;
   if (createId) {
@@ -1008,12 +1001,11 @@ export async function adjustAppliedStatus(actor, key, { shed = false } = {}) {
 /* -------------------------------------------- */
 
 /**
- * The item activation command's writes (its `settlement` port), made under the use's `snapshot.operation`.
+ * Writes for an item use, recorded in the use's undo record (`snapshot.operation`).
  *
- * The command calls `captureUse` once, before its first write. Each method below then captures only what it newly
- * reaches, such as a created Rally effect's reserved id or a consumed Item's deletion, and makes ordinary Foundry
- * writes. Continuation, progression and saving-throw writes go through FoundryCombatSettlementRepository, which
- * captures into the same operation.
+ * The command calls `captureUse` once, before its first write. Each method below then records only what it newly
+ * touches, such as a new Rally effect or a used-up Item. Continuation, progression and saving-throw writes go
+ * through FoundryCombatSettlementRepository, into the same undo record.
  */
 export class FoundryItemActivationSettlement {
   constructor({ settlement }) {
@@ -1021,10 +1013,9 @@ export class FoundryItemActivationSettlement {
   }
 
   /**
-   * Record, in one save, everything an item use always reaches: the caster's Actor and Token whole, every aimed
-   * target's Actor and Token whole, and the charges of the Item being activated, which `settleActivation` is the
-   * only writer of. A use that destroys that Item captures its whole source as a deletion there instead.
-   * @param {object} snapshot The activation snapshot, carrying the command's operation.
+   * Record, in one save, what every item use can change: the caster's and each target's Actor and Token, and the
+   * activated Item's charges. A use that destroys the Item records it as a deletion in settleActivation instead.
+   * @param {object} snapshot The item use's state, including the command's `operation`.
    */
   async captureUse(snapshot) {
     const operation = snapshot.operation ?? null;
@@ -1052,7 +1043,7 @@ export class FoundryItemActivationSettlement {
     return true;
   }
 
-  /** Apply one Rally under a reserved effect id; see applyRallyEffect in rallies.mjs. */
+  /** Apply one Rally under a pre-picked effect id; see applyRallyEffect in rallies.mjs. */
   applyRally(actorUuid, intent, snapshot) {
     return applyRallyEffect(actorUuid, intent, snapshot.operation ?? null);
   }
@@ -1090,14 +1081,14 @@ export class FoundryItemActivationSettlement {
 
   /**
    * Count one XP-granting use of an activation XP entry on the caster; see recordActivationExperienceUse.
-   * @param {object} snapshot The activation snapshot, carrying the command's operation.
+   * @param {object} snapshot The item use's state, including the command's `operation`.
    * @param {{encounterId: string, key: string}} use The running encounter's id and the entry's key.
    */
   recordExperienceUse(snapshot, use) {
     return recordActivationExperienceUse(snapshot.source.actorUuid, use, snapshot.operation ?? null);
   }
 
-  /** Persist the proficiency experience an Item use earned through the combat settlement's progression writer. */
+  /** Save the proficiency experience an Item use earned, through FoundryCombatSettlementRepository. */
   async commitProgression(updates, snapshot) {
     await this.settlement.commitProgression(updates, snapshot.operation ?? null);
     return true;
@@ -1131,8 +1122,8 @@ export class FoundryItemActivationSettlement {
   }
 
   /**
-   * Commit or durably stage the caster's post-activation continuation under the use's operation. `cantersAfter` says
-   * whether declining an Extra Action choice the use offers may Canter.
+   * Apply the caster's after-use continuation now, or save it to apply later. `cantersAfter` says whether declining
+   * an Extra Action choice the use offers may Canter.
    */
   settleContinuation(state, movementResolution, continuation, requestId, operation = null,
     { cantersAfter = false } = {}) {
@@ -1141,13 +1132,13 @@ export class FoundryItemActivationSettlement {
     );
   }
 
-  /** Apply a staged end-of-turn continuation once the use's presentation has finished. */
+  /** Apply a saved end-of-turn continuation once the use's animation has finished. */
   settlePendingContinuation(state, continuation, operation = null) {
     return this.settlement.settlePendingContinuation(continuationSubject(state, operation), continuation, operation);
   }
 }
 
-/** The snapshot the combat continuation writers expect. `source.hp.value` (0 or 1) says whether the caster is down. */
+/** The state the combat continuation writers expect. `source.hp.value` (0 or 1) says whether the caster is down. */
 function continuationSubject(state, operation = null) {
   return {
     ...state,
@@ -1158,12 +1149,11 @@ function continuationSubject(state, operation = null) {
 
 /**
  * Count one XP-granting use of an activation XP entry on the caster, stamped with the encounter it was made in, after
- * capturing the caster into the command's operation. A record left from another encounter is replaced rather than
- * added to; projectActivationExperienceUses reads it back. FoundryItemActivationSettlement and
- * FoundryTradeRepository (for Steal) both write the counter here.
+ * recording the caster for undo. A record left from another encounter is replaced rather than added to;
+ * projectActivationExperienceUses reads it back.
  * @param {string} actorUuid The caster's Actor.
  * @param {{encounterId: string, key: string}} use The running encounter's id and the entry's key.
- * @param {object|null} operation The command's operation.
+ * @param {object|null} operation The running command's undo record.
  * @returns {Promise<boolean>} False when the caster is gone.
  */
 export async function recordActivationExperienceUse(actorUuid, { encounterId, key }, operation = null) {

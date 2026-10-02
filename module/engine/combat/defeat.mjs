@@ -15,7 +15,9 @@ import { recordDiagnostic } from '../../contracts/protocol.mjs';
 /**
  * Finish one claimed defeat the way an attack finishes it, whatever dealt the last point of damage: recheck the
  * claim, fade the Token, drop its loot, remove it and publish the defeat. An Extra Life presents and publishes its
- * own beat instead. Every source of damage funnels through here so no unit is left standing at 0 HP.
+ * own animation and event instead. Every source of damage funnels through here. If finishing fails partway, the
+ * unit stays on the map at 0 HP with its defeat pending: within an encounter the next phase change finishes it, and
+ * outside one it stays.
  *
  * @param {{
  *   defeats: {revalidateDefeat: Function, finishDefeat: Function},
@@ -24,7 +26,7 @@ import { recordDiagnostic } from '../../contracts/protocol.mjs';
  *   events: {publish: Function},
  *   wait: Function,
  *   diagnostics?: object|null
- * }} services The ports the pipeline writes and presents through.
+ * }} services The services the pipeline writes and presents through.
  * @param {{
  *   actorUuid: string, tokenUuid: string, actorName?: string, actorType?: string,
  *   defeatStatus: string|null, extraLivesAfter?: number

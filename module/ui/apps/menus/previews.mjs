@@ -31,7 +31,7 @@ const DIALOG_LOCATION_BUFFER = 220;
  * A ground-aimed activation centres the camera on the chosen square and places the window clear of it. However the
  * player cancels, the camera pans back. Parameter selects are read from the DOM when the player confirms, so the
  * answer matches what they see.
- * @param {object} input Plain activation preview projection.
+ * @param {object} input The activation preview data.
  * @returns {Promise<{confirmed: boolean, params?: object}>}
  */
 export async function openEffectPreview(input) {
@@ -87,7 +87,7 @@ export async function openEffectPreview(input) {
 /**
  * Confirm the lock command with a key-spend prompt or a Locktouch odds preview. attemptLock in
  * ui/controls/interaction.mjs calls it before sending the command.
- * @param {object} input Lock facts from the objects query, plus the chosen `method`.
+ * @param {object} input The lock's details from the objects query, plus the chosen `method`.
  * @returns {Promise<boolean>}
  */
 export async function openLockPreview(input) {
@@ -138,8 +138,8 @@ async function openKeyPrompt(input) {
 /* -------------------------------------------- */
 /**
  * Ask before a unit spends its Downtime Action to haggle with a Vendor. The shop's Haggle button in
- * ui/apps/menus/vendor-app.mjs calls it and sends api.economy.haggle only on a confirm. The prompt stacks over the
- * shop's own capture, so Cancel, Escape or a click outside closes just this window and hands focus back to the shop.
+ * ui/apps/menus/vendor-app.mjs calls it and sends api.economy.haggle only on a confirm. The prompt opens over the
+ * shop, so Cancel, Escape or a click outside closes just this window and hands focus back to the shop.
  * @param {{vendorName: string, vendorImage: string}} input The Vendor at the counter, from the shop view.
  * @returns {Promise<boolean>} Whether the player confirmed.
  */
@@ -246,12 +246,12 @@ const notifications = new NotificationService({ diagnostics: new FoundryDiagnost
 /**
  * Show the Combat Preview and return the player's choices: the weapon, the damage type and any skipped attacks.
  * openPreviewForTarget in ui/controls/targeting.mjs calls it with projectFoundryCombatPreview's output and sends a
- * confirmed choice to the exchange command, which checks and settles it.
- * @param {object} input Plain combat-preview projection.
+ * confirmed choice to the attack command, which the host checks and carries out.
+ * @param {object} input The combat preview data.
  * @param {object} [options]
- * @param {Function|null} [options.resolvePreview] Answers a weapon or damage-type choice (refreshCombatPreview in
- *   ui/controls/targeting.mjs): `restore` when nothing changed, otherwise the new projection and a `notice`. A notice
- *   is why the host would refuse the attack. It shows in the attack order's place, and Attack stays disabled.
+ * @param {Function|null} [options.resolvePreview] Called when the player picks another weapon or damage type. Returns
+ *   `restore` when nothing changed, otherwise the updated preview and a `notice`: the reason the host would refuse
+ *   the attack. A notice shows in the attack order's place, and Attack stays disabled.
  * @returns {Promise<object|null>} Confirmed choices, a cancellation result, or `null` when another preview is open.
  */
 export async function openCombatPreview(input, { resolvePreview = null } = {}) {
@@ -305,7 +305,7 @@ export async function openCombatPreview(input, { resolvePreview = null } = {}) {
 /**
  * Show the attacker's break damage against a Destructible's Integrity, and return whether the player chose Attack.
  * openPreviewForTarget in ui/controls/targeting.mjs calls it when the clicked target is a Destructible.
- * @param {object} input Plain destructible-preview projection.
+ * @param {object} input The destructible preview data.
  * @returns {Promise<{confirmed: boolean}>} Whether the attack was confirmed.
  */
 export async function openDestructiblePreview(input) {
@@ -338,7 +338,7 @@ export async function openDestructiblePreview(input) {
   return result ?? { confirmed: false };
 }
 
-/** Map the Destructible combat projection into its preview template. */
+/** Build the destructible preview template's data. */
 function prepareDestructiblePreviewView(input) {
   if (!isPlainObject(input) || !isPlainObject(input.weapon)) {
     throw new TypeError('Destructible preview requires a plain projection.');
@@ -367,10 +367,9 @@ function prepareDestructiblePreviewView(input) {
 }
 
 /**
- * Build combat-preview.hbs's context from the combat preview projection. The template doesn't read atkNameColor,
- * defNameColor, defArrow, atkNumAttacks, defNumAttacks or atkWeaponId. It marks each damage type with "(?)" when
- * atkDmgRandomize says the weapon rolls its type.
- * @param {object} input Plain combat-preview projection.
+ * Build the combat preview template's data. The template marks each damage type with "(?)" when atkDmgRandomize
+ * says the weapon rolls its type.
+ * @param {object} input The combat preview data.
  * @param {string} [notice] Why the host would refuse this attack, shown in place of the attack order.
  * @returns {object} Detached Handlebars context.
  */
@@ -515,8 +514,8 @@ function wireSelectionRefresh(root, state, resolvePreview) {
 }
 
 /**
- * Render refreshCombatPreview's answer. A notice arriving without a projection keeps the body and takes the attack
- * order's place, so Attack stays disabled either way.
+ * Render refreshCombatPreview's answer. A notice that comes without an updated preview keeps the current body and
+ * takes the attack order's place, so Attack stays disabled either way.
  */
 async function showPreviewAnswer(root, state, resolvePreview, answer, skippedAttacks) {
   const notice = String(answer?.notice ?? '');
@@ -532,7 +531,7 @@ async function showPreviewAnswer(root, state, resolvePreview, answer, skippedAtt
   await replacePreviewBody(root, state, resolvePreview, skippedAttacks);
 }
 
-/** Show a notice in the attack order's line of the body already on screen, for showPreviewAnswer. */
+/** Show a notice in the attack order's line of the body already on screen. */
 function showPreviewNotice(root, notice) {
   const body = root.querySelector('#combat-window');
   if (!body) return;
@@ -772,6 +771,10 @@ function revealPreview(root) {
   createCombatBackdrop(root);
 }
 
+/**
+ * The frame art is a fixed image on the page body rather than part of the dialog, so the window's clipping and
+ * stacking don't affect it. It follows the dialog every frame and removes itself once the dialog is gone.
+ */
 function createCombatBackdrop(root) {
   const rect = root.getBoundingClientRect();
   const backdrop = globalThis.document.createElement('img');
@@ -880,8 +883,8 @@ function normalizeWeaponArt(raw) {
 }
 
 /**
- * The weapon choices with the weapon in hand first, so the select shows what the unit holds. The list leaves a held
- * weapon out when it can't reach, as when a weapon picked in the preview can't, so it is put back here.
+ * The weapon choices with the weapon in hand first, so the select shows what the unit holds. A held weapon that
+ * can't reach the target is missing from the list, so it is added back here.
  */
 function selectedWeaponFirst(choices, selected) {
   const options = [...choices];

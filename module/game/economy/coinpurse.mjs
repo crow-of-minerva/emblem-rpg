@@ -5,10 +5,7 @@ import { RESULT_CODES, accept, refuse } from '../../contracts/results.mjs';
 /*  Coinpurse vocabulary                        */
 /* -------------------------------------------- */
 
-/**
- * Item data for a new Coinpurse when neither the world nor any pack holds one (coinpurseTemplate in
- * foundry/adapters/document-writes/economy.mjs).
- */
+/** Item data for a new Coinpurse when neither the world nor any compendium pack holds one. */
 export const FALLBACK_COINPURSE = Object.freeze({
   name: 'Coinpurse',
   type: 'Miscellaneous',
@@ -16,7 +13,7 @@ export const FALLBACK_COINPURSE = Object.freeze({
   system: Object.freeze({ itemType: 'Coinpurse', cost: 0 })
 });
 
-/** Whether an item's facts describe a Coinpurse, the Miscellaneous item whose cost is the gold it holds. */
+/** Whether an item is a Coinpurse, the Miscellaneous item whose cost is the gold it holds. */
 export function isCoinpurseItem(item) {
   return String(item?.type ?? '') === 'Miscellaneous' && String(item?.itemType ?? '') === 'Coinpurse';
 }
@@ -28,13 +25,14 @@ export function carriedGold(items = []) {
 }
 
 /* -------------------------------------------- */
-/*  Arrival reconciliation                      */
+/*  Merging purses                              */
 /* -------------------------------------------- */
 
 /**
- * Plan how a carrier's purses fold together after one lands, for reconcileCoinpurse in engine/economy/trade.mjs.
- * A Convoy turns every purse into gp and deletes them. Any other carrier merges all the value into its first purse.
- * @param {{kind: string, gp?: number, purses: Array<{id: string, cost: number}>}} facts Carrier facts.
+ * Plan how an owner's purses combine after a new one arrives. A Convoy turns every purse into gp and deletes them.
+ * Any other owner merges all the value into its first purse.
+ * @param {{kind: string, gp?: number, purses: Array<{id: string, cost: number}>}} facts The owner's kind, its gp
+ *   and its purses.
  * @returns {{ok: boolean, code: string, data: object}}
  */
 export function planCoinpurseReconciliation(facts = {}) {
@@ -64,9 +62,8 @@ export function planCoinpurseReconciliation(facts = {}) {
 /* -------------------------------------------- */
 
 /**
- * Calculate the Convoy and purse balances for convoyWithdraw in engine/economy/trade.mjs, refusing invalid or
- * unfunded amounts.
- * @param {{amount: number, convoyGp: number, purseValue: number}} facts Withdrawal facts.
+ * Calculate the Convoy and purse balances after a withdrawal, refusing invalid or unfunded amounts.
+ * @param {{amount: number, convoyGp: number, purseValue: number}} facts The amount, the Convoy's gp and the purse.
  * @returns {{ok: boolean, code: string, data: object}}
  */
 export function planConvoyWithdrawal({ amount, convoyGp, purseValue } = {}) {

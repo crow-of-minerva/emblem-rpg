@@ -8,11 +8,11 @@ import { readSetting } from '../services/host.mjs';
 /* -------------------------------------------- */
 
 /**
- * Read, write and clear the world setting that holds the open operation record.
+ * Read, write and clear the world setting that holds the undo record of the command in progress.
  *
- * OperationRecovery (engine/recovery/operations.mjs) owns every transition and is the only caller. Nothing else
- * saves recovery data. Foundry stores a setting value as JSON, so a record's dotted field paths survive unexpanded,
- * and every value handed to `game.settings.set` is a fresh plain object.
+ * OperationRecovery (engine/recovery/operations.mjs) decides when. Foundry stores a setting value as JSON, so a
+ * record's dotted field paths survive unexpanded, and every value handed to `game.settings.set` is a fresh plain
+ * object.
  */
 export class FoundryOperationStore {
   /** The record left by an unfinished operation, or null once the last one committed. */

@@ -15,7 +15,8 @@ import { hpFloor } from '../combat/damage.mjs';
  * calls this once per decay flag. A stack with a limit loses one stack, and a stack with no limit expires whole. A
  * timed effect loses one from its duration and expires when that reaches zero. An effect with neither duration nor
  * stacks expires on its first tick.
- * @param {object[]} effects Detached `{id, name, stackable, stackCount, stackLimit, duration}` facts.
+ * @param {object[]} effects The unit's effects as `{id, name, stackable, stackCount, stackLimit, duration}` plus
+ *   their decay flags.
  * @param {string} flagKey Which phase boundary is decaying, as the authored flag name.
  * @returns {{removeIds: string[], durations: object[], stacks: object[]}}
  */
@@ -75,8 +76,8 @@ const STATUS_IDS = Object.freeze(new Set([
  * registry status id or a status-lifecycle flag count too. Equipment and mount effects, Stance Break and the flight
  * markers are standing state, not statuses. An effect with none of these marks, such as one a GM made by hand, is
  * left alone.
- * @param {{name?: string, statuses?: readonly string[], flags?: object}} effect Detached facts: the effect's name,
- *   its status ids and its system-scope flags.
+ * @param {{name?: string, statuses?: readonly string[], flags?: object}} effect The effect's name, its status ids
+ *   and its system-scope flags.
  * @returns {boolean}
  */
 export function isEncounterStatus(effect = {}) {
@@ -109,10 +110,10 @@ const PHASE_TICKS = Object.freeze({
 
 /**
  * The status damage a unit takes when its phase opens, in order: Bleeding deals 1d4 per stack and sheds a stack,
- * Poison deals 1d6 decay, and Corpse Rot deals 2d8 decay and 1 stance damage. Lords and Retainers stop at 1 HP
- * unless the effect or the registry sets dotCanKillPlayer. Called by the phase-opening ticks in
- * engine/combat/encounters/phases.mjs and by expectedPhaseStartDamage.
- * @param {object} unit Detached facts: `actorType`, `statuses` {poisoned, corpseRot}, `effects` carrying `statuses`.
+ * Poison deals 1d6 decay, and Corpse Rot deals 2d8 decay and 1 stance damage. Corpse Rot is no longer in the status
+ * registry, but a unit carrying its id still takes the tick. Lords and Retainers stop at 1 HP unless the applied
+ * effect, or its registry entry, sets dotCanKillPlayer.
+ * @param {object} unit The unit's `actorType`, `statuses` {poisoned, corpseRot}, and `effects` with their `statuses`.
  * @returns {object[]} `{formula, damageType, stanceDamage, canKillPlayer, lethal, unpreventable, shed}` each.
  */
 export function planPhaseStartTicks(unit = {}) {
@@ -154,8 +155,9 @@ export function clampTickDamage(rolled, remainingHp, lethal) {
 
 /**
  * The average damage planPhaseStartTicks' ticks will deal when the unit's phase opens, each capped by the HP the
- * earlier ticks leave. The board projection publishes it as `pendingPhaseDamage` for the Enemy AI's scoring.
- * @param {object} unit Detached facts, as {@link planPhaseStartTicks} reads them.
+ * earlier ticks leave. foundry/adapters/projections/board.mjs reports it as `pendingPhaseDamage` for the Enemy AI's
+ * scoring.
+ * @param {object} unit The unit, as {@link planPhaseStartTicks} reads it.
  * @param {{hp?: number, average?: Function}} [options] Current HP, and a function that averages a dice formula.
  * @returns {number}
  */
@@ -179,7 +181,8 @@ const ON_HIT_TRIGGERS = Object.freeze(['onHit', 'onHitOrCrit']);
 
 /**
  * Whether an item's authored entries apply a harmful effect to the target on a hit. The Enemy AI's loadout
- * (projectLoadoutWeapon in projections/attack-targeting.mjs) reports it as `onHitDebuff`.
+ * (projectLoadoutWeapon in projections/attack-targeting.mjs) reports it as `onHitDebuff`. Only top-level steps are
+ * checked.
  * @param {readonly object[]} entries Authored `effects` entries.
  * @returns {boolean}
  */

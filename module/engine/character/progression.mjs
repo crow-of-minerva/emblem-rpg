@@ -41,8 +41,8 @@ import { recordDiagnostic, diagnosticData, requirePorts } from '../../contracts/
 /* -------------------------------------------- */
 /**
  * The Class command definitions init/system.mjs registers with CommandDispatcher: assigning a Class, choosing
- * features from a bundle, a GM reopening a bundle, promotion, and the feature reconciliation the actor hooks in foundry/hooks/actors.mjs
- * submit as maintenance.
+ * features from a bundle, a GM reopening a bundle, promotion, and the feature clean-up job the actor hooks in
+ * foundry/hooks/actors.mjs submit as maintenance.
  */
 export function createClassCommandContribution({
   diagnostics, classFeatures, events, authority, presentation, inventory, movements, progression, wait
@@ -96,7 +96,7 @@ export function createClassCommandContribution({
   ];
 }
 
-/** The promoted Actor, and the movement board plus every Actor a named Token's turn commit touches. */
+/** The promoted Actor, plus the movement keys and every Actor that ending a named Token's move touches. */
 async function promotionKeys(context, movements) {
   const actorUuid = String(context.payload?.actorUuid ?? '');
   const tokenUuid = String(context.payload?.tokenUuid ?? '');
@@ -210,7 +210,7 @@ function createClassFeatureReconciliationHandler({ classFeatures, events, presen
 
 /**
  * A GM reopens an automatic bundle that closed without granting an upgrade: its record is cleared and the Class's
- * automatic features are reconciled at once, so the upgrade lands now if the unit owns what it replaces.
+ * automatic features are granted again at once, so the upgrade lands now if the unit owns what it replaces.
  */
 function createBundleReopenHandler({ classFeatures, events, presentation }) {
   return async context => {
@@ -239,9 +239,9 @@ function createBundleReopenHandler({ classFeatures, events, presentation }) {
 }
 
 /**
- * Show one reconciliation's "gained", "lost (replaced)" and "no longer exists" notices to the users in `audience`
- * only (requesterAudience in engine/feedback.mjs): the user who asked for the change, or the host running
- * maintenance.
+ * Show one feature update's "gained", "lost (replaced)" and "no longer exists" notices to the users in `audience`
+ * only (requesterAudience in engine/feedback.mjs): the user who asked for the change, or the host GM for a
+ * maintenance job.
  */
 async function presentFeatureChanges(presentation, settlement, audience = []) {
   if (!settlement || !audience.length) return;
@@ -270,9 +270,10 @@ async function presentRemovedFeatures(presentation, committed, className, audien
 /*  Promotion                                   */
 /* -------------------------------------------- */
 /**
- * The promotion command. It settles the unit's open movement plan, then deliverPromotion swaps the Class, adds its
- * features, spends the seal, ends the turn last and publishes the events. Every write joins `context.operation`,
- * so a refusal anywhere lets CommandDispatcher restore the whole promotion.
+ * The promotion command. It closes the unit's open move, then deliverPromotion swaps the Class, adds its features,
+ * spends the promotion item, ends the turn last and publishes the events. Every document write goes through
+ * `context.operation`, so a refusal anywhere undoes the promotion's game data; notices, the flourish and events
+ * already sent are not taken back.
  */
 async function promoteCharacter(context, ports) {
   const intent = normalizePromotionIntent(context.payload);
@@ -311,8 +312,8 @@ async function promoteCharacter(context, ports) {
 }
 
 /**
- * Play the promotion inside the item-use lead-in and end messages: the flourish, the Class swap and the stat
- * panel. The bracket closes before the turn is spent and the events are published.
+ * Play the promotion between the item-use intro and outro: flourish, Class swap, stat panel. The outro plays before
+ * the turn is spent and the events are published.
  */
 async function deliverPromotion(context, ports, { intent, snapshot, option, newClassData, tokenUuid }) {
   const { classFeatures, events, presentation } = ports;
@@ -325,6 +326,7 @@ async function deliverPromotion(context, ports, { intent, snapshot, option, newC
   };
   await presentSafely(() => presentation.broadcast(bracket.leadIn), presentation.diagnostics);
   try {
+    // Runs the Class swap at most once. A thrown error is recorded and comes back as null.
     let settlement = null;
     const swapClass = () => {
       settlement ??= settlePromotion(snapshot, option, newClassData, intent, context, ports).catch(error => {
@@ -392,8 +394,8 @@ async function promotionVoiceClip(ports, actorUuid) {
 }
 
 /**
- * Publish the reconciliation and promotion events once every promotion write has landed. The dispatcher commits
- * the operation afterwards. A listener that throws is recorded and doesn't fail the promotion.
+ * Publish the feature and promotion events once every promotion write has landed. CommandDispatcher commits the
+ * undo record afterwards. A listener that throws is recorded and doesn't fail the promotion.
  */
 function publishPromotionEvents(events, reconciled, outcome, diagnostics) {
   for (const [type, data] of [[EVENT_IDS.CLASS_FEATURES_RECONCILED, reconciled], [EVENT_IDS.CHARACTER_PROMOTED, outcome]]) {
@@ -402,7 +404,7 @@ function publishPromotionEvents(events, reconciled, outcome, diagnostics) {
   }
 }
 
-/** The item-use bracket a promotion shares with every other Consumable, framed on the promoting unit alone. */
+/** The item-use intro and outro a promotion shares with every other Consumable, shown on the promoting unit alone. */
 function promotionBracket(snapshot, intent) {
   const source = { sourceTokenUuid: snapshot.tokenUuid, sourceActorUuid: snapshot.actorUuid };
   return {
@@ -415,7 +417,7 @@ function promotionBracket(snapshot, intent) {
   };
 }
 
-/** Spend the turn a promotion owes: through the unit's open movement plan, or on the Actor when it has none. */
+/** Spend the turn a promotion owes: through the unit's open move, or on the Actor when it has none. */
 async function finishPromotionTurn(actorUuid, tokenUuid, snapshot, context, { classFeatures, movements }) {
   if (snapshot.encounterRunning !== true) return promotionTurn(true, '', false);
   const movement = tokenUuid ? await ownMovement(movements, tokenUuid, actorUuid) : null;
@@ -433,7 +435,7 @@ function promotionTurn(ok, code = '', ended = ok) {
   return { ok, code: ok ? '' : code, ended };
 }
 
-/** End the turn through the open movement plan, treating a refusal and a thrown port alike. */
+/** End the turn through the open move, treating a refusal and a thrown error alike. */
 async function commitPlanEndTurn(movements, movement, context) {
   try {
     const closed = await movements.commit(movement, { cost: 0 },
@@ -446,23 +448,23 @@ async function commitPlanEndTurn(movements, movement, context) {
   }
 }
 
-/** The Token's movement snapshot, and nothing when the Token no longer stands for the promoted Actor. */
+/** The Token's current movement state, or null when the Token no longer stands for the promoted Actor. */
 async function ownMovement(movements, tokenUuid, actorUuid) {
   const movement = await movements.getSnapshot(tokenUuid);
   return movement && String(movement.actorUuid ?? '') === actorUuid ? movement : null;
 }
 
 /**
- * Add the board and every actor a movement write on this token touches, as they stand now, to the command's
- * resource keys before the promotion writes through the plan. When the claim is refused, the caller writes nothing.
+ * Add the movement keys and every actor a move by this token touches, as they stand now, to the command's resource
+ * keys before the promotion writes through the move. When the claim is refused, the caller writes nothing.
  */
 async function holdsMovementReach(context, movements, tokenUuid) {
   return holdsResources(context, await movements.resourceKeys(tokenUuid)) === true;
 }
 
 /**
- * Settle one promotion: the Class replacement, the features the new Class owes, the Mount it grants and the seal
- * it spends all capture through `context.operation`, so a failed write restores the whole promotion.
+ * Write one promotion: the Class replacement, the features the new Class owes, the Mount it grants and the
+ * promotion item it spends all go through `context.operation`, so a failed write undoes all of them.
  */
 async function settlePromotion(snapshot, option, newClassData, intent, context, ports) {
   const { classFeatures } = ports;
@@ -484,7 +486,7 @@ async function settlePromotion(snapshot, option, newClassData, intent, context, 
   };
 }
 
-/** Apply class, feature, mount and item writes through the promotion settlement ports in dependency order. */
+/** Apply the Class, feature, Mount and item writes, each after the one it depends on. */
 async function commitPromotionWrites({ snapshot, replacement, sealPlan, ports, operation, audience }) {
   const { classFeatures, presentation } = ports;
   const actorUuid = snapshot.actorUuid;
@@ -522,7 +524,7 @@ async function equipGrantedMount(actorUuid, itemId, { inventory }) {
     : promotionRefusal('promotion.mount-failed');
 }
 
-/** Ride or dismount through the equipment command, treating a refusal and a thrown port alike. */
+/** Ride or dismount through the equipment command, treating a refusal and a thrown error alike. */
 async function toggleMount(inventory, actorUuid, itemId) {
   try {
     return (await inventory.toggleEquipment({ actorUuid, itemId }))?.ok === true;
@@ -583,7 +585,7 @@ async function reconcileAutomaticClassFeatures(classUuid, classFeatures, operati
 /* -------------------------------------------- */
 /**
  * The GM progression command definitions init/system.mjs registers with CommandDispatcher: granting XP, a direct
- * level-up and granting skill XP. They settle through the same code as awards earned in play.
+ * level-up and granting skill XP. They use the same code as awards earned in play.
  */
 export function createProgressionCommandContribution({
   progression, presentation, events, classFeatures, authority, wait
@@ -703,7 +705,7 @@ export function createCombatProgressionService({ progression, presentation, even
 }
 
 /* -------------------------------------------- */
-/*  Experience settlement                       */
+/*  Experience awards                           */
 /* -------------------------------------------- */
 async function grantCharacterExperienceUseCase(
   context,
@@ -831,11 +833,11 @@ async function completeCharacterExperienceSettlement(
 }
 
 /* -------------------------------------------- */
-/*  Direct level settlement                     */
+/*  Direct level-up                             */
 /* -------------------------------------------- */
 /**
  * Raise one unit a level outside the XP path, for the GM Macros compendium's Level Up Unit and Quick Level Up
- * Unit(s). A quiet request still settles, reconciles Class features and publishes its events. It only skips
+ * Unit(s). A quiet request still writes the level, updates Class features and publishes its events. It only skips
  * presentLevel, so the splash, stat panel and voice clip never play. The outcome carries each stat's roll so a
  * caller can report the growths itself.
  */
@@ -878,7 +880,7 @@ async function levelUpCharacter(context, progression, presentation, events, clas
 }
 
 /* -------------------------------------------- */
-/*  Progression orchestration                   */
+/*  Level-up helpers                            */
 /* -------------------------------------------- */
 async function buildLevelUp(snapshot, progression) {
   return resolveCharacterLevelUp({

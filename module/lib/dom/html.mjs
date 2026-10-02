@@ -1,8 +1,9 @@
 /** @layer lib/dom */
 
 /* -------------------------------------------- */
-/*  Authored HTML                               */
+/*  HTML helpers                                */
 /* -------------------------------------------- */
+/** Escape `& < > " '` so a value is safe as HTML text or inside a quoted attribute. */
 export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, character =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -26,6 +27,7 @@ export function optionMarkup(entries, selected = '') {
   return markup;
 }
 
+/** The value as a string, with its first character upper-cased. */
 export function capitalize(value) {
   return String(value ?? '').replace(/^./, first => first.toUpperCase());
 }
@@ -53,7 +55,7 @@ const DROPPED_TAGS = new Set([
   'svg', 'math', 'link', 'meta', 'base', 'title', 'head', 'form', 'input', 'button', 'select', 'textarea'
 ]);
 
-/** Attributes any kept element may carry. */
+/** Attributes any kept element may carry. `style` is kept as written, unfiltered. */
 const GLOBAL_ATTRIBUTES = new Set(['class', 'style', 'title']);
 
 /** Attributes kept only on their own element. */

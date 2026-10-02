@@ -34,11 +34,9 @@ const NOTICE_IDS = Object.freeze({
 });
 const reportedUnconfiguredPorts = new Set();
 /**
- * Report once per session that configureBg3HudPresentation was never called, instead of leaving every hotbar
- * button and GM/player check silently dead. It can't record a diagnostic: `presentation/` may not import the
- * `foundry/` diagnostics adapter, and `interactions.diagnostics` only exists after the configure call. So it writes
- * to the console and shows an error notification. It never throws, because the fallbacks below run inside BG3
- * Core's own refresh and click handlers, and this system can't tell how Core copes with a throw there.
+ * Warn once, in the console and as an error notification, if init/system.mjs never called
+ * configureBg3HudPresentation. It never throws, because the fallbacks below run inside Core's refresh and click
+ * handlers.
  */
 function warnUnconfiguredInteractions() {
   if (reportedUnconfiguredPorts.has('interactions')) return;
@@ -343,7 +341,7 @@ function updateStats(bar, actor) {
 }
 
 /* -------------------------------------------- */
-/*  Modifier tray                               */
+/*  Modifier popup                              */
 /* -------------------------------------------- */
 function toggleModifierTray(cell, entry) {
   const key = cell?.dataset?.stat;
@@ -682,6 +680,7 @@ function cleanupCells(root) {
     .forEach(image => image.classList.remove('depleted'));
   root.querySelectorAll('.bg3-grid-cell.empty.hover').forEach(cell => cell.classList.remove('hover'));
   if (!root.querySelector('.bg3-grid-cell.dragging')) document.body.classList.remove('dragging-active');
+  // Keep Core's hover highlight off empty cells.
   if (!root._emblemEmptyHoverGuard) {
     root.addEventListener('mouseenter', event => {
       const cell = event.target?.closest?.('.bg3-grid-cell.empty');
@@ -715,6 +714,10 @@ function pixelateHudSprites(root) {
   });
 }
 
+/**
+ * Re-apply key labels, pixel scaling, tooltips, visibility and cell markers whenever Core changes the HUD's DOM, at
+ * most once per microtask. Core redraws cells without firing a hook, so watching the DOM is the only signal.
+ */
 function installMutationRefresh(root, app) {
   if (root._emblemPresentationObserver) return;
   const previous = observerByApp.get(app);

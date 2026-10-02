@@ -29,9 +29,9 @@ import { reportFoundryError } from '../../foundry/adapters/services/diagnostics.
 
 const reportedUnconfiguredPorts = new Set();
 /**
- * Record a diagnostic, once per port, when the adapter uses its presentation or activation functions before
- * init/system.mjs has called configureBg3HudAdapter, so cells don't silently stop decorating or activating. Both
- * run inside Core's click handling and cell rendering, where a throw could break Core, so it records instead.
+ * Record a diagnostic once if a cell is drawn, clicked or given a tooltip before init/system.mjs has called
+ * configureBg3HudAdapter. It records rather than throws, because these run inside Core's click handling and cell
+ * rendering.
  */
 function warnUnconfiguredAdapterPort(port) {
   if (reportedUnconfiguredPorts.has(port)) return;
@@ -133,7 +133,7 @@ export class EmblemBg3Adapter {
 
   /**
    * Activate the item in a clicked cell, or one picked by hotkey (activateBg3HotbarSlot), through the activation
-   * port init/system.mjs supplies. Does nothing while a trade window is open, and shows a notice while the HUD is
+   * function init/system.mjs supplies. Does nothing while a trade window is open, and shows a notice while the HUD is
    * inspecting a unit.
    */
   async onCellClick(cell, event) {
@@ -210,6 +210,8 @@ export function activateBg3HotbarSlot(gridIndex, slotIndex) {
   if (now - lastHotbarKeyAt < HOTBAR_KEY_COOLDOWN_MS) return true;
   lastHotbarKeyAt = now;
 
+  // A missing or empty slot on the first grid still claims the plain number key, so Foundry's own macro bar
+  // binding for that key doesn't run.
   const grid = app.components?.hotbar?.gridContainers?.[gridIndex];
   if (!grid) return gridIndex === 0;
   const cell = grid.getCellByIndex?.(slotIndex) ?? grid.cells?.[slotIndex];
@@ -233,7 +235,7 @@ export function onBg3HudReady(api) {
 
 /**
  * Handle the renderBG3Hotbar hook, which Foundry fires when Core's HUD app renders. init/hooks.mjs passes the app,
- * its HTML and a hook API wrapping Hooks.on and Hooks.off. A call with only the hook API patches ui.BG3HUD_APP.
+ * its HTML and a hook API wrapping Hooks.on and Hooks.off.
  */
 export function onRenderBg3Hotbar(appOrHookApi, html = null, maybeHookApi = null) {
   const legacyCall = !appOrHookApi?.element && appOrHookApi?.on && appOrHookApi?.off;

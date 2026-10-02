@@ -249,6 +249,7 @@ export class CombatPresentation {
 
   /** The landing: the attack card, posted even from a hidden host, and the miss or damage each visible client shows. */
   async #showImpact(message) {
+    // Forget the evade record but leave its timer running, so a pending evade art swap still plays.
     this.evadeSwaps.delete(String(message.targetActorUuid ?? ''));
     const outcomes = [this.#postAttackCard(message)];
     if (message.result === 'miss') {

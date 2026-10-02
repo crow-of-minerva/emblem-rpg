@@ -44,9 +44,9 @@ function defaultSearchRow(candidate) {
 }
 
 /**
- * Bind a document search picker to an input, for the character authoring sheet, the class sheet and the crafting
- * editor. Each candidate needs a name, and a key, uuid or id for its row. The list follows the input as the page
- * scrolls or resizes, and closes on Escape, an outside click or the input's removal.
+ * Attach a document search picker to an input. Each candidate needs a name, and a key, uuid or id for its row. The
+ * list follows the input as the page scrolls or resizes, and closes on Escape, an outside click or the input's
+ * removal.
  * @param {HTMLInputElement} input The search box.
  * @param {object} options
  * @param {object[]|function(string): (object[]|Promise<object[]>)} options.candidates What can be picked.
@@ -148,6 +148,7 @@ export function wireSearchDropdown(input, {
     dropdown.remove();
   };
 
+  // Clean up once the input is removed from the page.
   const observer = new MutationObserver(() => {
     if (!input.isConnected) destroy();
   });
@@ -173,9 +174,9 @@ function catalogRow(entry, index) {
 }
 
 /**
- * Attach a vocabulary picker to the inputs matching `selector` inside an editor, for the condition and effect
- * editors. Events are delegated from `scopeEl`, so the binding survives rerenders. Focus opens the full vocabulary,
- * and typing filters it. The dropdown is mounted on the body so the editor can't clip it.
+ * Attach a vocabulary picker to the inputs matching `selector` inside an editor. Events are delegated from
+ * `scopeEl`, so the picker keeps working after re-renders. Focus opens the full vocabulary, and typing filters it.
+ * The dropdown is mounted on the body so the editor can't clip it.
  * @param {HTMLElement} scopeEl The element holding the inputs.
  * @param {object} options
  * @param {string} options.selector Which inputs inside it open the catalog.

@@ -41,6 +41,10 @@ import {
 } from '../services/host.mjs';
 
 const settlementOptions = () => ({ emblemDowntimeSettlement: true });
+/**
+ * Token options for moving the performer to the station and back: no animation, ruler or turning, and walls and
+ * movement cost are ignored, because the performer is placed beside the station rather than walking there.
+ */
 const stagingOptions = () => ({ animate: false, showRuler: false, autoRotate: false,
   constrainOptions: { ignoreWalls: true, ignoreCost: true } });
 const RECIPE_INDEX_FIELDS = ['system.itemType', 'system.craftingData.creation', 'system.description'];
@@ -60,9 +64,9 @@ const ENERGY_VALUE_PATH = 'system.resources.energy.value';
 /**
  * Reads and writes for engine/downtime: the station activities, the recipe and song libraries, and the GM's resets.
  *
- * Staging the performer and settling an activity are one unit of work: the command's operation captures the
- * performer, the station, the Items that change and the karma ledger before the first write, so a refusal has
- * CommandDispatcher put the unit back where it stood with its supplies intact.
+ * Moving the performer to the station and saving the activity are undone together. Before the first write the
+ * command's operation (its undo record) saves the performer, the station, the Items that change and the karma ledger,
+ * so if the command is refused CommandDispatcher puts the unit back where it stood with its supplies intact.
  */
 export class FoundryDowntimeRepository {
   constructor({ movements, parties = null }) {
@@ -71,9 +75,10 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * CommandDispatcher lock keys: the board, the Scene, the Tokens involved and every inventory Actor the driving
-   * unit can draw on (see #reach). A socialize or training session adds its partner's Token, whose Actor is already
-   * in the roster. A requisition, the only payload naming a faction, also locks the Stationary's Actor.
+   * CommandDispatcher lock keys: the shared movement lock (`movement:board`), the Scene, the Tokens involved and
+   * every inventory Actor the acting unit can draw on (see #reach). A socialize or training session adds its
+   * partner's Token, whose Actor is already in the roster. A requisition, the only payload naming a faction, also
+   * locks the Stationary's Actor.
    */
   async resourceKeys(payload = {}) {
     const keys = ['movement:board'];
@@ -133,8 +138,8 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Project the crafting station, reachable inventories and Convoys, workable items and Resource stacks. Include
-   * recipes for a Laboratory.
+   * The crafting station, the inventories and Convoys the unit can reach, the items it can work on and its Resource
+   * stacks. Includes recipes for a Laboratory.
    */
   async getCraftingSnapshot(intent) {
     const cursorToken = await resolveToken(intent.cursorTokenUuid);
@@ -179,7 +184,7 @@ export class FoundryDowntimeRepository {
     });
   }
 
-  /** Project the cooking station, reachable ingredients, roster meals and known recipes for engine/downtime. */
+  /** The cooking station, the ingredients the unit can reach, roster meals and known recipes, for engine/downtime. */
   async getCookingSnapshot(intent) {
     const cursorToken = await resolveToken(intent.cursorTokenUuid);
     const stationToken = await resolveToken(intent.stationTokenUuid);
@@ -216,9 +221,9 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Project the instrument, the roster with the performance each unit already carries and the songs it knows, and
-   * the song library, for the perform command and inspectPerformance in engine/downtime/commands.mjs. A performance
-   * writes only roster units, so they are the Actors the command must hold.
+   * Everything the perform menu needs: the instrument, the roster with the performance each unit already carries
+   * and the songs it knows, and the song library. A performance changes only roster units, so those are the actors
+   * the command may write.
    */
   async getPerformanceSnapshot(intent) {
     const cursorToken = await resolveToken(intent.cursorTokenUuid);
@@ -254,10 +259,10 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Project the Stationary, its faction rows, and the roster with the Convoy each unit is linked to, for the
-   * requisition command and inspectRequisition in engine/downtime/commands.mjs. A requisition writes the
-   * requisitioner, the station's rows and, when granted, the requisitioner's Convoy, so the roster, every linked
-   * Convoy and the station's Actor (an unlinked Token's synthetic one included) are the Actors the command holds.
+   * Everything the requisition menu needs: the Stationary, its faction rows, and the roster with the Convoy each
+   * unit is linked to. A requisition may change the requisitioner, the station's rows and, when granted, the
+   * requisitioner's Convoy, so the roster, every linked Convoy and the station's Actor (an unlinked Token's synthetic
+   * actor included) are the actors it may write.
    */
   async getRequisitionSnapshot(intent) {
     const cursorToken = await resolveToken(intent.cursorTokenUuid);
@@ -300,12 +305,10 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Project a pair of party units for the socialize and train commands and inspectSocial in
-   * engine/downtime/commands.mjs: the driving unit, the adjacent unit it visited, whether their Tokens touch, the
-   * roster game/downtime/social.mjs checks both against, and the world's experience multiplier the menu previews
-   * level experience with. Both Tokens must be Characters on the same Scene. A socialize or a training session
-   * writes only the pair, so the roster covers every Actor the command must hold. A training intent also resolves
-   * the spar its opening beat plays.
+   * Everything the socialize and train menus need: the acting unit, the adjacent unit it visited, whether their
+   * Tokens touch, the roster game/downtime/social.mjs checks both against, and the world's experience multiplier for
+   * the menu's experience preview. Both Tokens must be Characters on the same Scene. Only the pair is written, so the
+   * roster covers every actor the command may write. A training request also looks up the spar its first beat plays.
    */
   async getSocialSnapshot(intent) {
     const cursorToken = await resolveToken(intent.cursorTokenUuid);
@@ -340,7 +343,7 @@ export class FoundryDowntimeRepository {
   /**
    * The spar a training session in one proficiency plays: the first Item named in TRAINING_SPAR_ITEMS, a world
    * copy before any pack for each name, that carries an authored melee attack or activation animation. The
-   * animation is dropped, leaving no spar to play, when it is invalid or too long for a presentation beat.
+   * animation is dropped, leaving no spar to play, when it is invalid or too large to send to players.
    */
   async #sparFor(proficiencyKey) {
     const names = TRAINING_SPAR_ITEMS[proficiencyKey] ?? [];
@@ -366,8 +369,8 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * The names of a socialize or training pair whose snapshot could not be read, so the socialize and train commands
-   * in engine/downtime/commands.mjs can refuse naming the units. A Token that is gone gives an empty name.
+   * The names of a socialize or training pair whose data could not be read, so the socialize and train commands
+   * in engine/downtime/commands.mjs can name the units when refusing. A Token that is gone gives an empty name.
    */
   async getPairNames(intent) {
     const name = token => String(token?.actor?.name ?? token?.name ?? '');
@@ -377,7 +380,7 @@ export class FoundryDowntimeRepository {
     });
   }
 
-  /** The roster and the inventories it can draw on (units and linked Convoys), for the snapshots and resourceKeys. */
+  /** The roster and the inventories it can draw on (units and linked Convoys), for the readers and resourceKeys. */
   async #reach(scene, cursor) {
     const convoy = projectLinkedConvoys(cursor, this.parties)[0] ?? null;
     const roster = [];
@@ -550,8 +553,8 @@ export class FoundryDowntimeRepository {
 
   /**
    * Where the yield lands and what it may stack onto: the chosen Convoy when linked, else the performer's pockets.
-   * The stacks are only those a landing joins (matchingResourceStack, vendor tags included), so a tagged stack of the
-   * same Resource is no room.
+   * The stacks are only those a new deposit would join (matchingResourceStack, vendor tags included), so a
+   * vendor-tagged stack of the same Resource doesn't count as room.
    */
   async getDepositFacts(snapshot, performer, sendTo = GATHER_DESTINATIONS.CONVOY) {
     const performerActor = await resolveActor(performer.actorUuid);
@@ -580,14 +583,15 @@ export class FoundryDowntimeRepository {
   }
 
   /* -------------------------------------------- */
-  /*  Staging                                     */
+  /*  Moving the performer                        */
   /* -------------------------------------------- */
   /**
-   * Put the performer at the station and hide the driving unit, remembering where each stood so the successful
-   * end of the activity can send them back. If either half is refused, the operation's rollback undoes the staging.
+   * Move the performer to the station and hide the token of the unit that opened the activity (the cursor token),
+   * remembering where each stood so they can be sent back when the activity succeeds. If either step is refused,
+   * undoing the command puts both back.
    *
-   * This is the staged activity's first capture, so it also records the karma ledger that the check
-   * engine/downtime/resolvers.mjs rolls next will book, and unstagePerformer's capture adds nothing new.
+   * This is the activity's first save for undo, so it also saves the karma ledger, which the check rolled next
+   * (engine/downtime/resolvers.mjs) may change.
    */
   async stagePerformer(snapshot, performer, operation = null) {
     const performerToken = await resolveToken(performer.tokenUuid);
@@ -619,7 +623,7 @@ export class FoundryDowntimeRepository {
     return staging;
   }
 
-  /** Send a staged performer home and reveal the driving unit. Each half is tried whether or not the other worked. */
+  /** Send the performer home and reveal the cursor token. Each step is tried whether or not the other worked. */
   async unstagePerformer(staging, operation = null) {
     const performerToken = staging ? await resolveToken(staging.performerTokenUuid) : null;
     const cursorToken = staging ? await resolveToken(staging.cursorTokenUuid) : null;
@@ -640,9 +644,9 @@ export class FoundryDowntimeRepository {
   }
 
   /* -------------------------------------------- */
-  /*  Settlement                                  */
+  /*  Activity results                            */
   /* -------------------------------------------- */
-  /** Spend the performer's Energy, land every drawn unit, and write the node's remaining stock. */
+  /** Spend the performer's Energy, deliver everything gathered, and write the node's remaining stock. */
   async settleGathering(snapshot, { performer, spend, deposit, destinationUuid }, context) {
     const performerActor = await resolveActor(performer.actorUuid);
     const nodeActor = await resolveActor(snapshot.station.actorUuid);
@@ -729,7 +733,7 @@ export class FoundryDowntimeRepository {
       delivery => String(destinations.get(delivery.destinationUuid).name ?? '')))] };
   }
 
-  /** Commit the chef's whole downtime, draw every ingredient, and put the meal on every diner. */
+  /** Spend the chef's whole downtime, use up every ingredient, and put the meal on every diner. */
   async settleCooking(snapshot, { performer, commitment, draws, meals }, context) {
     const performerActor = await resolveActor(performer.actorUuid);
     if (!performerActor) return { ok: false, code: 'downtime.aggregate-missing' };
@@ -761,13 +765,12 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Commit the lead performer's whole downtime and put the performance's passive on every audience unit. The lead's
-   * system flags and every reserved passive id are captured in one call before the first write, so a refusal takes
-   * the passives off again and gives the lead its downtime back, the flag scope too when the commitment
-   * introduced it. Accompaniments spend nothing.
-   * @param {object} snapshot The performance snapshot the plan was drawn from.
+   * Spend the lead performer's whole downtime and put the performance's passive on every audience unit. The lead's
+   * system flags and every new passive's id are saved for undo before the first write, so if the command fails the
+   * passives come off again and the lead gets its downtime back. Accompaniments spend nothing.
+   * @param {object} snapshot The performance data the plan was drawn from.
    * @param {{performer: object, commitment: object, passives: Array<{actorUuid: string, data: object}>}} settlement
-   * @param {{operation?: object}} context The command context whose operation captures the writes.
+   * @param {{operation?: object}} context The command context whose operation saves the writes for undo.
    * @returns {Promise<Readonly<{ok: boolean, affected?: string[], code?: string}>>}
    */
   async settlePerformance(snapshot, { performer, commitment, passives = [] }, context) {
@@ -800,11 +803,11 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Commit both units' whole downtime after a socialize. Both units' system flags are captured in one call before
-   * the first write, so a refusal gives both their downtime back, the flag scope too when a commitment introduced it.
-   * @param {object} snapshot The social snapshot the plan was drawn from.
+   * Spend both units' whole downtime after a socialize. Both units' system flags are saved for undo before the first
+   * write, so if the command fails both get their downtime back.
+   * @param {object} snapshot The social data the plan was drawn from.
    * @param {{units: Array<{actorUuid: string, commitment: object}>}} settlement
-   * @param {{operation?: object}} context The command context whose operation captures the writes.
+   * @param {{operation?: object}} context The command context whose operation saves the writes for undo.
    * @returns {Promise<Readonly<{ok: boolean, code?: string}>>}
    */
   async settleSocial(snapshot, { units = [] }, context) {
@@ -823,14 +826,14 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Commit both units' whole downtime after a training session and write the trainee's proficiency experience,
-   * and its earned rank when the grant crossed a threshold. One capture call names both units' system flags and
-   * the trainee's proficiency before the first write. A null `proficiency` (a grant that earned nothing) skips
-   * that write.
-   * @param {object} snapshot The social snapshot the plan was drawn from.
+   * Spend both units' whole downtime after a training session and write the trainee's proficiency experience,
+   * and its new rank when the experience crossed a threshold. Both units' system flags and the trainee's proficiency
+   * are saved for undo before the first write. A null `proficiency` (training that earned nothing) skips that
+   * write.
+   * @param {object} snapshot The social data the plan was drawn from.
    * @param {{units: Array<{actorUuid: string, commitment: object}>,
    *   proficiency: ?{actorUuid: string, key: string, base: number, xp: number}}} settlement
-   * @param {{operation?: object}} context The command context whose operation captures the writes.
+   * @param {{operation?: object}} context The command context whose operation saves the writes for undo.
    * @returns {Promise<Readonly<{ok: boolean, code?: string}>>}
    */
   async settleTraining(snapshot, { units = [], proficiency = null }, context) {
@@ -856,14 +859,14 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Commit the requisitioner's whole downtime, lock the faction it asked on the Stationary whatever the answer, and
-   * add a granted demand to its Convoy's inbound gold. One capture call names the requisitioner's system flags, the
-   * station's faction rows and, when gold is sent, the Convoy's inbound gold before the first write. The rows are
-   * re-read here, so a faction staff deleted mid-roll refuses rather than locking nothing.
-   * @param {object} snapshot The requisition snapshot the plan was drawn from.
+   * Spend the requisitioner's whole downtime, lock the faction it asked on the Stationary whatever the answer, and
+   * add a granted demand to its Convoy's inbound gold. The requisitioner's system flags, the station's faction rows
+   * and, when gold is sent, the Convoy's inbound gold are saved for undo before the first write. The rows are read
+   * again here, so a faction the GM deleted mid-roll makes the command fail rather than lock nothing.
+   * @param {object} snapshot The requisition data the plan was drawn from.
    * @param {{performer: object, commitment: object, factionId: string, convoyUuid: string, gold: number}} settlement
    *   `gold` is the demand on a granted requisition and 0 on a declined one.
-   * @param {{operation?: object}} context The command context whose operation captures the writes.
+   * @param {{operation?: object}} context The command context whose operation saves the writes for undo.
    * @returns {Promise<Readonly<{ok: boolean, factionName?: string, convoyName?: string, code?: string}>>}
    */
   async settleRequisition(snapshot, { performer, commitment, factionId, convoyUuid = '', gold = 0 }, context) {
@@ -898,7 +901,7 @@ export class FoundryDowntimeRepository {
   }
 
   /* -------------------------------------------- */
-  /*  Staff administration                        */
+  /*  GM controls                                 */
   /* -------------------------------------------- */
   /** Name the one Actor the GM's Reset Downtime Activity and Restore Energy commands write. */
   unitResourceKeys(payload = {}) {
@@ -907,8 +910,8 @@ export class FoundryDowntimeRepository {
   }
 
   /**
-   * Name the Scene and every Actor the GM's Reset Downtime may write there: each placed party unit, each carrier of
-   * a downtime buff, each Stationary and each Vendor.
+   * Name the Scene and every Actor the GM's Reset Downtime may write there: each placed party unit, each actor
+   * holding a downtime buff, each Stationary and each Vendor.
    */
   async sceneResourceKeys(payload = {}) {
     const sceneUuid = String(payload.sceneUuid ?? '');
@@ -921,7 +924,7 @@ export class FoundryDowntimeRepository {
     return [...new Set(keys)].sort();
   }
 
-  /** One unit's commitment and Energy, re-read under execution before engine/downtime plans a reset or a restore. */
+  /** One unit's downtime commitment and Energy, read inside the command before engine/downtime plans a reset. */
   async getUnitState(actorUuid) {
     const actor = await resolveActor(actorUuid);
     return actor?.type === 'Character' ? projectDowntimeUnitState(actor) : null;
@@ -937,7 +940,7 @@ export class FoundryDowntimeRepository {
     return this.#writeUnitDowntime(actorUuid, plan, 'restoreUnitEnergy', operation);
   }
 
-  /** The one Actor write both staff controls make. A refused write leaves the unit exactly as it stood. */
+  /** The one Actor write both GM controls make. A failed write leaves the unit exactly as it stood. */
   async #writeUnitDowntime(actorUuid, plan, detail, operation) {
     const actor = await resolveActor(actorUuid);
     if (!actor) return false;
@@ -954,7 +957,7 @@ export class FoundryDowntimeRepository {
     }
   }
 
-  /** What the GM's Reset Downtime is planned from, re-read under execution: see projectDowntimeReset. */
+  /** What the GM's Reset Downtime is planned from, read inside the command: see projectDowntimeReset. */
   async getDowntimeResetSnapshot(sceneUuid) {
     const scene = await resolveScene(sceneUuid);
     return scene ? projectDowntimeReset(scene) : null;
@@ -964,13 +967,13 @@ export class FoundryDowntimeRepository {
    * Write the GM's Reset Downtime for engine/downtime/commands.mjs: each planned unit's Energy and cleared
    * commitment, every downtime-granted buff deleted, each planned Stationary's unlocked faction rows, and each planned
    * Vendor's haggles cleared, and every vendor-tagged Item in the world untagged (vendorTagHolders in ./economy.mjs).
-   * One capture call names every unit's system flags and Energy, every buff, every station's rows, every Vendor's
-   * haggles and every tag before the first write, so a sweep that stops part-way is put back whole.
+   * Every unit's system flags and Energy, every buff, every station's rows, every Vendor's haggles and every tag are
+   * saved for undo in one call before the first write, so a reset that stops part-way is put back whole.
    * @param {{units?: Array<{actorUuid: string, energy: number, commitment: object}>,
    *   buffs?: Array<{actorUuid: string, itemIds: string[]}>,
    *   stations?: Array<{actorUuid: string, factions: object[]}>,
    *   vendors?: Array<{actorUuid: string, haggles: number}>}} plan The writes, each list narrowed to what changes.
-   * @param {{operation?: object}} context The command context whose operation captures the writes.
+   * @param {{operation?: object}} context The command context whose operation saves the writes for undo.
    * @returns {Promise<Readonly<{ok: boolean, data?: {units: number, buffs: number, stations: number,
    *   haggles: number}, code?: string}>>} `haggles` sums the planned Vendors' counts.
    */
@@ -1025,7 +1028,7 @@ export class FoundryDowntimeRepository {
   /* -------------------------------------------- */
   /*  Aftermath                                   */
   /* -------------------------------------------- */
-  /** A visit that gathered closes the driving unit's plan where it stands, its movement spent unless exploring. */
+  /** A visit that gathered ends the acting unit's movement plan where it stands, movement spent unless exploring. */
   async settleStanding(snapshot, operation = null) {
     const movement = await this.movements.getSnapshot(snapshot.cursor.tokenUuid);
     if (movement?.movementPlanning !== true) return true;
@@ -1053,10 +1056,10 @@ export class FoundryDowntimeRepository {
 }
 
 /* -------------------------------------------- */
-/*  Settlement writes                           */
+/*  Activity writes                             */
 /* -------------------------------------------- */
 
-/** The units a socialize or a training session commits, each resolved to its Actor, or null when one is gone. */
+/** The units whose downtime a socialize or training session spends, each with its Actor, or null if one is gone. */
 async function resolveCommitted(units) {
   const resolved = [];
   for (const unit of units) {
@@ -1067,20 +1070,20 @@ async function resolveCommitted(units) {
   return resolved.length ? resolved : null;
 }
 
-/** Write each unit's Action-lane commitment, the whole of its downtime. */
+/** Write each unit's downtime commitment, which spends its whole downtime. */
 async function writeCommitments(units) {
   for (const { actor, commitment } of units) {
     await actor.update({ [`flags.${SYSTEM_ID}.${DOWNTIME_FLAG}`]: { ...commitment } }, settlementOptions());
   }
 }
 
-/** Whether a spar animation crosses the presentation socket: a valid payload within TRAINING_SPAR's length. */
+/** Whether a spar animation is valid and small enough to send to players (TRAINING_SPAR.maxAnimationLength). */
 function sparAnimationFits(animation) {
   if (!validateAnimation(animation).valid) return false;
   try { return JSON.stringify(animation).length <= TRAINING_SPAR.maxAnimationLength; } catch { return false; }
 }
 
-/** The Energy and lane commitment every Energy-lane activity spends. */
+/** The Energy and downtime commitment every Energy-spending activity writes. */
 function energySpendChanges(spend) {
   return {
     'system.resources.energy.value': spend.energy,
@@ -1109,7 +1112,7 @@ async function planDraws(draws = []) {
   return groups;
 }
 
-/** The Items planned draws touch, in the shape one capture call takes. */
+/** The Items the planned draws touch, in the shape operation.capture takes for undo. */
 function drawCaptures(groups) {
   const documents = groups.flatMap(group => group.updates.map(change => group.owner.items.get(change._id)));
   const deleting = groups.flatMap(group => group.deletions.map(id => group.owner.items.get(id)));
@@ -1136,7 +1139,7 @@ async function markMissingSources(station) {
   return Object.freeze({ ...station, gathering: Object.freeze({ ...station.gathering, items: Object.freeze(items) }) });
 }
 
-/** Where each drawn Resource lands: onto the stack it matches now, or as a copy created under a reserved id. */
+/** Where each gathered Resource goes: onto the stack it matches now, or as a new item under a reserved id. */
 async function planLandings(destination, entries, deposits) {
   const landings = [];
   for (const row of deposits) {
@@ -1154,7 +1157,7 @@ async function planLandings(destination, entries, deposits) {
   return landings;
 }
 
-/** Stack a drawn Resource onto its match, or create it under the id the operation already reserved. */
+/** Stack a gathered Resource onto its match, or create it under the id already saved on the operation. */
 async function landDrawnResource(destination, landing) {
   const stack = matchingResourceStack(storedItems(destination), landing.data);
   if (!stack) {
@@ -1167,18 +1170,18 @@ async function landDrawnResource(destination, landing) {
   }], settlementOptions());
 }
 
-/** What an Actor holds that gameplay reaches: a Convoy's inbound Items stay out until staff deliver them. */
+/** What an Actor holds that play can use: a Convoy's undelivered Items stay out until the GM delivers them. */
 function storedItems(actor) {
   return collectionValues(actor?.items).filter(item => !isInboundItem(item));
 }
 
-/** The creation claims a gathering deposit reserves: one per drawn Resource that finds no stack to join. */
+/** The new-item ids a gathering deposit saves for undo: one per gathered Resource that finds no stack to join. */
 function reservedCreations(destination, landings) {
   const ids = landings.filter(landing => !landing.stack).map(landing => landing.id);
   return ids.length ? [{ parent: destination, documentName: 'Item', ids }] : [];
 }
 
-/** The creation claims a set of crafted or cooked copies reserves, grouped by the Actor each lands on. */
+/** The new-item ids a set of crafted or cooked copies saves for undo, grouped by the Actor each goes to. */
 function creationClaims(copies) {
   const byParent = new Map();
   for (const copy of copies) {

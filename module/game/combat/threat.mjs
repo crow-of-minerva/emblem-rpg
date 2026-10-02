@@ -60,7 +60,7 @@ function canThreaten(unit, selected, board) {
 }
 
 /**
- * The actor a taunt forces this hostile to attack, or '' if none. A taunter that isn't on the board is ignored, and
+ * The actor a taunt forces this hostile to attack, or '' if none. A taunter that isn't on the map is ignored, and
  * a guarded taunter is replaced by its guarder.
  */
 function compulsionTarget(hostile) {
@@ -82,11 +82,11 @@ function compelledElsewhere(hostile, targetActorUuid) {
 /**
  * The hostiles worth building a movement reach for when the threat overlay inspects the selected unit
  * (beginInspection in engine/combat/threat.mjs). A hostile is skipped when it is too far away to matter: farther
- * than its movement and attack reach plus the selected unit's movement, teleports included. Free cells and
- * exploration turn the skip off.
- * @param {object} board The selected unit, every other unit on the board and the scene's `travelShortcuts`.
- * @returns {Readonly<object>} The candidates, plus the live hostiles, taunt sources and prefilter area that later
- *   checks need to decide whether to rebuild.
+ * than its movement and attack reach plus the selected unit's movement, teleports included. Squares that cost no
+ * movement, and exploration, turn the skip off.
+ * @param {object} board The selected unit, every other unit on the map and the scene's `travelShortcuts`.
+ * @returns {Readonly<object>} The candidates, plus what is needed later to tell whether the threat overlay must be
+ *   recalculated: the living hostiles, the taunting units, and the area the distance skip assumed (`prefilter`).
  */
 export function selectThreatCandidates(board) {
   const selected = board?.selected ?? {};
@@ -163,8 +163,8 @@ export function threatCovers(threat, focus) {
 }
 
 /**
- * Whether the focus has moved outside the area the prefilter assumed, so the hostiles it skipped need a new look.
- * Measured the same way as the prefilter, teleports included.
+ * Whether the focus unit has moved outside the area selectThreatCandidates' distance skip assumed, so the hostiles
+ * it skipped need a new look. Measured the same way, teleports included.
  */
 export function leftPrefilterEnvelope(prefilter, focus) {
   if (!prefilter) return false;
@@ -279,6 +279,7 @@ function strongestMatchup(matchups) {
   return best;
 }
 
+/** Read the `low-high` or flat text of a damage range; anything else reads as its leading number. */
 function damageSpread(value) {
   const text = String(value ?? '0').trim();
   const spread = text.match(/^(\d+)-(\d+)$/);

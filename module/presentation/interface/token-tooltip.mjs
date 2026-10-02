@@ -26,9 +26,9 @@ let visible = false;
 /*  Overlay lifecycle                           */
 /* -------------------------------------------- */
 /**
- * Fill the tooltip from one inspection record and show it beside its anchor. ui/controls/interaction.mjs calls it
- * for the token being inspected.
- * @param {object} inspection Frozen facts describing the hovered Token.
+ * Fill the tooltip with a token's stats and show it beside its anchor. ui/controls/interaction.mjs calls it for the
+ * hovered token.
+ * @param {object} inspection The hovered token's stats.
  * @param {object} anchor Screen-space rectangle the tooltip sits beside.
  * @param {number} [scale] Reader's tooltip scale, where 0.5 draws it at its authored size.
  */
@@ -73,7 +73,7 @@ function tooltipZoom(scale) {
  * Sit the tooltip beside its anchor, flipped away from the right edge and clamped vertically.
  *
  * Every measurement here is in screen pixels. A zoomed panel reads its own `left` and `top` in its zoomed
- * space, so the settled position is divided by the zoom on the way out.
+ * space, so the final position is divided by the zoom on the way out.
  * @param {object} anchor Screen-space rectangle `{left, top, width}` of the described Token.
  */
 export function positionTokenTooltip(anchor) {

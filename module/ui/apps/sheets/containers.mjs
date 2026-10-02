@@ -16,8 +16,9 @@ import { EmblemSheetMixin, showTabPanels } from './base.mjs';
 import { FoundryDiagnostics , reportFoundryError } from '../../../foundry/adapters/services/diagnostics.mjs';
 
 /**
- * While a drop is being stored, a repeat of the same drop is ignored. The lock is released when the store finishes,
- * or after this long if it is still running (for example, waiting on the Resource amount dialog).
+ * While a drop is being stored, dropping the same item on the same container again is ignored. The lock is
+ * released when the store finishes, or after this long if it is still running (for example, waiting on the
+ * Resource amount dialog).
  */
 const DROP_DEDUPE_MS = 2000;
 const TOKEN_CONFIG_ACTIONS = new Set(['configurePrototypeToken', 'configureToken']);
@@ -131,7 +132,7 @@ class ContainerActorSheet extends EmblemSheetMixin(foundry.applications.sheets.A
         }
       });
     }
-    // An inbound row is neither dragged nor opened here. ConvoySheet opens it for staff.
+    // An inbound row is neither dragged nor opened here. ConvoySheet opens it for the GM.
     for (const row of this.element.querySelectorAll('[data-item-id]:not([data-inbound="true"])')) {
       row.addEventListener('dblclick', () => this.document.items.get(row.dataset.itemId)?.sheet?.render(true));
       row.addEventListener('dragstart', this._onDragStart.bind(this));
@@ -226,6 +227,7 @@ class ContainerActorSheet extends EmblemSheetMixin(foundry.applications.sheets.A
       }
       source.system.amount = amount;
     }
+    // emblemTransfer keeps the copy's current uses; without it the GM's createItem hook refills them to the maximum.
     const [created] = await this.document.createEmbeddedDocuments('Item', [source], { emblemTransfer: true });
     if (amount !== null) notifications.show(words.resourceStored, { itemName: item.name, amount, total: amount, stacked: false });
     return created ?? null;
@@ -284,7 +286,7 @@ function matchingStack(items, source) {
   return matchingResourceStack([...items].filter(item => isInboundItem(item) === inbound), source);
 }
 
-/** The facts the stocking rules in game/economy read from a dropped Item. */
+/** The fields the stocking rules in game/economy read from a dropped Item. */
 function itemFacts(item) {
   return { type: item.type, itemType: item.system.itemType, name: item.name };
 }
@@ -354,7 +356,7 @@ const COUNT_NOUNS = Object.freeze({
   miscellaneous: 'Miscellaneous items'
 });
 
-/** The Convoy sheet's two lists: what the Convoy holds, and what staff have yet to deliver to it. */
+/** The Convoy sheet's two lists: what the Convoy holds, and what the GM has yet to deliver to it. */
 const CONVOY_VIEWS = Object.freeze({ STORED: 'stored', INBOUND: 'inbound' });
 const INBOUND_ROW_SELECTOR = '.convoy-item[data-inbound="true"]';
 const GOLD_SELECTOR = '.convoy-gp-drag';
@@ -438,7 +440,7 @@ export class ConvoySheet extends ContainerActorSheet {
     }
   }
 
-  /** Staff deliver by right-clicking an inbound row or, on the Inbound view, the gold icon. One menu serves both. */
+  /** The GM delivers by right-clicking an inbound row or, on the Inbound view, the gold icon. One menu serves both. */
   async _onFirstRender(context, options) {
     await super._onFirstRender(context, options);
     if (!isStaff()) return;
@@ -458,7 +460,7 @@ export class ConvoySheet extends ContainerActorSheet {
 
   /**
    * Start a drag of the Convoy's gold from its coin icon. The Character sheet it lands on asks how much
-   * (_onDropConvoyGold), and the convoyWithdraw command settles it.
+   * (_onDropConvoyGold), and the convoyWithdraw command moves the gold.
    */
   _startGoldDrag(event) {
     if (!event.dataTransfer) return;
@@ -470,7 +472,7 @@ export class ConvoySheet extends ContainerActorSheet {
     }));
   }
 
-  /** The staff delivery menu's entries. Foundry's ContextMenu shows each one only on the target it names. */
+  /** The GM's delivery menu entries. Foundry's ContextMenu shows each one only on the target it names. */
   _inboundDeliveryEntries() {
     return [
       {
@@ -489,8 +491,8 @@ export class ConvoySheet extends ContainerActorSheet {
   }
 
   /**
-   * Send one staff delivery through api.economy.convoyDeliver: everything inbound, the named inbound Items, or the
-   * inbound gold. The command moves them into the stored inventory and `system.gp`, and the facade shows the result.
+   * Send one GM delivery through api.economy.convoyDeliver: everything inbound, the named inbound Items, or the
+   * inbound gold. The command moves them into the stored inventory and `system.gp`, and the API shows the result.
    */
   _deliver(selection) {
     if (!isStaff()) return null;
@@ -510,7 +512,7 @@ export class ConvoySheet extends ContainerActorSheet {
     return super._canDragDrop(selector) || (!this.inboundView && !this.document.pack);
   }
 
-  /** On the Inbound view, only staff may drop Items (to add inbound content). The Stored view keeps the usual rules. */
+  /** On the Inbound view, only the GM may drop Items (to add inbound content). Stored keeps the usual rules. */
   _canStore(item) {
     if (this.inboundView) return isStaff() && this.isEditable;
     return super._canStore(item);
@@ -538,7 +540,7 @@ export class ConvoySheet extends ContainerActorSheet {
     return this._storeLooseItem(item, amount, this._containerVocabulary, { inbound: true });
   }
 
-  /** Only staff remove an inbound Item. A stored one follows the sheet's authoring permission. */
+  /** Only the GM removes an inbound Item. A stored one follows the sheet's authoring permission. */
   _canDeleteItems(item) {
     return isInboundItem(item) ? isStaff() : super._canDeleteItems(item);
   }
@@ -549,12 +551,12 @@ function countLabel(tab, count, inbound) {
   return `${count} ${COUNT_NOUNS[tab] ?? COUNT_NOUNS.all} ${inbound ? 'inbound' : 'stored'}`;
 }
 
-/** Staff (GM and Assistant GM) deliver and add inbound content. Foundry's isGM is true for both roles. */
+/** Whether the local user may deliver and add inbound content: GM or Assistant GM (Foundry's isGM is true for both). */
 function isStaff() {
   return game.user.isGM;
 }
 
-/** Refuse an inbound drop on the dropping staff member's own client, with the refusal cue. */
+/** Refuse an inbound drop on the dropping user's own client, with the refusal cue. */
 function refuseInbound(text) {
   playMenuSound(SOUND_IDS.UI_ERROR);
   ui.notifications.warn(text);
@@ -644,8 +646,8 @@ export class VendorSheet extends ContainerActorSheet {
   }
 
   /**
-   * Save a stock edit. Blank means unlimited stock and 0 means sold out. A Resource's stock is its amount, which
-   * never goes below 1.
+   * Save a stock edit. Blank means unlimited stock and 0 means sold out (the field's arrows stop at 1, but 0 can be
+   * typed). A Resource's stock is its amount, which never goes below 1.
    */
   async _writeStock(input) {
     if (!this.isEditable) return null;

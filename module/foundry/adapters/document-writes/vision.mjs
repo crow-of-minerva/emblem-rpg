@@ -12,7 +12,8 @@ import { reportFoundryError } from '../services/diagnostics.mjs';
 /**
  * preUpdateScene handler (wired in init/hooks.mjs). When the Map Visible flag changes, add the settings it needs
  * to the same Scene update. Turning it on switches on token vision, and fog exploration if it was off. Turning it
- * off resets the fog, so the map doesn't stay revealed by what was explored while it was on.
+ * off writes a new `fog.reset` timestamp, meant to clear what was explored while it was on. The v14 client doesn't
+ * act on that field (fog is cleared by canvas.fog.reset()), so the explored fog may stay revealed.
  * @param {Scene} scene The scene being updated.
  * @param {object} changed The pending update.
  */
@@ -109,14 +110,14 @@ export class FoundryDoorSightRepository {
 
   /**
    * Apply one Scene's door-wall plan: delete the walls that no longer belong, then build a box of walls around each
-   * locked Door. The new wall ids are made here and recorded on the command's `operation`, so a rollback removes
-   * exactly the walls this run created.
+   * locked Door. The new wall ids are picked here and recorded in the command's undo record (`operation`), so undo
+   * removes exactly the walls created here.
    *
-   * Deletions run first. If the run fails partway, a missing wall is rebuilt by the next reconciliation, but a
+   * Deletions run first. If a write fails partway, a missing wall is rebuilt by the next door-sight pass, but a
    * stale wall left standing could block sight through a door that should be open.
-   * @param {string} sceneUuid Scene being settled.
+   * @param {string} sceneUuid Scene whose door walls are being updated.
    * @param {object} plan The build, teardown and orphan sets.
-   * @param {object|null} operation The command's operation, or null outside one.
+   * @param {object|null} operation The command's undo record, or null outside a command.
    * @returns {Promise<object>}
    */
   async settleDoorWalls(sceneUuid, plan, operation = null) {
@@ -146,7 +147,7 @@ export class FoundryDoorSightRepository {
   }
 }
 
-/** One sight-only segment of a locked Door's box, tagged so the next reconciliation recognizes it. */
+/** One sight-only segment of a locked Door's box, tagged so the next door-sight pass recognizes it. */
 function doorWallData(c, tokenId) {
   return {
     c,

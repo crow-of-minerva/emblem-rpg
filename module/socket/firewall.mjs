@@ -9,9 +9,10 @@ const MAX_KEY_LENGTH = 128;
 const KEY_OPERATOR_PREFIX = /^(?:-=|==)/;
 
 /**
- * Validate payload paths before CommandGateway dispatches the command.
- * Reject prototype access and empty or oversized segments in dotted and nested keys.
- * Treat serialized data operators as values, not paths. The same checks apply to GM requests.
+ * Validate payload paths before CommandGateway dispatches the command. The same checks apply to GM requests.
+ * Refuse `__proto__`, `prototype`, `constructor`, and empty or over-long segments in dotted and nested keys.
+ * A key whose value is an empty object or array is not checked, and neither is anything inside one of Foundry's
+ * update operators (like ForcedDeletion), which counts as one value.
  */
 export function checkPayload(payload, { operatorIdentifier = null } = {}) {
   if (payload === undefined || payload === null) return { ok: true };

@@ -182,7 +182,7 @@ export function projectSongLibrary() {
 }
 
 /**
- * The facts of every track the song library links, keyed by uuid, for the performance view's track card
+ * The details of every track the song library links, keyed by uuid, for the performance view's track card
  * (FoundryDowntimeRepository.getPerformanceSnapshot). A track that no longer resolves is left out, which the
  * Instrument menu shows as a missing track.
  */
@@ -248,10 +248,9 @@ function projectDowntimeUnit(token, actor, partyId) {
 }
 
 /**
- * Who may take part in an activity the driving unit started: every roster-faction Character placed on the Scene in
- * the driving unit's own party (narrowRoster in game/downtime/rules.mjs). A driving unit in no party, or a table with
- * no party state, has a roster of itself alone. Each unit's party is projectActorPartyId's, the same one the
- * targeting board gives the client's pickers.
+ * Who can join an activity: the starting unit's party members placed on this scene (narrowRoster in
+ * game/downtime/rules.mjs). A starting unit in no party, or a world with no party state, joins alone. Each unit's
+ * party comes from projectActorPartyId, the same one the targeting pickers use.
  */
 export function projectDowntimeRoster(scene, cursorActor, parties = null) {
   const stored = parties?.readState?.() ?? null;
@@ -268,7 +267,7 @@ export function projectDowntimeRoster(scene, cursorActor, parties = null) {
 }
 
 /* -------------------------------------------- */
-/*  Staff administration                        */
+/*  GM administration                           */
 /* -------------------------------------------- */
 /**
  * One unit as the GM's exploration roster controls read it: who it is, what it committed to, and what Energy it
@@ -288,9 +287,9 @@ export function projectDowntimeUnitState(actor) {
 
 /**
  * Everything the GM's Reset Downtime puts back on one Scene, for FoundryDowntimeRepository.getDowntimeResetSnapshot:
- * every placed party unit (the factions free exploration refills) with its commitment and Energy, every carrier of
- * a downtime-granted buff, every Stationary with its faction rows, and every Vendor with the number of haggles it
- * holds (haggleEntries in game/economy/haggle.mjs). A unit, station or Vendor placed twice counts once.
+ * every placed party unit (the factions free exploration refills) with its commitment and Energy, every unit with
+ * a buff from a downtime activity, every Stationary with its faction rows, and every Vendor with the number of
+ * haggles it holds (haggleEntries in game/economy/haggle.mjs). A unit, station or Vendor placed twice counts once.
  */
 export function projectDowntimeReset(scene) {
   const units = new Map();

@@ -140,6 +140,8 @@ export function createDowntimeCommandContribution({
   return [
     definition(COMMAND_IDS.DOWNTIME.GATHER, gather),
     definition(COMMAND_IDS.DOWNTIME.FORGE, forge),
+    // Brewing, cooking, performing and requisitions roll against a DC, so the check may be karmic and write the
+    // world's karma ledger.
     definition(COMMAND_IDS.DOWNTIME.BREW, brew, [KARMA_LEDGER_RESOURCE_KEY]),
     definition(COMMAND_IDS.DOWNTIME.COOK, cook, [KARMA_LEDGER_RESOURCE_KEY]),
     definition(COMMAND_IDS.DOWNTIME.PERFORM, perform, [KARMA_LEDGER_RESOURCE_KEY]),
@@ -383,8 +385,8 @@ async function train(context, services) {
 }
 
 /**
- * Refuse a pair whose snapshot is gone (a Token removed mid-request), naming the units the notice can still read
- * through FoundryDowntimeRepository.getPairNames. `pair` marks the notice as the pair's rather than a station's, and a
+ * Refuse a pair that can no longer be read (a token removed mid-request), naming whichever units can still be found
+ * (FoundryDowntimeRepository.getPairNames). `pair` marks the notice as the pair's rather than a station's, and a
  * unit that is gone leaves its name empty.
  */
 async function pairUnavailable(services, intent) {
@@ -442,12 +444,12 @@ async function repairSongLibrary(services) {
 }
 
 /* -------------------------------------------- */
-/*  Staff administration                        */
+/*  GM tools                                    */
 /* -------------------------------------------- */
 /**
  * Hand one unit its downtime back, from the exploration roster's context menu in
- * ui/apps/foundry/combat-tracker.mjs: Energy to capacity and the commitment cleared, which is exactly what free
- * exploration gives every unit as it opens. The unit may then commit to a fresh activity.
+ * ui/apps/foundry/combat-tracker.mjs: Energy back to full and its chosen activity cleared, exactly what opening free
+ * exploration gives every unit. The unit may then pick a new activity.
  */
 async function resetActivity(context, services) {
   const intent = normalizeDowntimeUnitIntent(context.payload);
@@ -462,8 +464,8 @@ async function resetActivity(context, services) {
 }
 
 /**
- * Give a part-way crafter some of its spent Energy back without releasing its commitment, so it carries on with
- * the activity it started. Only an Energy-lane unit that has spent something can take any.
+ * Give a crafter part-way through its activity some of its spent Energy back, without clearing the activity, so it
+ * can carry on. Only a unit doing an Energy activity that has already spent some Energy can get any back.
  */
 async function restoreEnergy(context, services) {
   const intent = normalizeEnergyRestoreIntent(context.payload);
@@ -481,12 +483,11 @@ async function restoreEnergy(context, services) {
 }
 
 /**
- * Open the table's next round of downtime from the exploration tracker's Reset Downtime button: every party unit on
- * the map gets its Downtime Action and full Energy back, every downtime-granted buff comes off so the party may eat
- * and hear a song again, every Stationary's factions may be requisitioned again, and every Vendor on the map forgets
- * its haggles so each party may haggle there again. The scene is read fresh, and every actor the reset touches joins
- * the command's resource keys before FoundryDowntimeRepository.resetDowntime writes. A table with nothing to reset
- * writes nothing. Only this command clears haggles: Reset Downtime Activity and opening free exploration leave them.
+ * The GM's Reset Downtime button on the exploration tracker: every party unit on the map gets its Downtime Action
+ * and full Energy back, every downtime buff comes off so the party may eat and hear a song again, every
+ * Stationary's factions may be requisitioned again, and every Vendor on the map forgets its haggles. A table with
+ * nothing to reset writes nothing. Only this command clears haggles: Reset Downtime Activity and opening free
+ * exploration leave them.
  */
 async function resetDowntime(context, services) {
   const intent = normalizeDowntimeResetIntent(context.payload);
@@ -507,10 +508,10 @@ async function resetDowntime(context, services) {
 }
 
 /**
- * The writes one Reset Downtime makes: each party unit not already at full Energy with a cleared commitment gets
- * what free exploration hands out (planDowntimeReset), every buff carrier loses its downtime buffs, each
- * Stationary holding a requisitioned row gets its rows back unlocked (planFactionReset), and each Vendor holding a
- * haggle has them cleared, with its count of haggles for the total the reset reports.
+ * The writes one Reset Downtime makes: each party unit not already at full Energy with no activity chosen gets what
+ * free exploration hands out (planDowntimeReset), every unit holding downtime buffs loses them, each Stationary
+ * with a requisitioned faction gets its factions unlocked (planFactionReset), and each Vendor with haggles has them
+ * cleared, with its count of haggles for the total the reset reports.
  */
 function planTableReset(snapshot) {
   const units = (snapshot.units ?? []).flatMap(unit => {
@@ -534,8 +535,9 @@ function planTableReset(snapshot) {
 /*  Resource keys                               */
 /* -------------------------------------------- */
 /**
- * Add every actor the snapshot says this activity may write (`writableActorUuids`) to the command's resource
- * keys before FoundryDowntimeRepository writes. See holdsResources in engine/dispatcher.mjs.
+ * Record every actor this activity may write (`writableActorUuids`) in the command's resource keys. The keys lock
+ * nothing; this fails only for a malformed key or a command that has already finished (holdsResources in
+ * engine/dispatcher.mjs).
  */
 function holdsReach(context, snapshot) {
   return holdsResources(context, (snapshot.writableActorUuids ?? []).map(actorUuid => `actor:${actorUuid}`));
@@ -545,12 +547,9 @@ function holdsReach(context, snapshot) {
 /*  Running an activity                         */
 /* -------------------------------------------- */
 /**
- * Move the performer to the station (FoundryDowntimeRepository.stagePerformer), run the activity, then send the
- * performer back and close the movement plan of the unit that started the visit.
- *
- * The move and the activity share `context.operation`, so a refusal needs no unstaging of its own. The
- * dispatcher's restore puts the performer and the starting unit back. Only a completed activity sends them back
- * and closes the plan.
+ * Move the performer to the station (FoundryDowntimeRepository.stagePerformer), do the activity, then move the
+ * performer back and close the movement plan of the unit that started the visit. If the activity fails, the undo
+ * puts both tokens back; only a finished activity moves them back here.
  */
 async function performAtStation(context, services, snapshot, performer, { staged, endEvent, detail }, work) {
   let staging = null;
@@ -577,8 +576,8 @@ async function performAtStation(context, services, snapshot, performer, { staged
 }
 
 /**
- * performAtStation without a station, for socializing and training, where both units stay where they stand. The
- * activity and closing the starting unit's plan share `context.operation`.
+ * performAtStation without a station, for socializing and training, where both units stay where they stand.
+ * Closing the starting unit's plan is part of the same command, so it is undone with the activity.
  */
 async function performTogether(context, services, snapshot, { endEvent, detail }, work) {
   let outcome;
@@ -592,7 +591,7 @@ async function performTogether(context, services, snapshot, { endEvent, detail }
   return accept(outcome.code, { ...outcome.data, standingSettled });
 }
 
-/** Record an activity that threw, close its banner dimmed on every client, and refuse so the operation restores. */
+/** Record an activity that threw, close its banner dimmed on every client, and refuse so every change is undone. */
 async function activityFailure(services, endEvent, detail, error) {
   recordDiagnostic(services.diagnostics, {
     sourcePath: import.meta.url, source: DIAGNOSTIC_SOURCES.DOWNTIME, error, detail
@@ -704,8 +703,8 @@ function stationIntent(intent) {
 }
 
 /**
- * The refusal a station menu reports first: outside free exploration, then out of the driving unit's reach. A view
- * may add its own after these.
+ * The refusal a station menu reports first: outside free exploration, then out of reach of the unit that started
+ * the visit. A view may add its own after these.
  */
 function stationRefusal(snapshot) {
   if (snapshot.exploring !== true) return RESULT_CODES.DOWNTIME_EXPLORATION_REQUIRED;
@@ -713,8 +712,9 @@ function stationRefusal(snapshot) {
 }
 
 /**
- * The roster's performer rows for one lane (resolveParticipants in game/downtime/rules.mjs). Outside free
- * exploration every row is blocked, so a menu rebuilt after exploration ends offers nobody to begin with.
+ * The roster's performer rows for one kind of activity, Energy or Downtime Action (resolveParticipants in
+ * game/downtime/rules.mjs). Outside free exploration every row is blocked, so a menu rebuilt after exploration ends
+ * offers nobody to begin with.
  */
 function stationParticipants(snapshot, roster, lane) {
   const rows = resolveParticipants(roster, lane);
@@ -906,7 +906,7 @@ function cookingView(snapshot) {
 /**
  * The performance view that ui/apps/menus/performance-app.mjs reads. It lists the Instrument, and every unit that
  * could lead with the songs it knows or why it can't (a unit an earlier performance affected can't perform again
- * before the party rests). Every party unit is a possible accompaniment whatever its commitment, unless a
+ * before the party rests). Every party unit is a possible accompaniment whatever activity it chose, unless a
  * performance affected it or it is down at 0 HP. The audience is the party with the performance each carries.
  * The song library comes with the details of every track it links.
  */
@@ -1013,7 +1013,7 @@ function performanceBlock(mark) {
  * The social view that ui/apps/menus/social-app.mjs reads: the unit that started the visit and the unit it chose,
  * how each rolls Sociability and Command and whether it still has its Downtime Action, and every proficiency the
  * pair can train with who teaches and the level XP each side would earn. `refusal` comes from planSocialize, so a
- * partner click on the board (ui/controls/interaction.mjs) refuses in the same order the command would.
+ * partner click on the map (ui/controls/interaction.mjs) refuses in the same order the command would.
  */
 function socialView(snapshot) {
   const verdict = planSocialize(snapshot);

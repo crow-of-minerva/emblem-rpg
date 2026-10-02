@@ -6,6 +6,7 @@ import { ROLL_MESSAGE_MODES } from '../contracts/protocol.mjs';
 /*  Socket protocol                             */
 /* -------------------------------------------- */
 const SOCKET_PROTOCOL_VERSION = 2;
+/** Compared with the length of the envelope's JSON text, which counts UTF-16 code units, not bytes. */
 const MAX_ENVELOPE_BYTES = 64 * 1024;
 const MAX_STRING_LENGTH = 16 * 1024;
 const MAX_DEPTH = 12;
@@ -24,15 +25,14 @@ export const SOCKET_OPERATIONS = Object.freeze({
 /*  Command envelopes                           */
 /* -------------------------------------------- */
 /**
- * Build the detached request that CommandGateway sends to CommandDispatcher.
+ * Build the request that CommandGateway sends to CommandDispatcher, as a frozen deep copy.
  * @param {string} commandId   The command id.
  * @param {object} payload     Its serializable payload.
  * @param {string} requestId   The request id, kept for status queries.
- * @param {object} [options]   `transmitted: false` marks an envelope dispatched on the host itself, which skips only
- *                             the wire-size check. `hostSession` names the host page the caller addressed, so a
- *                             reloaded host can refuse a request meant for the page before it. `messageMode` is the
- *                             caller's roll message mode.
- * @returns {object} The frozen, detached envelope.
+ * @param {object} [options]   `transmitted: false` means built on the host itself, so the size check is skipped.
+ *                             `hostSession` is the host tab this request is meant for, so a reloaded host refuses
+ *                             it. `messageMode` is the caller's roll message mode.
+ * @returns {object} The frozen envelope.
  */
 export function createCommandEnvelope(commandId, payload, requestId,
   { transmitted = true, hostSession = '', messageMode = 'public' } = {}) {
@@ -102,8 +102,8 @@ export const HOST_PRESENCE_KINDS = Object.freeze({
 /**
  * Build a HostPagePresence handshake or heartbeat message.
  * @param {string} kind One of {@link HOST_PRESENCE_KINDS}.
- * @param {string} session The sending page's session.
- * @param {string} [to] For `present` alone, the session of the page whose `hello` it answers.
+ * @param {string} session The sending tab's session id.
+ * @param {string} [to] For `present` alone, the session id of the tab whose `hello` it answers.
  * @returns {object} The frozen message.
  */
 export function createHostPresenceMessage(kind, session, to = '') {

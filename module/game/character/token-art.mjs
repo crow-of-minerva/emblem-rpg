@@ -14,7 +14,7 @@ import {
 
 /*
  * Which token art a Character shows: its steady art, the temporary art a fired condition swaps in, and the vertical
- * offset of the active variant. foundry/adapters/document-writes/tokens.mjs projects the facts these rules read and
+ * offset of the active variant. foundry/adapters/document-writes/tokens.mjs gathers the data these rules read and
  * applies what they select.
  */
 
@@ -83,7 +83,7 @@ export function selectTransientTokenArt(facts, conditionName, options = {}) {
   return { path, scale: baseline.scale, slotKey: baseline.slotKey, condition: effectiveCondition };
 }
 
-/** Resolve the active variant's vertical offset in grid units. */
+/** Resolve the active variant's vertical offset in grid units, kept between -0.5 and 1. */
 export function activeTokenOffsetY(facts) {
   const slotKey = chooseTokenSlotKey(facts);
   const tab = tokenTabForClass(facts);
@@ -112,7 +112,7 @@ function tokenTabForClass(facts) {
 }
 
 /* -------------------------------------------- */
-/*  Baseline and condition helpers              */
+/*  Steady art and condition helpers            */
 /* -------------------------------------------- */
 function selectBaselineTokenArt(facts) {
   const slotKey = chooseTokenSlotKey(facts);

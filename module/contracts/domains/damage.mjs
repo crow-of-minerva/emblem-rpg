@@ -7,7 +7,10 @@ import { boundedText, nonNegativeNumber, plainRecord } from '../protocol.mjs';
 /** The damage type a weapon with no authored family deals. Defense reduces it like any physical hit. */
 export const UNTYPED_DAMAGE_TYPE = 'none';
 
-/** The damage types Defense reduces, untyped hits included. Resistance reduces MAGICAL_DAMAGE_TYPES. */
+/**
+ * The damage types Defense reduces, untyped hits included; a blank type counts as untyped. Resistance reduces
+ * MAGICAL_DAMAGE_TYPES.
+ */
 export const PHYSICAL_DAMAGE_TYPES = Object.freeze([
   'slashing', 'piercing', 'crushing', 'missile', UNTYPED_DAMAGE_TYPE, ''
 ]);
@@ -87,9 +90,9 @@ const ALLOWED_MESSAGE_KEYS = new Set([
 ]);
 
 /**
- * Build committed health feedback for UnitPresentationGateway. Include settled totals when they differ from the
- * rule result.
- * @param {object} input Token, change, resolved totals, and the settled totals when there are any.
+ * Build the damage or healing popup every client shows. Where the HP actually written differs from the rule's
+ * result, it shows the written value.
+ * @param {object} input Token, change, the rule's totals, and the written totals when there are any.
  * @returns {Readonly<object>}
  */
 export function healthPresentationMessage({
@@ -126,7 +129,7 @@ export function healthPresentationMessage({
   });
 }
 
-/** Check a bounded committed-health message before it crosses the presentation socket. */
+/** Check a damage or healing popup message received over the socket. */
 export function isHealthPresentationMessage(value) {
   if (!plainRecord(value) || Object.keys(value).some(key => !ALLOWED_MESSAGE_KEYS.has(key))) return false;
   if (value.kind !== HEALTH_PRESENTATION_KIND || !CHANGE_SET.has(value.change)) return false;
@@ -144,7 +147,7 @@ export function isHealthPresentationMessage(value) {
     : value.damageType === '' || DAMAGE_TYPE_SET.has(value.damageType);
 }
 
-/** Check a bounded defeat or Extra Life message before it crosses the presentation socket. */
+/** Check a defeat or Extra Life message received over the socket. */
 export function isDefeatPresentationMessage(value) {
   return plainRecord(value)
     && Object.keys(value).length === 3
@@ -153,7 +156,7 @@ export function isDefeatPresentationMessage(value) {
     && boundedText(value.tokenUuid, 512);
 }
 
-/** Check the bounded visual message broadcast by the active GM after a committed stance break. */
+/** Check the message the GM's client sends to show a stance break once it is saved. */
 export function isStanceBreakPresentationMessage(value) {
   if (!plainRecord(value)) return false;
   return Object.keys(value).length === 2

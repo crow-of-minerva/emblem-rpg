@@ -20,8 +20,8 @@ const HP_BAR_ID = 'bar1';
 const STANCE_BAR_ID = 'bar2';
 const LEGACY_BAR_IDS = Object.freeze([HP_BAR_ID, STANCE_BAR_ID]);
 /**
- * Bar Brawl's value approximation fields, which a Character's stance bar never keeps: while `subdivisions` is set,
- * Bar Brawl shows the stance value on a scale of its own instead of the count drawStanceSegments divides.
+ * Bar Brawl's subdivision settings. A Character's stance bar never keeps them, so it shows the real stance count
+ * that drawStanceSegments divides.
  */
 const APPROXIMATION_FIELDS = Object.freeze(['subdivisions', 'subdivisionsOwner']);
 const STANCE_SEGMENTS_NAME = 'stanceSegments';
@@ -48,10 +48,8 @@ const OBJECT_STANCE_BAR = Object.freeze({
   maxcolor: '#FFB638'
 });
 /**
- * The entry an Object keeps for a native bar it doesn't show. Bar Brawl's Token Config saves both native bar
- * attributes every time, and its preUpdateToken handler (synchronizeLegacyBar) reads the entry of each one saved
- * without an attribute, so an Object needs an entry for bar1 and bar2 alike. A custom bar saves with no native
- * attribute, and one hidden from every viewer is never drawn.
+ * An invisible bar. An Object keeps one for each native bar it doesn't show, because Bar Brawl expects an entry for
+ * both bar1 and bar2. It reads no actor data and is hidden from every viewer.
  */
 const OBJECT_HIDDEN_BAR = Object.freeze({
   attribute: CUSTOM_ATTRIBUTE,
@@ -120,7 +118,7 @@ export function onPreCreateActorBars(actor) {
   actor.updateSource(prototypeBarUpdate(actor));
 }
 
-/** Reconcile Character bars on the host after Foundry creation, regardless of which user created the Actor. */
+/** Bring a new Character's bars up to date on the active GM's client, whichever user created it. */
 export function onCreateActorBars(actor) {
   if (actor.type !== 'Character' || !isActiveGm()) return;
   queueSynchronization(actor);
@@ -145,7 +143,10 @@ export function onEmbeddedItemBars(item) {
   if (actor?.type === 'Character') queueSynchronization(actor);
 }
 
-/** On ready, the active GM brings every Character's and Object's prototype and token bar settings up to date. */
+/**
+ * On ready, the active GM brings bar settings up to date: every Object's prototype and tokens on every scene, and
+ * every Character's prototype and its tokens on the scene being viewed.
+ */
 export async function onReadyBarBrawl() {
   if (!barBrawlActive() || !isActiveGm()) return;
   for (const actor of collectionValues(game.actors)) {
@@ -262,7 +263,7 @@ export function onDestroyTokenBars(token) {
 
 /**
  * Release all Bar Brawl presentation listeners before the canvas is replaced. `init/hooks.mjs` runs this on every
- * `canvasTearDown` to release the per-token container bindings.
+ * `canvasTearDown` to remove the listeners on each token's bar container.
  */
 export function disposeTokenBars() {
   for (const token of [...barRenderBindings.keys()]) releaseBarRenderBinding(token);
@@ -558,8 +559,8 @@ function barHoldsFields(stored, bar) {
 }
 
 /**
- * The forcedDeletion fragments that turn off a stored stance bar's approximation, or none while it is off. The
- * bars buildCharacterResourceBars writes leave those fields out, and a merge update keeps a field it leaves out.
+ * Update keys that delete the stance bar's subdivision settings, if it still has them. A merge update would
+ * otherwise keep them, since buildCharacterResourceBars leaves them out.
  */
 function approximationDeletions(token, prefix = '') {
   if (!stanceApproximated(token)) return {};
@@ -625,9 +626,8 @@ function objectBarContract(actor) {
 
 /**
  * The token update that gives an Object exactly the bars objectBarContract lists. Foundry merges it over the stored
- * bars, so fields Bar Brawl's token form added stay. A bar the contract doesn't list is removed with forcedDeletion
- * rather than set to null, because Bar Brawl's preUpdateToken handler reads the fields of every bar in the update.
- * Both native attributes are written beside their bars, so the handler finds an entry for each.
+ * bars, so other fields Bar Brawl's token form saved stay. Extra bars are deleted rather than set to null, because
+ * Bar Brawl's preUpdateToken handler reads every bar in the update. Both native attributes are written too.
  */
 function objectTokenBarUpdate(actor, token = null) {
   const { bars, attributes } = objectBarContract(actor);

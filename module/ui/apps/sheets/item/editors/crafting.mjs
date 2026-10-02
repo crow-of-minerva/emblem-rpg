@@ -545,6 +545,10 @@ function subtype(item) {
   return item.system.itemType ?? '';
 }
 
+/**
+ * The Resources the search offers, from this world and every Item compendium, sorted by name. Only the first entry
+ * of each name is kept, the world's own copy before a compendium's, because crafting consumes materials by name.
+ */
 async function resourcePool(resourceTypes = MATERIAL_RESOURCE_TYPES) {
   const wanted = new Set(resourceTypes);
   const seen = new Set();

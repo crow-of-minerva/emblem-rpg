@@ -332,30 +332,29 @@ import { FOOTSTEP_PRESENTATION_KIND } from '../contracts/domains/tokens.mjs';
 /* -------------------------------------------- */
 
 /**
- * Lock releases that cancel the plan outright rather than waiting for it to go stale: a GM timeout, a player who
- * left the table, and the teardown of an Enemy AI execution segment.
+ * Movement-lock releases that clear the lock at once instead of first checking that it has gone stale: a GM's
+ * timeout, a player who left the game, and the Enemy AI giving up the command lock.
  */
 const FORCED_LOCK_RELEASES = new Set(['timeout', 'disconnect', 'segment']);
 
-/** Refusals a startup sweep waits out, because a reconciliation still holds world execution. */
+/** Busy replies the GM's client retries at startup while another command is still running. */
 const STARTUP_RETRY_CODES = new Set([RESULT_CODES.RECOVERY_BUSY, RESULT_CODES.COMMAND_EXECUTION_BUSY]);
 
-/** Refusals the disconnect release waits out: world execution is held, or this host is still starting. */
+/** Replies the host retries when releasing a disconnected player's lock: busy, or still starting up. */
 const DISCONNECT_RETRY_CODES = new Set([
   RESULT_CODES.RECOVERY_BUSY, RESULT_CODES.COMMAND_EXECUTION_BUSY, RESULT_CODES.RECOVERY_STARTING
 ]);
 
 /**
- * Run one host routine's command until world execution is free, pacing on the presentation clock so a hidden page
- * keeps the same schedule. A recovery-lane root refuses busy at once, so `completeInterruptedTurns`' sweeps and
- * `releaseDisconnectedPlan` retry here rather than leave a control lock held behind a running command. Each
- * attempt carries its own request id, because CommandDispatcher returns the first result for a repeated id.
- * @param {object} intent The routine and its ports.
+ * Run a host command, retrying while another command is running. Recovery commands are refused straight away when
+ * busy instead of waiting their turn, so the startup and disconnect lock releases retry here. Each try gets its own
+ * request id, because CommandDispatcher returns the first result for a repeated id.
+ * @param {object} intent The command and its callbacks.
  * @param {string} intent.label Request-id prefix. Attempt n runs as `<label>:<n>`.
  * @param {{attempts: number, retryMs: number}} intent.bound How many attempts, and the wait between two of them.
  * @param {Function} intent.retryable Whether a result is a busy refusal worth another attempt.
  * @param {Function} intent.run Runs one attempt under the request id it is given.
- * @param {Function} intent.wait The pacing clock.
+ * @param {Function} intent.wait Waits between tries, with a timer that keeps working in a background tab.
  * @param {object} intent.diagnostics Receives one diagnostic when the bound runs out.
  * @param {{detail: string, message: string}} intent.exhausted That diagnostic.
  * @param {Function} [intent.stillWanted] Asked before every attempt. False stops without running it.
@@ -390,8 +389,8 @@ export function createSystemRuntime() {
 
   const presentationDelivery = createPresentationDelivery();
   /**
-   * The presentation port the engine broadcasts through. UnitPresentationGateway sends each message to the other
-   * clients and presents it here. The gateway is built further down, so the call resolves it when it runs.
+   * What game code calls to show something on every client. UnitPresentationGateway sends each message to the other
+   * clients and shows it here. The gateway is created further down, so it is looked up when the call runs.
    */
   const broadcastPort = Object.freeze({ diagnostics,
     broadcast: (message, options) => unitPresentation.broadcast(message, options)
@@ -511,14 +510,15 @@ export function createSystemRuntime() {
   const executionView = () => ({ blocker: executionAnnouncer.view() });
   const syncProcessing = () => processingBlocker.syncWithHost({ host: () => gateway.host(),
     status: observer => gateway.status(observer), localView: () => executionAnnouncer.view() });
+  // The document classes' pre-write checks read this (admitNativeWrite in services/authority.mjs) to refuse other
+  // clients' direct edits while the host is running a command.
   for (const name of ['Actor', 'ActorDelta', 'Item', 'ActiveEffect']) {
     CONFIG[name].documentClass.processingBlocker = processingBlocker;
   }
   const authority = createFoundryCommandAuthority();
   /**
-   * Gate CommandDispatcher root commands on startup readiness and the host's pause state. The pause check reads the
-   * caller's role through the authority adapter. Child commands skip the gate, because their parent was already
-   * admitted.
+   * Refuse a command while startup is unfinished, or while the game is paused for the user who sent it. A command
+   * started inside another command skips the check, because its parent already passed it.
    */
   const admitCommand = context => {
     if (context.within) return null;
@@ -528,10 +528,9 @@ export function createSystemRuntime() {
     return null;
   };
   /**
-   * Snapshots what each command run writes, so a failed or interrupted run can be undone. CommandDispatcher opens a
-   * record per run through it, and completeStartup() below restores whatever an interrupted host left before
-   * gameplay is admitted. When a restore fails, the GM sees one notice and the console diagnostic names the
-   * unresolved documents.
+   * Saves a copy of each document a command changes, so a failed or interrupted command can be undone. At startup,
+   * completeStartup() below undoes any command the host's last session left unfinished, before commands are accepted.
+   * If an undo fails, the GM sees one notice and the console names the documents.
    */
   const operations = new OperationRecovery({ diagnostics,
     store: new FoundryOperationStore(),
@@ -559,7 +558,7 @@ export function createSystemRuntime() {
   /** Wrap CommandDispatcher handlers in withActionModifierChances so each action shares one set of chance draws. */
   const registerCommands = definitions =>
     dispatcher.registerContribution(withActionModifierChances(definitions, modifierChances));
-  /** Address a capacity move to the unit's owners through UnitPresentationGateway, resolved when it is called. */
+  /** Tell a unit's owners when items over its carrying limit were moved to the convoy. */
   const inventoryPort = Object.freeze({ diagnostics,
     presentCapacityMove: (moved, options) => unitPresentation.broadcast(
       inventoryCapacityNoticeMessage(moved), options)
@@ -624,7 +623,7 @@ export function createSystemRuntime() {
   registerCommands(createProgressionCommandContribution({
     progression, presentation: progressionPort, events, classFeatures, authority, wait: presentationDelivery.wait
   }));
-  /** Experience settlement the combat, activation and downtime contributions share. It holds no state. */
+  /** XP awarding shared by the combat, item-use and downtime commands. It holds no state. */
   const combatProgression = createCombatProgressionService({
     progression, presentation: progressionPort, events, classFeatures, wait: presentationDelivery.wait
   });
@@ -915,7 +914,7 @@ export function createSystemRuntime() {
     lockKeys: () => movements.recoveryKeys(),
     republishExecution: () => executionAnnouncer.republish(),
     abandonExecution: () => dispatcher.abandonExecution(),
-    /** Reload after the clear-busy reply leaves this page, so startup can restore the abandoned record. */
+    /** Reload once the clear-busy reply has been sent, so the next startup can undo the abandoned command. */
     reloadHost: () => foundry.utils.debouncedReload(),
     recoverLock: context => recoverStaleMovement(context, movements,
       { force: FORCED_LOCK_RELEASES.has(String(context.payload?.announcement ?? '')) }),
@@ -950,11 +949,9 @@ export function createSystemRuntime() {
   /* -------------------------------------------- */
 
   /**
-   * Finish gameplay an interrupted host left half done, which operation restore doesn't cover: the control lock its
-   * own earlier page still holds, and each turn whose end-of-turn prompt never reached anyone. Each runs as an
-   * ordinary command with its own operation. A recovery-lane root command is refused at once while a reconciliation
-   * that MaintenanceScheduler started holds world execution, so each is retried. A single attempt could leave this
-   * host's own lock held for the whole session.
+   * At startup, the GM's client releases a movement lock left by its last session and finishes each end of turn
+   * that never ran. Undoing unfinished commands doesn't cover these. Each runs as its own command, retried while
+   * another command is running, so the old lock isn't left held for the whole session.
    */
   async function completeInterruptedTurns() {
     let sequence = 0;
@@ -971,9 +968,8 @@ export function createSystemRuntime() {
   }
 
   /**
-   * Bring a world an earlier build wrote up to this build's schema through migrateWorldContent
-   * (init/migrate-world.mjs). Its execution segment opens like a startup sweep, retried while a reconciliation
-   * MaintenanceScheduler started still holds world execution.
+   * Bring an older world up to this version's schema through migrateWorldContent (init/migrate-world.mjs). Taking
+   * the command lock for the run is retried while another command is running.
    */
   function migrateWorld() {
     return migrateWorldContent({ notifications, diagnostics, recordSchema: stampMigratedWorldSchema,
@@ -984,10 +980,8 @@ export function createSystemRuntime() {
   }
 
   /**
-   * Update CommandGateway and the processing blockers when HostPagePresence sees a second host tab open or close.
-   * Regaining sole eligibility makes this page the authoritative host again, so it restores whatever an
-   * interrupted host left. Only one restoration runs at a time, and never while one of this page's own handlers
-   * may still write.
+   * When the GM opens or closes a second tab, update which tab runs commands and the busy state. If this is the only
+   * GM tab again, undo any command left unfinished, unless an undo is already running or this tab is mid-command.
    */
   function onHostPagesChanged({ duplicated }) {
     gateway.onAuthorityChanged();
@@ -1000,10 +994,9 @@ export function createSystemRuntime() {
   }
 
   /**
-   * Release a movement plan during CommandDispatcher segment teardown only if that segment still owns it.
-   * The release runs as `recovery.clear-lock` under the execution the segment still holds, so it captures
-   * before-images like any other command. FoundryMovementRepository rechecks holder, lock identity and start time,
-   * so cleanup cannot close a newer human plan.
+   * When the Enemy AI (or another holder) gives up the command lock, release the movement lock it took, but only if
+   * that lock is still its own and was taken after it began. The release runs as an ordinary `recovery.clear-lock`
+   * command, which checks the lock again so it never releases one a player has taken since.
    */
   async function releaseSegmentPlan({ userId = '', since = 0 } = {}, run = null) {
     const lock = movements.getLock();
@@ -1015,12 +1008,10 @@ export function createSystemRuntime() {
   }
 
   /**
-   * On a player disconnect, release the control lock they held through RECOVERY.CLEAR_LOCK, which restores their
-   * unit to its movement anchor. This is host work, so it goes straight to CommandDispatcher through
-   * `gateway.executeInternal` rather than through the public facade, whose local processing check would refuse it
-   * with a busy notice on the host's screen. A busy refusal is retried quietly on the pacing clock within
-   * PLAN_DISCONNECT_RELEASE. Any other outcome is reported as the facade reports a result. Each attempt first
-   * checks that the lock is still the one held at disconnect. A host disconnect is left to the startup sweep.
+   * When a player disconnects, the host client releases their movement lock and puts their unit back where its move
+   * started. It calls `gateway.executeInternal` rather than the public API, whose busy check would refuse it with a
+   * notice on the host's screen. Busy replies are retried quietly while the lock is still the one they held. If the
+   * host itself disconnects, its next startup releases the lock instead.
    */
   async function releaseDisconnectedPlan(userId) {
     const id = String(userId ?? '');
@@ -1042,16 +1033,15 @@ export function createSystemRuntime() {
   }
 
   /**
-   * Stop the closing page from restoring anything. A reloading browser keeps running this page's scripts, so a
-   * handler that fails during unload would have CommandDispatcher restore from a page whose world view is already
-   * going away, and the booting page would read the world mid-restoration. Abandoning leaves the operation record
-   * open for `completeStartup`'s `operations.restoreUnfinished()` on the next page instead.
+   * When the page closes or reloads, don't undo a running command from it. A reloading browser keeps running this
+   * page's scripts, and the new page would read the world half-undone. The unfinished command stays recorded, and
+   * `completeStartup` on the next page undoes it.
    */
   function abandonOperationOnUnload() {
     dispatcher.abandonOperation();
   }
 
-  /** Open a CommandDispatcher execution segment only on the eligible host, using the host's own identity. */
+  /** Take the command lock for a run of commands (an execution segment), only on the host client and as its user. */
   function openExecutionSegment({ label = '' } = {}) {
     const host = gatewayIdentity.host();
     if (host.localIsHost) return dispatcher.openSegment({ userId: gatewayIdentity.localUserId(), label });
@@ -1080,7 +1070,7 @@ export function createSystemRuntime() {
     }
   });
   const stanceHooks = createStanceHookHandlers({ stances: stanceBreaks });
-  /** Send hook reconciliations to MaintenanceScheduler, which runs them when execution is free. */
+  /** Queue follow-up fixes from Foundry hooks to run once no command is running. */
   const submitMaintenance = (commandId, payload) => maintenance.submit(commandId, payload);
   const classHooks = createClassFeatureHookHandlers({ executeInternal: submitMaintenance });
   const equipmentEffectHooks = createEquipmentEffectLifecycle({
@@ -1134,7 +1124,7 @@ export function createSystemRuntime() {
     unitPresentation
   });
   let transportStarted = false;
-  /** The restoration this page started on regaining host eligibility, so two host changes cannot overlap. */
+  /** The undo this tab started on becoming the only GM tab again, so two tab changes can't start overlapping undos. */
   let hostRestore = null;
 
   /* -------------------------------------------- */
@@ -1244,15 +1234,15 @@ export function createSystemRuntime() {
 
   function setup() {
     /**
-     * Start affinity, recipe and song data reads before ui/ sheets request them, and the activation XP table read
-     * before the first activation settles.
+     * Start reading the JSON tables (affinities, item-use XP, recipes, songs) early, so they are loaded before a
+     * sheet or an item use needs them.
      */
     void affinityTableReady();
     void activationExperienceTableReady();
     void recipeLibraryReady();
     void songLibraryReady();
     hostPresence.sync();
-    /** Guard input before Foundry renders its interface: ProcessingBlocker refuses all of it until ready() settles. */
+    /** Guard input before Foundry renders its interface: ProcessingBlocker refuses all of it until ready() ends. */
     installProcessingInputGuards({ blocker: processingBlocker, sync: syncProcessing,
       inspectCanvas: inspectHoveredMovementToken });
     globalThis.addEventListener?.('beforeunload', abandonOperationOnUnload);
@@ -1270,9 +1260,9 @@ export function createSystemRuntime() {
   }
 
   /**
-   * Run startup and lift ProcessingBlocker's hold, whatever happens, so no client stays locked behind the hourglass.
-   * A startup that throws leaves the lifecycle short of READY, so this client keeps refusing gameplay with
-   * `recovery.starting`. It shows one lasting STARTUP_FAILED notice, and the console names the failure.
+   * Run startup, then lift the startup hourglass whatever happens. If startup throws before it reaches READY, this
+   * client keeps refusing commands with `recovery.starting`. A failure shows one lasting STARTUP_FAILED notice, and
+   * the console names it.
    */
   async function ready() {
     try {
@@ -1344,7 +1334,7 @@ export function createSystemRuntime() {
     console.info(`Emblem RPG | ${SYSTEM_VERSION} ready`);
   }
 
-  /** Hold the startup admission gate until maintenance and party-access sync settle or the pacing deadline expires. */
+  /** Before accepting commands, wait (up to the reply timeout) for startup fixes and party ownership to finish. */
   async function settleStartupMaintenance(...work) {
     const deadline = presentationDelivery.wait(COMMAND_TIMING.responseMs);
     const settled = Promise.all([maintenance.idle(), ...work.map(task => Promise.resolve(task).catch(() => undefined))]);

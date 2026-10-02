@@ -4,37 +4,38 @@ import { localUserIsStaff } from '../adapters/services/host.mjs';
 
 const CHAT = '#chat-form, #chat-message, .chat-input';
 /**
- * Match tab buttons, not their panels. ProcessingBlocker allows inspection but must still block gameplay controls
- * inside a panel.
+ * Match tab buttons, not their panels: while the host is busy, users can still switch tabs but can't press the
+ * controls inside them.
  */
 const TABS = 'button[data-tab], a[data-tab], [data-action="tab"], [data-action="setTab"]';
 const INSPECTION = `${TABS}, [data-action="close"], [data-action="minimize"], .window-title, .document-name, .entry-name`;
-/** Allow directory search fields through ProcessingBlocker because they change only the local view. */
+/** Directory search fields stay usable while the host is busy, since they change only this client's view. */
 const SEARCH = 'input[type="search"], [name="search"], .directory-header input';
 const SEARCH_EVENTS = new Set(['input', 'change', 'keydown']);
 /** Fields a keystroke is typed into rather than sent to the canvas. */
 const FORM_FIELDS = 'input, textarea, select, [contenteditable="true"]';
 /**
- * Allow staff segment-stop controls through ProcessingBlocker. They request a safe stop from CommandDispatcher
- * without taking execution.
+ * The Stop controls a GM or Assistant GM can press while the host is busy. They ask an automated run (such as an
+ * enemy turn) to stop between actions, without running a command of their own.
  */
 const STAFF_CONTROLS = '[data-emblem-processing-control="segment-stop"]';
 const STAFF_CONTROL_KEYS = new Set(['Enter', ' ']);
 const CAMERA_KEYS = new Set([' ', '+', '-', '=', 'PageUp', 'PageDown', 'Home', 'End']);
 const PAN_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
 const INPUT_EVENTS = Object.freeze(['pointerdown', 'click', 'submit', 'change', 'input', 'drop', 'keydown']);
-/** Refused only while ProcessingBlocker reports startup. A processing hold leaves these to the camera and browser. */
+/** Refused only during startup. While the host is busy, these are left to the camera and browser. */
 const STARTUP_EVENTS = Object.freeze(['wheel', 'contextmenu', 'dblclick', 'dragstart']);
 const NATIVE_DOCUMENTS = Object.freeze(['Scene', 'Token', 'Wall', 'Tile', 'Drawing', 'AmbientLight', 'AmbientSound',
   'MeasuredTemplate', 'Region', 'RegionBehavior', 'Combat', 'Combatant', 'JournalEntry', 'JournalEntryPage',
   'Folder', 'Playlist', 'PlaylistSound', 'Macro', 'RollTable', 'TableResult', 'Cards', 'Card']);
 
 /**
- * Sort one captured local input event into a PROCESSING_INPUTS kind. Canvas control and drag are guarded separately,
- * by the token wrappers in patches/token-drag.mjs.
- * @param {Event} event The captured input event.
- * @param {{staff?: boolean, controlling?: boolean}} [options] Whether this client's user is staff, whose marked stop
- *   controls pass, and whether it controls a token, in which case an unmodified pan key would move that token instead.
+ * Sort one local input event into a PROCESSING_INPUTS kind. Token control and drag on the canvas are guarded
+ * separately, by the token wrappers in patches/token-drag.mjs.
+ * @param {Event} event The input event.
+ * @param {{staff?: boolean, controlling?: boolean}} [options] Whether this client's user is a GM or Assistant GM,
+ *   whose Stop controls pass, and whether it controls a token, in which case an unmodified pan key would move that
+ *   token instead.
  * @returns {string} One of {@link PROCESSING_INPUTS}.
  */
 function processingInputKind(event, { staff = false, controlling = false } = {}) {
@@ -65,10 +66,10 @@ function processingInputKind(event, { staff = false, controlling = false } = {})
 }
 
 /**
- * Install the capture-phase input guard, from init/system.mjs. While processing runs it refuses the input kinds
- * ProcessingBlocker holds, on native and system forms alike, the GM's included. While ProcessingBlocker still reports
- * startup it refuses every input unclassified, except the browser's reload and developer-tools keys. A page coming
- * back into view resyncs with the host (`sync`).
+ * Install the capture-phase input guard, from init/system.mjs. While the host is busy it refuses the kinds of input
+ * ProcessingBlocker blocks, on Foundry's forms and the system's alike, the GM's included. During startup it refuses
+ * every input except the browser's reload and developer-tools keys. A browser tab coming back into view asks the
+ * host for its current state (`sync`).
  */
 export function installProcessingInputGuards({ document = globalThis.document, blocker, sync, inspectCanvas = null,
   isStaff = localUserIsStaff, controlsTokens = localTokensControlled }) {
@@ -104,7 +105,10 @@ function browserKey(event) {
   return key.toLowerCase() === 'r' && Boolean(event.ctrlKey || event.metaKey);
 }
 
-/** Recheck non-host native edits when Foundry is about to submit them, including forms opened before processing. */
+/**
+ * Refuse other clients' document edits in Foundry's pre-hooks while the host is busy, including edits from forms
+ * opened before it became busy.
+ */
 export function installProcessingNativeGuards({ hooks = globalThis.Hooks, blocker }) {
   const guard = () => blocker.admitNativeWrite() ? undefined : false;
   for (const documentName of NATIVE_DOCUMENTS) {

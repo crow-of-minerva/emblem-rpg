@@ -46,7 +46,7 @@ import { recordDiagnostic, requirePorts } from '../../../contracts/protocol.mjs'
 /**
  * The encounter, objective and turn command definitions init/system.mjs registers with CommandDispatcher. The GM
  * runs the encounter commands, END_TURN needs control of the token, and the internal checks and turn completions
- * run as the active GM. Every port but `clock` comes from init/system.mjs.
+ * run as the active GM. Every service but `clock` comes from init/system.mjs.
  */
 export function createEncounterCommandContribution({
   diagnostics, encounters, terrain, movements, effects, dice, impacts, rests, presentation, events, notify,
@@ -154,12 +154,12 @@ export function createEncounterCommandContribution({
 }
 
 /* -------------------------------------------- */
-/*  Settlement                                  */
+/*  Command handlers                            */
 /* -------------------------------------------- */
 
 /**
- * A `hold(keys)` function bound to the running command, so the phase service and the terrain and health ports can
- * add resource keys through holdsResources as they reach new actors.
+ * A `hold(keys)` function for the running command, so the phase code and the terrain and health writers can record
+ * each new actor they reach on it (see holdsResources).
  */
 function commandResources(context) {
   return Object.freeze({ hold: keys => holdsResources(context, keys) });
@@ -176,11 +176,11 @@ async function holdsPlacedActors(resources, services, sceneUuid) {
 }
 
 /**
- * Run the phase service under the command's resource claims, its operation and its modifier-chance scope.
- * Refresh the board and claim newly reached Actors before each stage, including spawned reinforcements.
+ * Run one encounter command's phase code with the command's actor keys and operation. The phase code re-reads the
+ * map and records newly reached actors, spawned reinforcements included, before each stage.
  *
- * The command's event is held on that operation, so its subscribers (the encounter lifecycle in
- * foundry/hooks/scene.mjs and the Enemy AI) hear it only once CommandDispatcher commits, and never after a restore.
+ * The command's event waits until the command commits, so its listeners (the encounter hooks in
+ * foundry/hooks/scene.mjs and the Enemy AI) never hear of a change that was undone.
  * The auto-advance, combat music and exploration switches only store a setting and pass no event. A phase change
  * that queued an encounter end carries its own code: those writes are meant to stand, so the command accepts under
  * that code and publishes no phase-advanced event.
@@ -241,7 +241,7 @@ function normalizeExpectedEncounter(raw) {
   return Object.freeze({ combatId, phase, round });
 }
 
-/** The services an objective command runs with: the shared ports plus the operation its writers capture through. */
+/** The services an objective command runs with: the shared ones plus the operation its writes save undo data on. */
 function scopedServices(context, services) {
   return { ...services, operation: context.operation ?? null };
 }
@@ -297,10 +297,10 @@ async function settleEnd(context, services) {
 /**
  * Close a turn whose end-of-turn prompt was lost when the host reloaded.
  *
- * The exchange that wrote `system.turn.continuationPending` committed, so this is forward gameplay, not recovery.
- * completeInterruptedTurns in init/system.mjs dispatches one of these per unit still carrying the marker at
- * startup. The turn is closed through FoundryCombatSettlementRepository's own writer, and the ordinary turn-end
- * objective check follows. The phase never advances by itself at startup.
+ * The attack that set `system.turn.continuationPending` was saved, so this just finishes that unit's turn.
+ * completeInterruptedTurns in init/system.mjs sends one of these per unit still carrying the marker at startup.
+ * The turn is closed through FoundryCombatSettlementRepository's own writer, and the usual turn-end objective check
+ * follows. The phase never advances by itself at startup.
  */
 async function settleLostContinuation(context, services) {
   const actorUuid = String(context.payload?.actorUuid ?? '');
@@ -319,8 +319,8 @@ async function settleLostContinuation(context, services) {
 }
 
 /**
- * Settle one finished turn, refusing under a phase change's own code when the change it started did not finish.
- * The turn was written by the command that ended it, so a stopped change leaves that turn complete.
+ * Handle one finished turn: run its objective checks and, once the side is done, the automatic phase change. If
+ * that change fails, refuse under its code. The turn was written by the command that ended it, so it stays complete.
  */
 async function settleTurn(context, services, advance) {
   const intent = normalizeObjectiveCheckIntent(context.payload);
@@ -363,8 +363,8 @@ async function settleUnitTurnEnd(context, services) {
  * This keeps plan-end effects and Guard checks in the normal path. The resting stance comes back only
  * after the close succeeds, so a failed write never grants a rest.
  * @param {{tokenUuid: string, restoreStance: boolean, userId: string}} intent The unit, whether it rests, who asks.
- * @param {{movements: object, impacts: object, operation?: object|null}} services The movement plan, the health
- *   command port, and the dispatcher operation both capture through.
+ * @param {{movements: object, impacts: object, operation?: object|null}} services The movement writer, the healing
+ *   command, and the operation both save undo data on.
  * @returns {Promise<object>} `{ok, ended, stanceRestored}`, or `{ok: false, code}`.
  */
 export async function endUnitTurn({ tokenUuid, restoreStance, userId },
@@ -393,7 +393,7 @@ export async function endUnitTurn({ tokenUuid, restoreStance, userId },
   return { ok: true, ...identity, ended: true, stanceRestored };
 }
 
-/** The plan a standing close settles: the one already open, or one opened now on the caller's user. */
+/** The movement plan to close the turn on where the unit stands: the one already open, or one opened now. */
 async function openStandingPlan(movements, snapshot, userId, operation = null) {
   if (snapshot.movementPlanning) return { ok: true, snapshot };
   const started = await movements.begin(snapshot, String(userId ?? ''), operation);
@@ -435,8 +435,8 @@ export async function restoreRestingStance(snapshot, restoreStance, impacts) {
 const AUTO_ADVANCE_DELAY = 800;
 
 /**
- * Run objective checks after a turn and advance a completed side after the pacing delay.
- * Re-read the board after waiting. Return a failed phase change without undoing the finished turn.
+ * Run objective checks after a turn and, once the side is done, advance the phase after a short pause.
+ * Re-read the map after waiting. Return a failed phase change without undoing the finished turn.
  * Startup recovery leaves interrupted automatic advances for the GM to trigger.
  */
 async function completeUnitTurn(intent, services, advance) {
@@ -472,7 +472,7 @@ function expectedEncounter(board) {
   return { combatId: String(board.combatId), phase: String(board.phase ?? ''), round: Number(board.round) };
 }
 
-/** Whether every living unit of the acting side has spent its turn. */
+/** Whether every living unit of the acting side has spent its turn. Hidden tokens don't count. */
 function phaseComplete(board) {
   if (!board.phase) return false;
   const visible = board.units.filter(unit => !unit.hidden);

@@ -28,20 +28,20 @@ const LANDING_TIMEOUT_MS = 2000;
 /** The flags that put an Item in a unit's hands, as game/character/compilation.mjs fills the gear slots from them. */
 const EQUIP_FLAGS = Object.freeze(['isWielded', 'isWorn', 'isEquipped']);
 
-/** The Item fields a unit's gear facts are built from, so editing gear already in hand changes what an aura sees. */
+/** The Item fields a unit's gear is read from, so editing gear already in hand changes what an aura sees. */
 const GEAR_ITEM_PATHS = Object.freeze([
   'name', 'system.itemType', 'system.tier', 'system.weapon', 'system.armor', 'system.wgt', 'system.mountData',
   'system.unitType'
 ]);
 
 /* -------------------------------------------- */
-/*  Board lifecycle                             */
+/*  Auras, terrain and movement limits          */
 /* -------------------------------------------- */
 
 /**
  * Run `settle` once with a token when its move animation ends, or after `landingTimeoutMs` if the animation never
- * finishes. The board projections read the saved position either way. `whenLanded` returns false when the token
- * isn't animating, and the caller settles at once.
+ * finishes. The aura and terrain checks read the saved position either way. `whenLanded` returns false when the token
+ * isn't animating, and the caller runs `settle` at once.
  */
 function createLandingWait({ landingTimeoutMs, settle }) {
   const chained = new WeakMap();
@@ -67,8 +67,8 @@ function createLandingWait({ landingTimeoutMs, settle }) {
 }
 
 /**
- * Debounce one reconciliation command per Scene. Each new schedule restarts the RECONCILE_DELAY_MS timer, so a move
- * across several squares runs the command once, for the final position. Only the command host schedules.
+ * Debounce one maintenance command per Scene. Each new schedule restarts the RECONCILE_DELAY_MS timer, so a move
+ * across several squares runs the command once, for the final position. Only the host client schedules.
  * `failure` is the diagnostic detail if the command fails, and `accepts` filters the Scenes.
  */
 function createSceneSettlement({ executeInternal, commandId, failure, accepts = () => true }) {
@@ -101,12 +101,9 @@ function createSceneSettlement({ executeInternal, commandId, failure, accepts = 
 }
 
 /**
- * Reconcile the Scenes in play a unit stands on after what it has in hand changed, but only where an aura can see
- * the gear: one of the unit's own auras reads its gear, or a unit on that Scene has an aura that reads its
- * receivers' gear. Each actor's gear reads (projectAuraGearReads) are cached until `forget`, which the lifecycle
- * calls whenever a unit's aura emissions change. Only the command host schedules, and the settlement's debounce
- * folds an equip swap's several writes into one run per Scene.
- * @param {{schedule: Function}} modifiers The aura and terrain settlement from createSceneSettlement.
+ * Re-check auras on the Scenes in play a unit stands on after its equipment changes, but only where some aura reads
+ * equipment. What each actor's auras read is cached until `forget`, which runs whenever any aura changes.
+ * @param {{schedule: Function}} modifiers The aura and terrain debounce from createSceneSettlement.
  * @returns {{schedule: Function, forget: Function}}
  */
 function createGearChangeGate(modifiers) {
@@ -135,12 +132,13 @@ function createGearChangeGate(modifiers) {
 }
 
 /**
- * Board hook handlers (runtime.modifiers in init/hooks.mjs). They submit RECONCILE_MODIFIERS (auras and terrain) and
- * ENFORCE_PERMISSIONS (flight and mount limits) for the Scenes a change touches, each with its own debounce.
+ * Aura, terrain and movement-limit hook handlers (runtime.modifiers in init/hooks.mjs). They submit
+ * RECONCILE_MODIFIERS (auras and terrain) and ENFORCE_PERMISSIONS (flight and mount limits) for the Scenes a change
+ * touches, each with its own debounce.
  * Permission checks run only on maps that restrict movement.
- * @param {{executeInternal: Function, landingTimeoutMs?: number}} ports MaintenanceScheduler.submit, and the longest
- *   wait for a token's move animation.
- * @returns {Readonly<object>} The handlers the hook catalogue routes here.
+ * @param {{executeInternal: Function, landingTimeoutMs?: number}} options The function that queues maintenance
+ *   commands (MaintenanceScheduler.submit), and the longest wait for a token's move animation.
+ * @returns {Readonly<object>} The handlers init/hooks.mjs calls.
  */
 export function createBoardLifecycle({ executeInternal, landingTimeoutMs = LANDING_TIMEOUT_MS }) {
   const signatures = new Map();
@@ -197,7 +195,7 @@ export function createBoardLifecycle({ executeInternal, landingTimeoutMs = LANDI
     },
     /**
      * Item writes happen on almost every action, so only a change to an actor's aura emissions, or to what it has in
-     * hand, reconciles. `changes` is the update's diff. A created or deleted Item passes none.
+     * hand, re-checks auras. `changes` is the update's diff. A created or deleted Item passes none.
      */
     onAuraItemChanged(item, changes = null) {
       const actor = item?.parent;
@@ -233,8 +231,8 @@ export function createBoardLifecycle({ executeInternal, landingTimeoutMs = LANDI
     /**
      * Sweep a map without flight the moment a write leaves a unit on it in the air: an Actor update, or an Item or
      * ActiveEffect it carries, such as a granted Flying type, a Class, or Levitation ending. Foundry prepares the
-     * Actor before these hooks run, so the compiled airborne status is the one the write left. A restore is left
-     * alone, as every lifecycle hook leaves it.
+     * Actor before these hooks run, so the compiled airborne status is the one the write left. An undo restore is
+     * skipped, as in every other handler here.
      */
     onUnitFlightChanged(document, options = {}) {
       if (options?.[RESTORE_WRITE_OPTION] === true) return;
@@ -254,7 +252,7 @@ export function createBoardLifecycle({ executeInternal, landingTimeoutMs = LANDI
  * Threat overlay hook handlers (runtime.threat in init/hooks.mjs). Each change does the least work it needs:
  * rebuild the lines' geometry, regrade the matchups, or recolor the existing lines. Nothing runs while the overlay
  * is closed.
- * @param {{threatIndicators: object}} ports The overlay.
+ * @param {{threatIndicators: object}} options The overlay.
  */
 export function createThreatHookHandlers({ threatIndicators }) {
   const lines = threatIndicators;
@@ -282,6 +280,7 @@ export function createThreatHookHandlers({ threatIndicators }) {
     onUpdateToken(tokenDocument, changes = {}) {
       if (!lines.running()) return;
       if (guardBondChanged(changes)) return lines.invalidate();
+      // The overlay checks the selected token's square itself every frame, so its own moves need no rebuild here.
       if (String(tokenDocument?.id ?? '') === lines.selectedTokenId()) return;
       if (TOKEN_GEOMETRY_KEYS.some(key => key in changes)) lines.invalidate();
     },
@@ -345,7 +344,7 @@ function hasAuraChange(changes) {
 /**
  * Whether an Actor write can change which auras reach a unit or which squares apply to it. Faction decides who an
  * aura can reach, and terrain exceptions match on name, faction and unit type. Flight decides whether the unit is
- * on the ground at all, so a landing has to settle the square it came down on.
+ * on the ground at all, so a landing has to apply the square it came down on.
  */
 function unitFactsChanged(changes) {
   if (changes?.name !== undefined) return true;
@@ -381,14 +380,14 @@ function touches(changes, path) {
 
 /**
  * Whether a Scene is being played on: the active one, one an encounter or exploration runs on, or the one the host
- * has drawn, which onCanvasReadyModifiers settles as well. Any other Scene is settled when it is drawn.
+ * has drawn, which onCanvasReadyModifiers checks as well. Any other Scene is checked when it is drawn.
  */
 function sceneInPlay(scene) {
   return scene === globalThis.game?.scenes?.active || scene?.active === true || sceneCombatActive(scene)
     || sceneExplorationActive(scene) || scene === globalThis.canvas?.scene;
 }
 
-/** Whether a map restricts flight or mounts, the only kind of map the permission sweep settles. */
+/** Whether a map restricts flight or mounts, the only kind of map the permission sweep checks. */
 function restrictsMovement(scene) {
   const permission = normalizeMovementPermission(scene.getFlag(SYSTEM_ID, MOVEMENT_PERMISSION_FLAG));
   return permission !== MOVEMENT_PERMISSIONS.ALLOWED;

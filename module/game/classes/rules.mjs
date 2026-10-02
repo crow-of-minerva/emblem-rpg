@@ -13,7 +13,7 @@ function classFeatureOwnership(items, bundleItems) {
  * Which of a bundle's entries the unit may pick, for resolveClassFeatureSelection and resolveClassBundleStates.
  * An upgrade (an entry with `replace`) is eligible only when the unit owns the feature it replaces. Every other
  * entry is always eligible.
- * @param {object[]} items Plain embedded-Item identity projections.
+ * @param {object[]} items The unit's items as plain records (name, uuid, compendiumSource).
  * @param {object[]} bundleItems The bundle's authored entries.
  * @returns {boolean[]} One flag per entry.
  */
@@ -103,7 +103,7 @@ export function resolveAutomaticClassFeatureGrant(snapshot) {
  * `granted`. A choice bundle whose level is reached is `ready` while an eligible, unowned option remains, and
  * `granted` once a pick is recorded or none remains. pendingFeatureChoiceIds lists the `ready` ones. `skipped`
  * flags the upgrades a recorded automatic bundle closed without granting.
- * @param {object} snapshot Detached class facts: `bundles`, `actorItems`, `actorLevel`, `recordedBundles`.
+ * @param {object} snapshot Detached class data: `bundles`, `actorItems`, `actorLevel`, `recordedBundles`.
  * @param {{owned?: boolean}} [options] `owned` false when no unit holds the Class, which puts every bundle in edit.
  * @returns {Array<{id: string, state: string, ownership: boolean[], eligibility: boolean[], skipped: boolean[]}>}
  */
@@ -133,7 +133,7 @@ export function resolveClassBundleStates(snapshot, { owned = true } = {}) {
 /**
  * Check a GM's request to reopen an automatic bundle: it must be recorded and hold an upgrade it skipped. Clearing
  * the record lets reconcileAutomaticClassFeatures in engine/character/progression.mjs grant the bundle again.
- * @param {object} snapshot The automatic-grant snapshot of the bundle's Class.
+ * @param {object} snapshot The bundle's Class data, as resolveAutomaticClassFeatureGrant reads it.
  * @param {string} bundleId The bundle to reopen.
  * @returns {object|null} The refusal, or null when the bundle may reopen.
  */
@@ -158,8 +158,8 @@ export function pendingFeatureChoiceIds(snapshot) {
  * The features to remove when a Character leaves a Class: the items of the old Class's unique bundles, except
  * bundles that list the new Class as an exception. Called by engine/character/progression.mjs for class
  * replacement and promotion.
- * @param {Iterable<object>} items Plain embedded-Item identity projections.
- * @param {object|null} oldClass Plain Class projection being left.
+ * @param {Iterable<object>} items The unit's items as plain records (id, type, name, uuid, compendiumSource).
+ * @param {object|null} oldClass The Class being left, as plain data.
  * @param {string} newClassName Class being entered.
  * @returns {string[]} Embedded Item IDs to remove.
  */

@@ -9,10 +9,10 @@ const AUTHORITY_METHODS = ['isGm', 'isActiveGm', 'canUserOwnActor', 'canUserCont
 /* -------------------------------------------- */
 
 /**
- * Build the authorize slots for CommandDispatcher definitions from the authority port
- * (foundry/adapters/services/authority.mjs). Each slot resolves to null to admit the request, or to a refusal that
+ * Build the authorize checks for CommandDispatcher definitions from the authority service
+ * (foundry/adapters/services/authority.mjs). Each check resolves to null to admit the request, or to a refusal that
  * stops the handler.
- * @param {object} authority Injected caller authority port.
+ * @param {object} authority The authority service that answers who may do what.
  * @returns {object} Policy factories.
  */
 export function createCommandAuthorization(authority) {
@@ -20,7 +20,7 @@ export function createCommandAuthorization(authority) {
     if (typeof authority?.[method] !== 'function') throw new Error(`Authority port is missing ${method}.`);
   }
   return Object.freeze({
-    /** Any Gamemaster user. */
+    /** Any GM user, Assistants included (Foundry's `User#isGM`). */
     gm: () => async context => (authority.isGm(context.userId) ? null : refuse(RESULT_CODES.GM_REQUIRED)),
 
     /** Only the active GM, whose client runs the commands. Internal commands and api.movement.drive use this. */
@@ -37,7 +37,7 @@ export function createCommandAuthorization(authority) {
     },
 
     /**
-     * Authorize staff or Trusted Players to edit every selected Actor. Player ownership grants gameplay, not
+     * Authorize a GM, Assistant or Trusted Player to edit every selected Actor. Player ownership grants gameplay, not
      * authoring.
      */
     actorAuthor: select => async context => {
@@ -51,7 +51,7 @@ export function createCommandAuthorization(authority) {
     },
 
     /**
-     * Authorize staff or a Trusted Player who owns it to edit the Actor behind every selected Token. Player
+     * Authorize a GM, Assistant or a Trusted Player who owns it to edit the Actor behind every selected Token. Player
      * ownership grants gameplay, not authoring, so a Player is refused where tokenController would admit them.
      */
     tokenAuthor: select => async context => {
@@ -115,10 +115,10 @@ function selected(select, context) {
 }
 
 /* -------------------------------------------- */
-/*  Facade callers                              */
+/*  Local api callers                           */
 /* -------------------------------------------- */
 
-/** Whether a bounded caller projection from the local facade is a Gamemaster. */
+/** Whether the caller summary built by the local api (api/facade.mjs) is a full Gamemaster, not an Assistant. */
 export function callerIsGamemaster(caller) {
   return caller?.level === AUTHORITY_LEVELS.GAMEMASTER;
 }

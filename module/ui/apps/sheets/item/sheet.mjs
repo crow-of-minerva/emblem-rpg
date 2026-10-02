@@ -47,9 +47,8 @@ const ITEM_DERIVED_ECHO_PATHS = Object.freeze([
 ]);
 
 /**
- * What the Item sheet offers for one document type and subtype: its tabs, sections and editors. The sheet reads it
- * through `capabilities`, the Item directory menu (ui/apps/foundry/directories.mjs) reads `editors` to decide which
- * editors to offer, and the Enemy AI's item-parameters.mjs reads the sheet's `documentType` and `itemType`.
+ * What the Item sheet offers for one document type and subtype: its tabs, sections and editors. The sheet exposes it
+ * as `capabilities`. The Item directory's context menu and the Enemy AI module read it too.
  */
 export function itemCapabilityProfile(documentType, itemType) {
   const known = ITEM_SUBTYPES[documentType]?.includes(itemType) === true;
@@ -197,11 +196,13 @@ function refuseUnreadableAuthoredFields(submitData) {
 }
 
 /**
- * Clean an Item or Resource sheet submission before Foundry writes it. Unreadable Range and Attack text is dropped.
- * While a refinement or broken armor changes the prepared values (echoGuardActive), a field that only sends back its
- * prepared value is dropped, so the stored base value survives. Modifiers keep their stored condition trees, the
- * effect list keeps its stored copy, a Multiple-target range keeps at least 2 targets, and the steal DC follows
- * the stealable flag.
+ * Clean an Item or Resource sheet submission before Foundry writes it:
+ * - drop Range and Attack text that can't be parsed;
+ * - while a refinement or broken armor changes the shown values (echoGuardActive), drop a field that only sends
+ *   back its shown value, so the saved base value survives;
+ * - keep each modifier's saved condition tree and the saved effect list;
+ * - give a Multiple-target range at least 2 targets;
+ * - set the steal DC to match the stealable flag.
  */
 function reconcileItemSubmitData(submitData, { prepared, stored, echoGuardActive = false } = {}) {
   if (!submitData || typeof submitData !== 'object') return submitData;
@@ -217,6 +218,7 @@ function reconcileItemSubmitData(submitData, { prepared, stored, echoGuardActive
       if (String(submitted) === String(derived) && String(derived) !== String(source)) deletePath(submitData, path);
     }
   }
+  // Foundry's validation in _prepareSubmitData has already turned the form's indexed modifiers into an array.
   const incomingModifiers = submittedSystem?.modifiers;
   if (Array.isArray(incomingModifiers)) {
     const existing = Array.isArray(storedSystem.modifiers) ? storedSystem.modifiers : [];
@@ -331,7 +333,7 @@ export class ItemSheet extends EmblemSheetMixin(foundry.applications.sheets.Item
     return this.capabilities.editors.equipmentCrafting
       ? openCraftingSettingsDialog(this.document) : openConsumableCraftingDialog(this.document);
   }
-  /** Copy As Staff stays on a locked compendium Item and asks for an import there. The settings editors write to it. */
+  /** Copy As Staff shows even on a locked compendium Item, where it asks for an import. Settings need edit rights. */
   _sheetFrameButtons() {
     const editors = this.capabilities.editors;
     const copy = editors.copyAsStaff && this.canCopyFrom
@@ -373,7 +375,7 @@ export class ItemSheet extends EmblemSheetMixin(foundry.applications.sheets.Item
   /* -------------------------------------------- */
   /*  Rendering                                   */
   /* -------------------------------------------- */
-  /** Wire the content, then rebuild the managed frame buttons to match the current edit rights. */
+  /** Wire the content, then rebuild the sheet's own header buttons to match the current edit rights. */
   _onRender(context, options) {
     super._onRender(context, options);
     this.setPosition({ height: this.capabilities.compact ? 105 : 325 });
@@ -381,7 +383,10 @@ export class ItemSheet extends EmblemSheetMixin(foundry.applications.sheets.Item
     this._syncFrameButtons();
   }
 
-  /** Rebuild the managed header buttons in front of the close button, so they match the current edit rights. */
+  /**
+   * Foundry draws header buttons only with the window frame on the first render, so the sheet's own buttons are
+   * replaced here, in front of the close button, to match the current edit rights.
+   */
   _syncFrameButtons() {
     const header = this.element.querySelector('.window-header');
     const close = header?.querySelector('button[data-action="close"]');

@@ -47,10 +47,10 @@ export const PROFICIENCIES = VOCAB_PROFICIENCIES;
 
 export const UNIT_TYPES = VOCAB_UNIT_TYPES;
 
-/** Portrait zoom limits shared by the Character sheet and portrait projection. */
+/** Portrait zoom limits shared by the Character sheet and every other place that draws the portrait. */
 const AVATAR_SCALE_BOUNDS = Object.freeze({ min: 0.5, max: 3, default: 1.25 });
 
-/** Clamp the portrait zoom read by the Character sheet and portrait projection. */
+/** Clamp a stored portrait zoom to those limits. */
 export function resolveAvatarScale(rawScale) {
   const raw = Number(rawScale);
   if (!Number.isFinite(raw) || raw <= 0) return AVATAR_SCALE_BOUNDS.default;
@@ -61,10 +61,7 @@ export function resolveAvatarScale(rawScale) {
 /*  Faction relations                           */
 /* -------------------------------------------- */
 
-/**
- * Each authored faction's relation group by lowercase name, indexed once because pathfinding occupancy and the threat
- * and aura projections ask for every pair of units.
- */
+/** Each authored faction's relation group by lowercase name, built once since every pair of units looks it up. */
 const FACTION_GROUP_BY_NAME = indexFactionGroups(FACTION_GROUPS);
 
 /** Resolve the relation group an authored faction belongs to, or null when it names no combatant side. */
@@ -108,8 +105,7 @@ export function areFactionsOpposed(a, b) {
 /**
  * Whether an Item's authored target type admits a unit of one faction: a Friendly pick asks areFactionsFriendly, a
  * Hostile pick and every attack ask areFactionsHostile, and any other type admits every faction. A faction outside
- * the six roles is nobody's friend or foe, so a Friendly or Hostile pick refuses it. Used by item activation, its
- * area shapes in game/targeting/shapes.mjs, the attack grid and the exchange's own faction check.
+ * the six roles is nobody's friend or foe, so a Friendly or Hostile pick refuses it.
  * @param {string} targetType The authored target type: Any, Self, Friendly, Hostile or Ground.
  * @param {string} sourceFaction The acting unit's faction role.
  * @param {string} targetFaction The candidate's faction role.
@@ -159,7 +155,7 @@ export function toggleExtraLife(pool, heartIndex) {
 /*  Standard actions                            */
 /* -------------------------------------------- */
 /**
- * Return the action-spend verdict used by engine Character commands.
+ * Spend a unit's Standard Action, or refuse when it is already spent. Used by engine Character commands.
  * @param {{standardAvailable: boolean}} state
  * @returns {{ok: boolean, code: string, data: object}}
  */
@@ -169,7 +165,7 @@ export function spendStandardAction(state) {
 }
 
 /**
- * Return the action-restoration verdict used by engine Character commands.
+ * Give a unit its Standard Action back, or refuse when it still has it. Used by engine Character commands.
  * @param {{standardAvailable: boolean}} state
  * @returns {{ok: boolean, code: string, data: object}}
  */
@@ -204,7 +200,7 @@ export function skillRankLabel(rank) {
 /* -------------------------------------------- */
 /*  GM restoration                              */
 /* -------------------------------------------- */
-/** The markers a development restore leaves standing: worn, wielded, mounted, and the flight state. */
+/** Effects a GM's full unit restore keeps: the worn, wielded and mounted markers, and the flight markers. */
 const RESET_RETAINED_EFFECT_KINDS = Object.freeze(Object.values(EQUIPMENT_EFFECT_KINDS));
 
 const RESET_RETAINED_STATUSES = Object.freeze([
@@ -219,10 +215,11 @@ function resetRetainsEffect(effect) {
 }
 
 /**
- * Plan one unit's full restore for FoundryDevelopmentRepository.restoreUnits: resources and special pools to their
- * maximum, the turn reopened, refreshing Items topped up, every effect the restore does not retain swept, and the
- * record of the Rallies it cast this map cleared (`clearRallies`), so it may Rally every unit again.
- * @param {object} source One projected unit from the development snapshot.
+ * Plan one unit's full restore for FoundryDevelopmentRepository.restoreUnits: HP and Stn to their maximum, shields
+ * to 0, special pools full, the turn reopened, refreshing Items topped up, every effect the restore doesn't keep
+ * removed, and the record of the Rallies it cast this map cleared (`clearRallies`), so it may Rally every unit
+ * again. Energy is left as it is.
+ * @param {object} source One unit's data, as the GM's restore reads it.
  * @returns {object} The resolution the writer applies.
  */
 export function buildFullCharacterReset(source = {}) {
@@ -270,7 +267,7 @@ export function buildFullCharacterReset(source = {}) {
 /**
  * Plan one unit's Item repair for FoundryDevelopmentRepository.repairItems. Repair ignores the Refreshes switch a
  * restore honours: every Item that has uses and is not already full comes back to its maximum.
- * @param {object} source One projected unit from the development snapshot.
+ * @param {object} source One unit's data, as the GM's repair reads it.
  * @returns {object} The resolution the writer applies.
  */
 export function buildCharacterItemRepair(source = {}) {
@@ -349,10 +346,10 @@ export function zenithStats({ stats = {}, caps = {}, growthKeys = [], unplayable
 /* -------------------------------------------- */
 
 /**
- * Flag key, in this system's scope on the Actor, for the staff override that frees a unit from line of sight.
- * It is staff administration rather than a status: no effect grants it, preparation never derives it, and it
- * carries no marker. foundry/adapters/document-writes/characters.mjs writes it and the targeting projections
- * read it back through `unitIgnoresLineOfSight`.
+ * Actor flag (in this system's scope) a GM sets from the token HUD's Free Targeting button so a unit ignores line of
+ * sight. It is not a status: no effect grants it and it shows no marker.
+ * foundry/adapters/document-writes/characters.mjs writes it and the targeting code reads it through
+ * `unitIgnoresLineOfSight`.
  */
 export const UNIT_FREE_TARGETING_FLAG = 'freeTargeting';
 
@@ -363,8 +360,7 @@ export function unitIgnoresLineOfSight(systemFlags) {
 
 /**
  * The line-of-sight rule one action actually runs under. The override replaces whatever the item authored, so every
- * reader of an authored `losRule` (the attack grid, activation targeting, the sight projections and the exchange's
- * check) gets the unit's rule from here.
+ * reader of an authored `losRule` gets the unit's rule from here.
  * @param {string} [losRule] The Item's authored rule.
  * @param {boolean} [freeTargeting] Whether the acting unit holds the override.
  * @returns {string} One of the authored rules, or `'ignoreLoS'` when the override applies.
@@ -373,7 +369,7 @@ export function resolveActionLosRule(losRule, freeTargeting) {
   return freeTargeting === true ? 'ignoreLoS' : String(losRule ?? 'normal');
 }
 
-/** The penalty shown beside a stat: encumbrance plus the harmful half of any aura, never a helpful one. */
+/** The penalty shown beside a stat: status and effect penalties plus any aura that lowers it, never one that helps. */
 export function statPenalty(node) {
   if (!node) return 0;
   return (Number(node.penalty) || 0) + Math.min(0, Number(node.aura) || 0);

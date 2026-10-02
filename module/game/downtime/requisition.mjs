@@ -50,8 +50,8 @@ function demandCeiling(wealth) {
 /*  Faction rows                                */
 /* -------------------------------------------- */
 /**
- * Plan the Stationary's faction table after a requisition, for foundry/adapters/document-writes/downtime.mjs. The
- * named row is marked requisitioned whether the faction granted the demand or not, and every other row is unchanged.
+ * Plan the Stationary's faction table after a requisition. The named row is marked requisitioned whether the faction
+ * granted the demand or not, and every other row is unchanged.
  * The rows come back normalised and frozen, so the writer hands Foundry a copy.
  * @param {object[]} rows The station's faction rows.
  * @param {string} factionId The requisitioned row's `_id`.
@@ -81,12 +81,11 @@ function frozenRows(rows) {
 /*  The request                                 */
 /* -------------------------------------------- */
 /**
- * Validate a requisition for engine/downtime/commands.mjs before anything is rolled or written, only in free
- * exploration. The requisitioner must be an eligible Action-lane participant linked to a party Convoy, and the kind
- * must be one the system settles. The faction must be an enabled row not yet requisitioned this downtime, and the
- * demand must fit its wealth.
- * @param {object} snapshot The requisition snapshot: `station`, `cursor`, `exploring`, `inReach`, `roster`
- *   (downtime units carrying `convoyUuid`), `factions` (the station's rows) and `convoys` (`{[uuid]: {uuid, name}}`).
+ * Validate a requisition before anything is rolled or written, only in free exploration. The requisitioner must be
+ * free for an Action activity and linked to a party Convoy, and the kind must be one the system supports. The faction
+ * must be an enabled row not yet requisitioned this downtime, and the demand must fit its wealth.
+ * @param {object} snapshot `station`, the acting unit (`cursor`), `exploring`, `inReach`, `roster` (downtime units
+ *   carrying `convoyUuid`), `factions` (the station's rows) and `convoys` (`{[uuid]: {uuid, name}}`).
  * @param {object} intent A normalizeRequisitionIntent result.
  * @returns {Readonly<object>} A refusal, or `{ok: true, code, data}` with the plan also under `plan`.
  */
@@ -132,7 +131,7 @@ export function planRequisition(snapshot = {}, intent = {}) {
   return Object.freeze({ ok: true, code: RESULT_CODES.DOWNTIME_REQUISITIONED, data: plan, plan });
 }
 
-/** The requisitioner's linked Convoy as the snapshot names it, or null when it has none the snapshot could read. */
+/** The requisitioner's linked Convoy with its name, or null when it has none or that Convoy could not be read. */
 function linkedConvoy(snapshot, performer) {
   const uuid = String(performer.convoyUuid ?? '');
   const convoys = snapshot.convoys ?? {};
@@ -156,8 +155,8 @@ function checkNumber(value) {
 }
 
 /**
- * The result line of the requisition's settled card, built by engine/downtime/resolvers.mjs: where the granted gold
- * is headed, or who declined. The card prints the kind, the demand, the difficulty and the total beside it.
+ * The result line of the requisition's chat card: where the granted gold is headed, or who declined. The card prints
+ * the kind, the demand, the difficulty and the total beside it.
  * @param {{faction?: object|string, kind?: string, demand?: number, dc?: number, total?: number, outcome?: string,
  *   convoyName?: string}} settled The faction row or its name, the demand, the outcome and the Convoy's name.
  * @returns {string}

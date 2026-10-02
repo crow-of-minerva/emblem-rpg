@@ -57,7 +57,7 @@ export function projectTradeSide(token, actor, movement) {
   });
 }
 
-/** One item as a trade sees it: its value, amount and uses, and whether it may leave its carrier. */
+/** One item as a trade sees it: its value, amount and uses, and whether it may leave its owner. */
 export function projectTradeItem(item) {
   const system = item.system ?? {};
   const cost = system.cost && typeof system.cost === 'object' ? system.cost.total : system.cost;
@@ -120,8 +120,8 @@ export function projectVendorItem(item) {
 }
 
 /**
- * The Convoys a unit can use: the one linked to the party of each player who owns it. Read by the trade and
- * downtime writers and by the Convoy withdrawal check in services/authority.mjs.
+ * The Convoys a unit can use: the one linked to the party of each player given Owner on it directly. Ownership
+ * that comes only from the "All Players" default is not counted.
  */
 export function projectLinkedConvoys(actor, parties) {
   const state = parties?.readState?.();
@@ -155,7 +155,7 @@ export function projectShopConvoy(convoy) {
 }
 
 /**
- * The board facts between the unit at the counter and the Vendor: how far, how high, who is flying, and whether the
+ * How the unit at the counter stands relative to the Vendor: how far, how high, who is flying, and whether the
  * buyer hangs over an obstacle it could not be set down on.
  */
 export function projectShopReach(buyerToken, vendorToken, distance) {

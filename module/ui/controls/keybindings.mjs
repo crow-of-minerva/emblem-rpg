@@ -107,6 +107,11 @@ export function createCanvasKeybindingHandlers() {
 /* -------------------------------------------- */
 /*  Confirm and cancel                          */
 /* -------------------------------------------- */
+/**
+ * Confirm (Space). The system's own prompt takes it first, then an activation waiting for its targets to be
+ * confirmed. A focused form field keeps the key for typing; any other focused element is unfocused. Then, with
+ * several tokens selected, they are released; otherwise the movement step confirms the plan or starts one.
+ */
 function onConfirm() {
   const captured = topActionWindow();
   if (captured) {
@@ -132,6 +137,13 @@ function onConfirm() {
   return true;
 }
 
+/**
+ * Cancel (Shift, Escape, or a double-click on empty canvas). It is bound at priority, so it runs before Foundry's
+ * own Escape handling. In order: Escape over an open window goes to Foundry (unless one of the system's own
+ * prompts is open), then an open interaction pick, the system's prompt, and the movement step, which keeps the
+ * press whenever a plan is open. Past that, Escape goes on to Foundry, and the rest close a read-only BG3 HUD,
+ * unfocus a sheet or dialog, or else release the selected tokens and clear this user's targets.
+ */
 function onCancel(context) {
   if (cancelBelongsToFoundry(context)) return false;
   if (cancelInteraction()) return true;
@@ -153,6 +165,7 @@ function onCancel(context) {
   const tokens = globalThis.canvas?.tokens;
   if (!tokens) return false;
   tokens.releaseAll();
+  // Foundry's internal call clears this user's targets on this client only; it is not broadcast.
   globalThis.game?.user?._onUpdateTokenTargets?.();
   clearInspectedReaches();
   return true;

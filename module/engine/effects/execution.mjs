@@ -44,7 +44,8 @@ const UNIT_WRITING_STEPS = new Set(['modShield', 'applyEffect', 'setFaction', 'm
 /**
  * Run effect entries. game/effects/planning.mjs plans the steps, and this service rolls their amounts, records what
  * they write in the command's resource keys, and hands them to the Foundry writers (FoundryEffectRepository) and the
- * presentation port. Built in init/system.mjs and shared by item activation, the combat exchange and phase triggers.
+ * presentation service. Built in init/system.mjs and shared by item activation, the combat exchange and phase
+ * triggers.
  */
 export class EffectExecutionService {
   /** The authoring problems this session has already reported, by entry identity, path and code. */
@@ -67,14 +68,13 @@ export class EffectExecutionService {
 
   /**
    * Run the effect entries that fire for `triggers`, inside the calling command. Every chance roll, formula roll
-   * and random placement is drawn here, once for this run. The writers capture into `runtime.operation` before
-   * they change anything, so a failed command restores. A busy refusal stops the run, and notices go only to the
-   * users in `audience`.
-   * A step that fails an authoring precondition (isEffectPreconditionFailure) wrote nothing, so it is skipped
-   * rather than failed, and the run goes on. It and each of the plan's errors are reported to the GM once.
-   * `combatContext`, which only an exchange passes, reaches the effect host's health reads and nothing else. It
-   * stays out of the runtime because the runtime travels to every client in presentation messages, and the context
-   * holds the host's chance draws.
+   * and random placement is drawn here, once for this run. The writers save old values into `runtime.operation`
+   * before changing anything, so a failed command is undone. A busy refusal stops the run; other failed steps do
+   * not. Notices go only to the users in `audience`.
+   * A step that fails an authoring precondition (isEffectPreconditionFailure) wrote nothing, so it is skipped and
+   * the run goes on. The GM hears about it, and about each plan error, once.
+   * `combatContext` (exchanges only) reaches the health reads and nothing else. It stays out of the runtime because
+   * the runtime is sent to every client in presentation messages, and the context holds the host's chance draws.
    */
   async run({
     entries, triggers, runtime, context = {}, activatedItem = null, resources = null, audience = null,
@@ -97,6 +97,8 @@ export class EffectExecutionService {
     }
     const held = { runtime: executionRuntime, context, resources, audience: noticeAudience(audience), combatContext };
     const outcomes = [];
+    // Delays, and `wait` steps in #execute, run while the command holds the command slot, so nothing else at the
+    // table runs meanwhile. They have no upper limit.
     for (const entry of plan.entries) {
       if (entry.delayMs > 0) await this.wait(entry.delayMs);
       for (const operation of entry.operations) {
@@ -155,7 +157,7 @@ export class EffectExecutionService {
     return outcome;
   }
 
-  /** Skip unit-only writes when every target is scenery. Item activation still succeeds and settles its costs. */
+  /** Skip unit-only writes when every target is scenery. Item activation still succeeds and pays its costs. */
   async #aimedOnlyAtScenery(step, writes, runtime) {
     if (!UNIT_WRITING_STEPS.has(step.kind) || !Array.isArray(writes.targets) || writes.targets.length > 0) return false;
     return (await this.effects.resolveTargets(step.target, runtime)).length > 0;
@@ -175,7 +177,7 @@ export class EffectExecutionService {
 
   /**
    * Claim the summoned unit's Actor, and those the earlier summons it replaces reach, then create its Token. The
-   * writer records the new Token's id in the run's operation before creating it.
+   * writer records the new Token's id in the run's undo record before creating it.
    */
   async #spawn(operation, runtime, resources) {
     const spawn = await this.effects.prepareSpawn(operation, runtime);
@@ -236,11 +238,11 @@ export class EffectExecutionService {
   }
 
   /**
-   * Settle one damage or heal step on each living unit it names. Each amount resolves against the snapshot's
-   * `ruleTarget`, which the effect host reads under `combatContext` when an exchange fired the run, and commits
-   * against the snapshot as it was read. Each unit's outcome lists its `impacts` (see `unitImpact`). A heal echo
-   * lists none, because it is the caster's passive reacting to the heal rather than the step's own work. A heal
-   * skips slain units.
+   * Write one damage or heal step on each living unit it names. Each amount is worked out against the unit's
+   * `ruleTarget` data, which the effect host reads under `combatContext` when an exchange fired the run, and is
+   * written against the unit's data as it was read. Each unit's outcome lists its `impacts` (see `unitImpact`). A
+   * heal echo lists none, because it is the caster's passive reacting to the heal rather than the step's own work.
+   * A heal skips slain units.
    */
   async #settleHealth(operation, runtime, context, resources = null, combatContext = null) {
     const step = operation.step;
@@ -396,8 +398,8 @@ export class EffectExecutionService {
   /**
    * Tell the GM, once per session, about a step or entry that could not run: a skipped step (`kind` is its kind),
    * an invalid entry (`path` is 'entry'), or a condition that threw (`kind` is 'if' when it guards a step). The
-   * warning diagnostic raises no toast of its own, so the GM sees the one notice rather than a generic layer error.
-   * Per-blow and per-phase triggers repeat the same problem, which the entry's identity, path and code name.
+   * warning diagnostic raises no toast of its own, so the GM sees the one notice rather than a generic error toast.
+   * Per-blow and per-phase triggers repeat the same problem, so it is remembered by entry identity, path and code.
    * An entry that ran but has validation warnings passes `notify: false`: it is logged and the GM gets no notice.
    * @param {{entryIndex: number, path: string, kind: string, code: string, message?: string}} problem
    */
@@ -428,12 +430,12 @@ export class EffectExecutionService {
     }
   }
 
-  /** Settle stance through the operation the run names, so its writes are captured with the rest of the action. */
+  /** Apply any Stance Break through the run's undo record, so it is undone with the rest of the action. */
   async #settleStance(actorUuid, runtime) {
     return settleStanceBreak(this.stances, actorUuid, runtime.operation ?? null);
   }
 
-  /** Write health, then the Stance Break it may cause. A refused break fails the step, and the command restores. */
+  /** Write health, then the Stance Break it may cause. A refused break fails the step, and the command is undone. */
   async #settleWrite(entry, snapshot, resolution, runtime, { breaks = true } = {}) {
     const persisted = await this.effects[entry](snapshot, resolution, runtime);
     if (persisted?.ok !== true) return { persisted, stanceBreak: null };
@@ -459,7 +461,7 @@ export class EffectExecutionService {
   }
 }
 
-/** The board choices a mechanical step can ask for. A random placement is drawn here, once for this run. */
+/** The map choices a mechanical step can ask for. A random placement is drawn here, once for this run. */
 function placementChoices(effects) {
   return Object.freeze({ placement: candidates => drawnPlacement(candidates, effects) });
 }
@@ -599,8 +601,8 @@ function stanceTransitionFailed(result) {
 /* -------------------------------------------- */
 
 /**
- * What one settled step actually did to one unit. engine/items/activation.mjs sums these per unit into the facts
- * activation XP grades. `harmful` and `helpful` hold the HP and Stance removed or restored after clamping, and
+ * What one finished step actually did to one unit. engine/items/activation.mjs sums these per unit to grade the
+ * activation's XP. `harmful` and `helpful` hold the HP and Stance removed or restored after clamping, and
  * whether a status of that kind was newly applied. `moved` means the step put the unit on another square, and
  * `slain` means the step claimed its defeat. A step that changed nothing reports no impact at all. Item activation
  * also builds one for the Rally it applies outside any effect step.

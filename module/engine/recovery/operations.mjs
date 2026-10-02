@@ -7,8 +7,8 @@ import { recordDiagnostic, requirePorts } from '../../contracts/protocol.mjs';
 /* -------------------------------------------- */
 
 /**
- * Thrown by `Operation#capture` when the before-image could not be read or made durable.
- * The writer must not perform the write that capture was protecting.
+ * Thrown by `Operation#capture` when the old values could not be read or saved.
+ * The writer must not make the write the capture was protecting.
  */
 class OperationCaptureError extends Error {
   constructor(message, options) {
@@ -17,10 +17,13 @@ class OperationCaptureError extends Error {
   }
 }
 
-/** The before-image of a path that held nothing, which a restore removes rather than writing back. */
+/** The saved old value of a path that held nothing: an undo removes the path rather than writing a value back. */
 const ABSENT = Symbol('operation-absent');
 
-/** What `Operation#settle` tells CommandDispatcher. `restored: false` means unresolved entries were reported. */
+/**
+ * What `Operation#settle` tells CommandDispatcher. `restored: false` means not every write was undone: entries
+ * were left unresolved and reported, or the run was abandoned and its record waits for the next startup.
+ */
 const SETTLEMENTS = Object.freeze({
   NONE: Object.freeze({ outcome: 'none', restored: true }),
   COMMITTED: Object.freeze({ outcome: 'committed', restored: true }),
@@ -32,20 +35,22 @@ const SETTLEMENTS = Object.freeze({
 /* -------------------------------------------- */
 
 /**
- * Own the one durable operation record.
+ * Keeps the world's one undo record, saved in a world setting. Before a command writes a document, the old values
+ * are saved here (`capture`). When the command finishes, the record is cleared if it succeeded, or the old values
+ * are written back if it failed (`settle`).
  *
- * CommandDispatcher (`engine/dispatcher.mjs`) opens a handle per run, hands it to the handler as
- * `context.operation`, and settles it when the handler returns. init/system.mjs injects the ports and calls
- * `restoreUnfinished()` on the host at the RECOVERING stage, before gameplay is admitted.
+ * CommandDispatcher (`engine/dispatcher.mjs`) opens a handle per run and hands it to the handler as
+ * `context.operation`. init/system.mjs calls `restoreUnfinished()` on the host during the RECOVERING startup step,
+ * before gameplay is allowed.
  */
 export class OperationRecovery {
   #ports;
 
   /**
    * @param {object} ports Injected by init/system.mjs.
-   * @param {{read: Function, write: Function, clear: Function}} ports.store The world-setting record access.
-   * @param {{capture: Function, restore: Function}} ports.snapshots Document and setting before-images.
-   * @param {Function} ports.notifyGm Shows the one GM notice when a restoration leaves entries unresolved.
+   * @param {{read: Function, write: Function, clear: Function}} ports.store Reads, writes and clears the setting.
+   * @param {{capture: Function, restore: Function}} ports.snapshots Reads old values and writes them back.
+   * @param {Function} ports.notifyGm Shows the one GM notice when an undo leaves entries unresolved.
    * @param {{record: Function}} ports.diagnostics Where the detail of every failure is written.
    * @param {Function} [ports.now] Clock for the record's `startedAt`.
    */
@@ -58,7 +63,7 @@ export class OperationRecovery {
   }
 
   /**
-   * The handle one dispatcher run captures through. Nothing is written until its first effective capture.
+   * The handle one command run saves its old values through. Nothing is saved until a capture adds something.
    * @param {{id: string, label?: string, userId?: string}} intent The root request id, its command id and requester.
    * @returns {Operation}
    */
@@ -69,9 +74,8 @@ export class OperationRecovery {
   }
 
   /**
-   * Put back what an interrupted host left behind. An `open` record is restored. A `restoring` record means the
-   * previous restoration was interrupted, so every entry is reported unverified and the record is cleared without
-   * a second attempt.
+   * Undo what an interrupted host left behind. An `open` record is undone. A `restoring` record means the previous
+   * undo was interrupted, so every entry is reported unverified and the record is cleared without a second attempt.
    * @returns {Promise<boolean>} Whether a record was found and fully restored.
    */
   async restoreUnfinished() {
@@ -111,9 +115,9 @@ export class OperationRecovery {
 /* -------------------------------------------- */
 
 /**
- * One run's capture, commit and restore boundary. Handlers receive it as `context.operation` and adapters as an
- * `operation` parameter. Child commands run through `invokeWithin` receive `joined()`, whose captures belong to
- * this root.
+ * One run's undo record: old values are saved before each write, then cleared on success or written back on
+ * failure. Handlers receive it as `context.operation` and the document writers as an `operation` parameter. Child
+ * commands run through `invokeWithin` receive `joined()`, which saves into this same record.
  */
 class Operation {
   #ports;
@@ -146,10 +150,10 @@ class Operation {
   }
 
   /**
-   * Record the before-images of everything the caller is about to change, in one durable save.
+   * Save the old values of everything the caller is about to change, in one write to the setting.
    * Anything already in the record is neither read nor saved again, so a call that adds nothing is free.
-   * Captures are serialized per operation: each one merges and saves before the next begins, so writers running
-   * in parallel cannot interleave two merges of the same record.
+   * Captures run one at a time: each one merges and saves before the next begins, so writers running in parallel
+   * cannot interleave two merges of the same record.
    * @param {object} [request] `{documents, deleting, creating, settings}`. See foundry/adapters/recovery.
    * @returns {Promise<boolean>} Whether this call added anything to the record.
    */
@@ -186,16 +190,15 @@ class Operation {
     return Boolean(next);
   }
 
-  /** Run `callback` once the record is durably committed. A restore drops it instead. */
+  /** Run `callback` once the record is committed (cleared after success). An undo drops it instead. */
   onCommit(callback) {
     if (typeof callback === 'function') this.#callbacks.push(callback);
   }
 
   /**
-   * Settle the record once the handler returned: commit when it succeeded, restore otherwise.
-   * A capture the handler already asked for finishes first. An abandoned run settles nothing, so its record stays
-   * open for the next startup. The handle is finished afterwards, so a writer that outlived its command cannot
-   * open a record nobody settles.
+   * Finish the record once the handler returned: clear it when the handler succeeded, write the old values back
+   * otherwise. A capture the handler already asked for finishes first. An abandoned run does nothing, so its record
+   * stays for the next startup. Once this returns, later captures throw.
    * @param {boolean} ok Whether the handler's result was accepted.
    * @returns {Promise<{outcome: string, restored: boolean}>}
    */
@@ -224,8 +227,8 @@ class Operation {
   }
 
   /**
-   * Give up on this run without touching the record, for the forced `recovery.clear-busy`.
-   * A later capture throws, settling does nothing, and the next startup restores whatever is still recorded.
+   * Give up on this run without touching the record, for the forced `recovery.clear-busy` and for page unload.
+   * A later capture throws, `settle` does nothing, and the next startup undoes whatever is still recorded.
    * @returns {boolean} Whether a durable record is open.
    */
   abandon() {
@@ -234,7 +237,7 @@ class Operation {
     return Boolean(this.#record);
   }
 
-  /** The handle nested `invokeWithin` work receives: captures reach this root, which settles for all of them. */
+  /** The handle child commands run through `invokeWithin` receive: they save into this record, finished here. */
   joined() {
     const root = this;
     this.#child ??= Object.freeze({
@@ -248,9 +251,8 @@ class Operation {
   }
 
   /**
-   * Commit the record: one atomic clear of the setting, then the post-commit callbacks. CommandDispatcher's
-   * `settle` is the only commit point, so nothing else decides that this run's writes may stand. A failed callback
-   * cannot turn committed work into a restore.
+   * Commit the record: one clear of the setting, then the after-commit callbacks. Only `settle` calls this. A failed
+   * callback cannot turn committed work into an undo.
    */
   async #commit() {
     if (this.#record) {
@@ -269,7 +271,7 @@ class Operation {
   }
 
   /**
-   * Drop everything the record already holds, so a defensive repeat reads no document and saves nothing.
+   * Drop everything the record already holds, so a repeated capture reads no document and saves nothing.
    * @returns {object|null} What is left to read, or null when the call adds nothing.
    */
   #unrecorded({ documents = [], deleting = [], creating = [], settings = [] } = {}) {
@@ -300,7 +302,7 @@ class Operation {
     return Object.values(wanted).some(group => group.length) ? wanted : null;
   }
 
-  /** The paths this record already protects on one document. A path any of them covers isn't read again. */
+  /** The paths this record already holds on one document. A path under any of them isn't read again. */
   #coveredPaths(uuid) {
     const entry = this.#record?.documents.find(item => item.uuid === uuid);
     return entry ? [...Object.keys(entry.fields), ...entry.absent] : [];
@@ -308,7 +310,7 @@ class Operation {
 
   /**
    * Remember the requests this record now answers. Document paths are read back from the record itself, so a
-   * default capture and an explicit one agree. mergeDocument still guarantees each leaf is recorded once.
+   * whole-document capture and a path-by-path one agree. mergeDocument still makes sure each leaf is recorded once.
    */
   #remember({ documents, deleting, creating, settings }) {
     for (const entry of documents) {
@@ -320,7 +322,7 @@ class Operation {
     for (const key of settings) this.#recorded.add(`setting|${String(key ?? '')}`);
   }
 
-  /** The world holds one record at a time, so a slot another operation still owns refuses rather than being lost. */
+  /** The world holds one record at a time: if another command's record is still there, refuse, never overwrite. */
   async #claimSlot() {
     let held = null;
     try {
@@ -364,7 +366,7 @@ class Operation {
 /* -------------------------------------------- */
 
 /**
- * Mark the record as being restored, hand it to the snapshots port, then clear it.
+ * Mark the record as being undone, have the snapshots service write the old values back, then clear it.
  * Each entry is attempted once. Anything still unresolved is reported, and nothing is retried.
  * @returns {Promise<boolean>} Whether every entry was resolved.
  */
@@ -398,9 +400,9 @@ async function restoreRecord(ports, record) {
 
 /**
  * The whole report: one GM notice, and one console diagnostic naming the operation, its label, every unresolved
- * key with its reason and the before-image each one still held, because the record is cleared straight after and
- * the Gamemaster repairs those documents by hand. The diagnostic raises no notice of its own, so the GM sees the
- * one notice rather than a stack of generic layer toasts.
+ * key with its reason and the old value each one still held, because the record is cleared straight after and
+ * the GM repairs those documents by hand. The diagnostic raises no notice of its own, so the GM sees the one
+ * notice rather than a stack of generic error toasts.
  */
 function report({ diagnostics, notifyGm }, record, unresolved) {
   const entries = unresolved ?? [];
@@ -432,7 +434,7 @@ function beforeImage(record, key) {
 /* -------------------------------------------- */
 
 /**
- * Add what a capture read to the open record, keeping the value captured first for a path already recorded.
+ * Add what a capture read to the open record, keeping the value saved first for a path already recorded.
  * @returns {object|null} The record to save, or null when the capture added nothing.
  */
 function mergeRecord(record, fragment) {
@@ -461,7 +463,7 @@ function mergeRecord(record, fragment) {
   return added ? next : null;
 }
 
-/** Merge one document's before-image, so the record holds every leaf once, at the value captured first. */
+/** Merge one document's old values, so the record holds every leaf once, at the value saved first. */
 function mergeDocument(record, entry) {
   const known = record.documents.find(item => item.uuid === entry.uuid);
   const target = known ?? { uuid: entry.uuid, fields: {}, absent: [] };
@@ -473,9 +475,9 @@ function mergeDocument(record, entry) {
 }
 
 /**
- * Record one path's before-image. A path an earlier capture already covers is dropped. A path that covers earlier
- * ones absorbs their values first, so a broader capture taken after the operation already wrote cannot put a
- * mid-operation value into the record. The entry therefore never holds two paths for the same leaf.
+ * Record one path's old value. A path an earlier capture already covers is dropped. A path that covers earlier
+ * ones takes in their values first, so a broader capture made after the command already wrote cannot record a
+ * value the command itself wrote. The entry never holds two paths for the same leaf.
  * @returns {boolean} Whether the record changed.
  */
 function recordPath(entry, path, value) {
@@ -490,7 +492,7 @@ function recordPath(entry, path, value) {
   return true;
 }
 
-/** Put every earlier before-image back inside a broader capture, at the position it was captured under. */
+/** Put every earlier saved value back inside a broader capture, at the position it was saved under. */
 function overlay(entry, path, value, covered) {
   let merged = value === ABSENT ? undefined : structuredClone(value);
   for (const known of covered) {
@@ -502,7 +504,7 @@ function overlay(entry, path, value, covered) {
   return merged === undefined ? ABSENT : merged;
 }
 
-/** Write one value inside a captured subtree, creating the branches it needs. */
+/** Write one value inside a saved subtree, creating the branches it needs. */
 function assignAt(subtree, segments, value) {
   const root = branch(subtree);
   let node = root;
@@ -514,7 +516,7 @@ function assignAt(subtree, segments, value) {
   return root;
 }
 
-/** Take one position out of a captured subtree, so a later capture cannot resurrect what held nothing. */
+/** Take one position out of a saved subtree, so a later capture cannot bring back what held nothing. */
 function removeAt(subtree, segments) {
   if (subtree === undefined) return undefined;
   const root = branch(subtree);
@@ -541,26 +543,26 @@ function branch(value) {
 }
 
 /**
- * The opaque identity a capture target is remembered under. A document that names none is always read again and
- * de-duplicated by mergeRecord, so no two documents can ever share one key.
+ * The key a capture target is remembered under. A document without a uuid is always read again and de-duplicated
+ * by mergeRecord, so no two documents can share one key.
  */
 function documentKey(entry) {
   return String(entry?.document?.uuid ?? entry?.uuid ?? '');
 }
 
-/** The identity one reserved creation is remembered under, before any document exists to name. */
+/** The key one planned creation is remembered under, before the document exists. */
 function creationKey(entry, id) {
   return `create|${String(entry?.parent?.uuid ?? '')}|${String(entry?.documentName ?? '')}|${id}`;
 }
 
-/** The uuid a reserved creation will carry, which is how a created document is never captured as a target. */
+/** The uuid a planned creation will have, so a document the command creates is never also saved as changed. */
 function createdUuid(entry) {
   return entry?.parentUuid
     ? `${entry.parentUuid}.${entry.documentName}.${entry.id}`
     : `${entry?.documentName}.${entry?.id}`;
 }
 
-/** Every identity a record names, for the report of a restoration nobody may verify. */
+/** Every key a record names, for the report of an undo nobody can verify. */
 function recordEntryKeys(record) {
   return [
     ...(record?.documents ?? []).map(entry => entry.uuid),

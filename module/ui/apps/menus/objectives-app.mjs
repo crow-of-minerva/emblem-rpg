@@ -266,11 +266,8 @@ function applyRoundLimitLock(root, state) {
 /* -------------------------------------------- */
 
 /**
- * Read every field back into state.
- *
- * The form is edited directly rather than through bound inputs, so this runs before any repaint or
- * read. Values are taken raw and only coerced at collect time, so a half-typed number is not rounded
- * away under the cursor.
+ * Copy every field back into state before a repaint or a save. The round limit is rounded down here; the other
+ * numbers stay as typed until saving, so a half-typed number is not changed under the cursor.
  */
 function syncFromDom(root, state) {
   const limit = Math.floor(Number(root.querySelector('[data-obj-field="roundLimit"]')?.value));
@@ -453,8 +450,7 @@ function collect(root, state) {
  *
  * Objectives are stored on the scene rather than the encounter, because ending an encounter deletes its document
  * and the map's conditions have to outlive it. The Save button is intercepted rather than given a callback, so a
- * validation failure keeps the dialog open. A save the host refuses keeps it open too, and the facade shows the
- * refusal notice.
+ * validation failure keeps the dialog open. A save the host refuses keeps it open too, with a notice saying why.
  */
 export async function openObjectivesEditor(scene = globalThis.canvas?.scene) {
   if (!globalThis.game?.user?.isGM || !scene) return null;

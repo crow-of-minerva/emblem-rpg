@@ -48,8 +48,8 @@ export function characterItemListing(item) {
 
 /**
  * A Character's equipment capacity: its derived `system.equipment.slots`, which compileCharacterData seeds from the
- * base below and item modifiers such as Armed to the Teeth add to. A unit with nothing compiled, such as a
- * projection taken before data preparation ran, carries the base.
+ * base below and item modifiers such as Armed to the Teeth add to. A unit whose data hasn't been prepared yet gets
+ * the base.
  * @param {number|undefined} equipmentSlots The unit's compiled slot count.
  * @returns {number}
  */
@@ -73,8 +73,8 @@ export function characterPocketCount(items) {
  * (vendorTags), so a tagged unit never loses its tag to a merge and an untagged one never gains one.
  * @param {Iterable<object>} items The candidate stacks, as Items or item data carrying their flags.
  * @param {object} incoming The arriving Resource.
- * @param {{sold: string[], buyback: ?object}} [tags] The tags the arriving copy will carry, when a settlement
- *   changes them on the way (a vendor purchase or sale); the incoming Item's own tags otherwise.
+ * @param {{sold: string[], buyback: ?object}} [tags] The tags the arriving copy will carry, when a vendor purchase
+ *   or sale changes them on the way; the incoming Item's own tags otherwise.
  * @returns {?object}
  */
 export function matchingResourceStack(items, incoming, tags = vendorTags(incoming)) {
@@ -90,7 +90,7 @@ export function matchingResourceStack(items, incoming, tags = vendorTags(incomin
 /*  Vendor tags                                 */
 /* -------------------------------------------- */
 /**
- * The hidden system flags a vendor settlement leaves on an Item until the table's Reset Downtime strips them
+ * The hidden system flags a vendor sale or purchase leaves on an Item until the table's Reset Downtime strips them
  * (document-writes/economy.mjs). `vendorSold` lists the Vendor Actor uuids that sold the Item, and each of them
  * refuses to buy it back. `vendorBuyback` sits on a Vendor's stock copy of something a party sold it: the seller's
  * haggle key and the per-unit gold paid, which that party buys it back at.
@@ -136,9 +136,9 @@ function sameVendorTags(left, right) {
 
 /**
  * Decide what leaves a unit whose equipment no longer fits its slots, as when a passive granting slots is lost.
- * Unequipped pieces go first, newest of them first, and only then the ones the unit is using. The engine's
- * reconciliation in engine/character/commands.mjs moves exactly these to the party Convoy.
- * @param {{items: object[], equipmentSlots?: number}} carrier The unit, carrying its compiled slot count.
+ * Unequipped pieces go first, newest of them first, and only then the ones the unit is using.
+ * engine/character/commands.mjs moves exactly these to the party Convoy.
+ * @param {{items: object[], equipmentSlots?: number}} carrier The unit, with its prepared slot count.
  * @returns {{overflowing: boolean, capacity: number, carried: number, itemIds: string[]}}
  */
 export function planEquipmentOverflow(carrier) {
@@ -169,7 +169,7 @@ function isEquippedItem(item) {
  * Whether a unit has room for an incoming item. engine/character/commands.mjs checks it before a transfer, and the
  * Character sheet before a drop, so both follow the same rules. A Resource that stacks onto one the unit already
  * carries comes back with that stack's `stackId`.
- * @param {{items: object[], equipmentSlots?: number}} carrier The receiving unit, carrying its compiled slot count.
+ * @param {{items: object[], equipmentSlots?: number}} carrier The receiving unit, with its prepared slot count.
  * @param {object} incoming The Item arriving.
  */
 export function characterItemAdmission(carrier, incoming) {
@@ -183,6 +183,7 @@ export function characterItemAdmission(carrier, incoming) {
   if (!section) return refuseAdmission('inventory.item-type', { itemType: incoming?.type ?? '' });
 
   if (section === 'equipment') {
+    // A unit may carry only one Armor, worn or not.
     if (system.itemType === 'Armor'
       && carried.some(item => item.type === 'Equipment' && itemSystem(item).itemType === 'Armor')) {
       return refuseAdmission('inventory.armor-full');
@@ -254,7 +255,7 @@ export function characterActorItemDropAllowed(item) {
 /* -------------------------------------------- */
 /**
  * Whether wearing an Item is the whole of its use. A shield or accessory activates nothing, so a click on one in
- * ui/controls/targeting.mjs is its equip toggle, and equipmentChangeRefusal below charges it no Action.
+ * ui/controls/targeting.mjs is its equip toggle, and equipmentChangeRefusal below asks no Action for it.
  */
 export function isEquipOnlyItem(item) {
   return item?.type === 'Equipment' && EQUIPPABLE.has(itemSystem(item).itemType);
@@ -370,9 +371,9 @@ export function wieldTakesOffShield(items, weapon) {
 
 /**
  * The items to unequip because their caster requirements no longer hold, for reconcileCharacterEquipmentEffects in
- * engine/character/commands.mjs. foundry/hooks/actors.mjs requests that reconciliation after an actor, effect or
- * item change, not only after a toggle.
- * @param {object} actor Inventory facts carrying `conditionSelf`.
+ * engine/character/commands.mjs. foundry/hooks/actors.mjs asks for that check after an actor, effect or item
+ * change, not only after a toggle.
+ * @param {object} actor The unit, with the values its conditions read as `conditionSelf`.
  * @returns {{updates: object[], unequipped: readonly {itemId: string, itemName: string,
  *   requirementNames: readonly string[]}[]}}
  */
@@ -398,11 +399,11 @@ export const EQUIPMENT_NOTICES = Object.freeze({
 });
 
 /**
- * Whether a unit may change this piece of equipment now: players are held to the turn economy, a GM is not.
- * Taking up a weapon or armor costs the unit's Action. A shield or accessory only needs the unit to have some turn
- * left (unitTurnComplete in game/combat/phases.mjs), and needs nothing outside an encounter, so exploration equips
- * freely.
- * @param {object} actorSystem The unit's system facts.
+ * Whether a unit may change this piece of equipment now. This only checks; nothing is spent here. Players are held
+ * to the turn economy, a GM is not. Putting on or taking off a weapon or armor needs the unit's Action, in or out
+ * of an encounter. A shield or accessory only needs the unit to have some turn left during an encounter
+ * (unitTurnComplete in game/combat/phases.mjs), and nothing outside one.
+ * @param {object} actorSystem The unit's system data.
  * @param {object} selected The Item being toggled.
  * @param {{isGM: boolean, inCombat: boolean}} context Caller permission and whether an encounter is underway.
  * @returns {string|null} The refusal code, or null to allow.
@@ -481,9 +482,9 @@ function armorProficiency(actorSystem, item) {
 }
 
 /**
- * Check an item's caster requirements for equipment toggles and reconciliation. Target requirements are skipped, and
- * so is every check when the actor has no `conditionSelf`. Silence isn't checked, because it blocks using an item,
- * not carrying it.
+ * Check an item's caster requirements for equipment toggles and planRequirementUnequips. Target requirements are
+ * skipped, and so is every check when the actor has no `conditionSelf`. Silence isn't checked, because it blocks
+ * using an item, not carrying it.
  */
 function equipmentRequirements(actor, item) {
   const requirements = itemSystem(item).requirements;

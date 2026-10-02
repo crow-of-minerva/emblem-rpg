@@ -24,16 +24,16 @@ const ITEM_USES_PATH = 'system.uses.current';
 /* -------------------------------------------- */
 
 /**
- * Reads and rewrites the Character units a GM restore or repair covers. engine/development.mjs reads a snapshot,
- * turns each unit into a resolution through game/character/rules.mjs, and hands the resolutions back here to save
- * under the command's operation.
+ * Reads and rewrites the Character units a GM restore or repair covers. engine/development.mjs works out each
+ * unit's restored values (through game/character/rules.mjs); this class saves them, with undo through the command's
+ * operation.
  */
 export class FoundryDevelopmentRepository {
   /**
    * The Character units a restore or repair covers, each Actor once, with its resources, faction role, Item uses
    * and effects (id, kind and statuses) as plain data. Units whose role the intent excludes are left out.
    * @param {object} intent A normalized restore or repair intent.
-   * @returns {Promise<object|null>} The snapshot, or null when a Scene intent names no live Scene.
+   * @returns {Promise<object|null>} The units, or null when a Scene intent names no live Scene.
    */
   async getSnapshot(intent) {
     const units = new Map();
@@ -92,9 +92,9 @@ export class FoundryDevelopmentRepository {
   }
 
   /**
-   * Look up every unit, record everything about to change on the operation in one capture, then write each unit.
-   * A failed write throws on to engine/development.mjs, which refuses the command so CommandDispatcher rolls the
-   * whole sweep back.
+   * Look up every unit, save everything about to change on the operation for undo in one call, then write each
+   * unit. A failed write throws on to engine/development.mjs, which refuses the command so CommandDispatcher puts
+   * every unit back.
    */
   async #persist(resolutions, detail, operation, plan) {
     const units = [];
@@ -149,7 +149,7 @@ function admitUnit(actor, units) {
 }
 
 /* -------------------------------------------- */
-/*  Snapshot projection                         */
+/*  Unit data                                   */
 /* -------------------------------------------- */
 function projectUnit(actor) {
   const special = Object.fromEntries(Object.entries(actor.system?.special ?? {}).map(([key, pool]) => [key, {
@@ -210,7 +210,7 @@ function resourceState(resource, fallbackMax) {
 /*  Persistence                                 */
 /* -------------------------------------------- */
 
-/** The Items a resolution tops up that the unit still carries. Only these are recorded and counted. */
+/** The Items a restore or repair tops up that the unit still carries. Only these are saved for undo and counted. */
 function presentItems(actor, items = []) {
   return items
     .map(item => ({ document: actor.items.get(String(item.id ?? '')), uses: item.uses }))

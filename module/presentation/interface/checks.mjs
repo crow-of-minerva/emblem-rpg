@@ -5,10 +5,7 @@ import { avatarScaleStyle, escapeHtml } from '../../lib/dom/html.mjs';
 /* -------------------------------------------- */
 /*  Character check chat                        */
 /* -------------------------------------------- */
-/**
- * Post the chat cards for skill checks and saving throws through FoundryChatOutput. The engine's check, trade,
- * movement, object, downtime and item activation commands call it with the rolled results.
- */
+/** Post the chat cards for skill checks and saving throws through FoundryChatOutput, from the rolled results. */
 export class CharacterCheckChatPresenter {
   constructor(output) {
     this.output = output;
@@ -19,6 +16,7 @@ export class CharacterCheckChatPresenter {
    * verdict, so its title carries the target after the activity, then its roll mode.
    */
   async presentSkill(data) {
+    // `contested` means the check has a DC.
     const contested = Number.isFinite(data.dc);
     const modeLabel = data.check.mode === 'advantage' ? ' (Advantage)'
       : data.check.mode === 'disadvantage' ? ' (Disadvantage)' : '';

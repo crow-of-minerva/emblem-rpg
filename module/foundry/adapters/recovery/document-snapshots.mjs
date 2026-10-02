@@ -5,12 +5,12 @@ import { isPlainObject, structurallyEqual } from '../../../lib/core/runtime.mjs'
 import { clone, forcedDeletion, forcedReplacement, readSetting, resolveDocument } from '../services/host.mjs';
 import { reportFoundryError } from '../services/diagnostics.mjs';
 
-/** Source keys no capture records: Foundry owns the identity, and the stats block follows every write. */
+/** Saved-data keys never recorded: Foundry owns the id, and `_stats` changes with every write. */
 const SKIPPED_KEYS = new Set(['_id', '_stats']);
 
 /**
- * Documents whose flags also hold other modules' data. Only this system's scope is captured, since gameplay writes
- * no other.
+ * Documents whose flags also hold other modules' data. Only this system's flags are recorded, since commands write
+ * no others.
  */
 const NARROWED_FLAGS = new Set(['Actor', 'ActorDelta']);
 
@@ -21,19 +21,19 @@ const FREE_FORM_ROOT = 'flags';
 const OWNERSHIP_ROOT = 'ownership';
 
 /* -------------------------------------------- */
-/*  Snapshots                                   */
+/*  Undo records                                */
 /* -------------------------------------------- */
 
 /**
- * Read live documents and settings into the serializable entries of an operation record, and apply a record back.
+ * Save the current values of what a command will change, and put them back if the command fails.
  *
- * OperationRecovery (engine/recovery/operations.mjs) is the only caller. It merges what `capture` returns into the
- * record FoundryOperationStore keeps, and hands the whole record to `restore` when the operation failed or a startup
- * found it.
+ * OperationRecovery (engine/recovery/operations.mjs) merges what `capture` returns into the record
+ * FoundryOperationStore keeps, and hands the whole record to `restore` when the command failed or a startup finds
+ * it unfinished.
  */
 export class FoundryDocumentSnapshots {
   /**
-   * The current saved values of everything one capture call names.
+   * The current saved values of everything the request names.
    * @param {object} request Documents (`Document` or `{document, paths}`), documents being deleted, reserved
    *   creations (`{parent, documentName, ids, pack}`) and world-setting keys.
    * @returns {Promise<object>} Record entries, ready to merge.
@@ -53,8 +53,8 @@ export class FoundryDocumentSnapshots {
    *
    * Each entry is attempted once and then checked against the world, because Foundry refuses a write without
    * throwing: a `preUpdate`, `preCreate` or `preDelete` veto, or a validation error, makes `ClientDatabaseBackend`
-   * drop the entry and hand the caller the empty remainder. An entry counts as resolved only when the protected
-   * paths hold their captured values, a recreated document resolves at its uuid and a removed one no longer does.
+   * drop the entry and hand the caller the empty remainder. An entry counts as resolved only when the recorded
+   * paths hold their saved values, a recreated document resolves at its uuid and a removed one no longer does.
    * Nothing is retried. An entry that failed either check is collected, so the rest still run and the caller
    * reports it once.
    * @param {object} record The record as it stands, in state `restoring`.
@@ -71,10 +71,10 @@ export class FoundryDocumentSnapshots {
 }
 
 /* -------------------------------------------- */
-/*  Capture                                     */
+/*  Recording                                   */
 /* -------------------------------------------- */
 
-/** One update target's persisted values, keyed by the paths the writer protected. */
+/** One document's saved values at the paths the command will change. */
 function captureDocument(entry) {
   const document = captureTarget(entry?.document ?? entry);
   const source = document?._source;
@@ -94,8 +94,8 @@ function captureDocument(entry) {
 }
 
 /**
- * A synthetic Actor is persisted as its Token's ActorDelta, never as the prepared data the Token shows, so the
- * delta is what is captured and what a restore writes.
+ * An unlinked token's actor is saved as its Token's ActorDelta, never as the prepared data the Token shows, so the
+ * delta is what is recorded and what a restore writes.
  */
 function captureTarget(document) {
   if (document?.documentName !== 'Actor' || document.isToken !== true) return document;
@@ -123,7 +123,7 @@ function captureDeletion(document) {
   };
 }
 
-/** Identities reserved before the create is issued, so a restore can find and delete what the writer created. */
+/** Ids chosen before the create is sent, so a restore can find and delete what the command created. */
 function captureCreation(entry) {
   const parentUuid = String(entry?.parent?.uuid ?? '');
   const documentName = String(entry?.documentName ?? '');
@@ -157,7 +157,7 @@ async function recreate(entry, unresolved) {
   }
 }
 
-/** One update per document, whatever an intervening edit did to the paths this operation protected. */
+/** Put one document's recorded paths back in a single update, whatever later edits did to them. */
 async function restoreFields(entry, unresolved) {
   try {
     const document = await resolveDocument(entry.uuid);
@@ -196,7 +196,7 @@ async function remove(entry, unresolved) {
 async function restoreSetting(entry, unresolved) {
   try {
     await game.settings.set(SYSTEM_ID, entry.key, clone(entry.value));
-    // Read the stored value back the way the capture read it, so a typed setting is compared as its own source.
+    // Read the stored value back the way it was first read, so a typed setting is compared as its own source.
     if (!structurallyEqual(clone(readSetting(entry.key, null)), entry.value ?? null)) {
       unresolved.push({ key: entry.key, reason: 'not-restored' });
     }
@@ -207,13 +207,11 @@ async function restoreSetting(entry, unresolved) {
 }
 
 /**
- * The update that puts one document back: every captured leaf that differs is written, and everything the
- * operation introduced is deleted. Only free-form data is deleted at an ancestor. A schema-backed container such
- * as `system.resources` may not be undefined, so there only its leaves go, and an emptied container is left as
- * harmless residue. Whole subtrees are never replaced, because a replaced sparse ActorDelta would leave its
- * synthetic Actor holding the wrong data. The one exception is an `ownership` map that holds an entry the capture
- * did not (see ownershipReplacement). An ActorDelta map captured without a `default` counts as restored while its
- * stored default is the one pinnedOwnershipDefault gives it.
+ * The update that puts one document back: saved values that differ are written, and anything the command added is
+ * deleted. Only flags can lose a whole added branch at once; a schema field such as `system.resources` can't be
+ * unset, so only its leaves go and an emptied container is left behind. Subtrees are never replaced whole, because
+ * an ActorDelta stores only a token's differences from its actor, and replacing part of it would leave the token's
+ * actor with the wrong data. The exception is an `ownership` map that gained an entry (see ownershipReplacement).
  */
 function fieldChanges(document, entry) {
   const source = document._source;
@@ -245,12 +243,12 @@ function fieldChanges(document, entry) {
 }
 
 /**
- * The write that puts a captured `ownership` map back when the stored map holds an entry it did not. v14's
+ * The write that puts a saved `ownership` map back when the stored map holds an entry it did not. v14's
  * DocumentOwnershipField refuses a deletion inside the map, and ClientDatabaseBackend then drops the whole update
- * without throwing, so the captured map is written whole, the way core's ownership configuration writes it. The
- * value is the document's own persisted one, so an ActorDelta that held no ownership of its own gets null back and
- * its synthetic Actor reads the base Actor's ownership again. An ActorDelta map captured without a default is
- * written with the pinned one.
+ * without throwing, so the saved map is written whole, the way core's ownership configuration writes it. The
+ * value is the document's own saved one, so an ActorDelta that held no ownership of its own gets null back and
+ * its token's actor reads the base Actor's ownership again. An ActorDelta map saved without a default is written
+ * with the one pinnedOwnershipDefault picks.
  */
 function ownershipReplacement(captured, pinned) {
   if (captured === null) return { [OWNERSHIP_ROOT]: null };
@@ -260,12 +258,12 @@ function ownershipReplacement(captured, pinned) {
 }
 
 /**
- * The `default` an ActorDelta's own ownership map is written back with when its capture held none. Foundry fills
+ * The `default` an ActorDelta's own ownership map is written back with when the saved map had none. Foundry fills
  * a replaced map's missing default with NONE, and BaseActorDelta.applyDelta merges the delta's map over the base
  * Actor's, so that NONE would override the base Actor's default for every user without an entry of their own. The
  * base Actor's current default keeps those users at the level the merge gave them before the restore. Without a
  * base Actor there is no merge, and NONE is what the delta's own map already meant. Undefined for any other
- * document, for a null capture and for a captured map that holds a default.
+ * document, for a saved null and for a saved map that holds a default.
  */
 function pinnedOwnershipDefault(document, captured) {
   if (document.documentName !== 'ActorDelta' || !isPlainObject(captured) || Object.hasOwn(captured, 'default')) {
@@ -275,14 +273,14 @@ function pinnedOwnershipDefault(document, captured) {
   return Number.isInteger(level) ? level : CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE;
 }
 
-/** Whether a path names free-form data, the only place a whole introduced branch may be deleted at its root. */
+/** Whether a path is under flags, the only place a whole added branch may be deleted at once. */
 function freeForm(path) {
   return path === FREE_FORM_ROOT || path.startsWith(`${FREE_FORM_ROOT}.`);
 }
 
 /**
- * The shallowest path below the captured root that holds nothing this operation captured, so a whole introduced
- * branch goes in one deletion and a branch with captured siblings loses only the leaf.
+ * The shallowest path below the saved root that holds nothing that was saved, so a whole added branch goes in one
+ * deletion and a branch with saved siblings loses only the leaf.
  */
 function removablePath(root, leaf, captured) {
   const segments = leaf.split('.');
@@ -340,7 +338,7 @@ function readPath(source, path) {
   return value;
 }
 
-/** The uuid a reserved creation carries once the writer has created it. */
+/** The uuid a reserved creation carries once the command has created it. */
 function createdUuid(entry) {
   return entry.parentUuid
     ? `${entry.parentUuid}.${entry.documentName}.${entry.id}`

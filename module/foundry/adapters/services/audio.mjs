@@ -15,7 +15,7 @@ import { reportFoundryError, reportFoundryProbe } from './diagnostics.mjs';
 /* -------------------------------------------- */
 /*  Audio playback                              */
 /* -------------------------------------------- */
-/** Plays system sounds for AudioService (presentation/audio/service.mjs), which init/system.mjs builds with it. */
+/** Plays the system's sounds for the audio service (presentation/audio/service.mjs). */
 export class FoundryAudioPlayer {
   /**
    * Play a sound through Sequencer when it needs a delay, fade or time range, otherwise through Foundry's
@@ -80,7 +80,7 @@ const PHASE_MUSIC_FADE_IN_MS = 500;
 const PHASE_MUSIC_FADE_OUT_MS = 1000;
 
 /**
- * Phase music, run on the command host. While an encounter runs, its Scene's configured phase track replaces the
+ * Phase music, run on the host client. While an encounter runs, its Scene's configured phase track replaces the
  * Scene's own music and restarts on each phase change. syncPhaseMusic and restorePhaseMusic in init/system.mjs
  * drive it from Scene and encounter hooks.
  */
@@ -92,7 +92,8 @@ export class FoundryPhaseMusic {
   /**
    * Bring the music in line with the running encounter's Scene. A track already playing for the same phase, round
    * and track is left alone. A new phase or round restarts it. The Scene's own music comes back when no phase track
-   * is set or the track can't be found.
+   * is set or the track can't be found. Calls are not queued: one phase change can fire both the combat and the
+   * scene update hooks, and the two syncs can overlap.
    */
   async sync(scene) {
     if (!localUserIsActiveGm()) return;
@@ -191,12 +192,10 @@ function trackPlaying({ playlist, sound }) {
 /* -------------------------------------------- */
 
 /**
- * Play a performed song's track on the host for engine/downtime/resolvers.mjs, which starts it as the performance's
- * banner opens and never waits on it. Every PlaylistSound playing across the world's Playlists fades out and the
- * track fades in. When the track stops, by ending or by the GM stopping it, the sounds that were playing before fade
- * back in. On a total failure the resolver calls `stop`, which cuts the track off and brings them back at once. A
- * second performance stops the first track and keeps the sounds from before the first. Only this page remembers
- * them, so after a host reload the track plays out and nothing resumes.
+ * Performance music on the host client: every PlaylistSound playing fades out and the song fades in. When the song
+ * stops, by ending or by the GM stopping it, the earlier sounds fade back in; `stop` cuts it off and brings them
+ * back at once. A second performance replaces the first and still restores the sounds from before the first. Only
+ * this browser tab remembers what to restore, so after a host reload the song plays out and nothing resumes.
  */
 export class FoundryPerformanceMusic {
   /** The track playing now and the earlier sounds it silenced. `started` turns true once its playback began. */
@@ -490,15 +489,14 @@ async function stopSceneMusic(scene) {
 /*  Unit audio                                  */
 /* -------------------------------------------- */
 /**
- * Unit voice and footstep audio: the facts unit audio reads from actors, clip lookup in the Data folders, and the
- * GM's approval map for custom audio folders (VOICE_PATH_APPROVALS_SETTING). UnitAudioService
- * (presentation/audio/service.mjs) lists its clip folders through it as `files`.
+ * Unit voice and footstep audio: what unit audio reads from an actor, clip lookup in the Data folders, and the GM's
+ * approval map for custom audio folders (VOICE_PATH_APPROVALS_SETTING).
  */
 class FoundryUnitAudioRepository {
   /** The approval write still in flight, which the next one waits behind. */
   #approvalWrites = Promise.resolve();
 
-  /** The voice facts unit audio needs: the voice folder, whether a GM approved it, and HP. */
+  /** What voice playback needs from an actor: the voice folder, whether a GM approved it, and HP. */
   voiceFacts(actor) {
     const voicePath = normalizeAudioFolderPath(actor?.system?.art?.voicePath) ?? '';
     return Object.freeze({
@@ -524,7 +522,7 @@ class FoundryUnitAudioRepository {
     return Object.freeze({ file, durationMs: await audioDurationMs(file) });
   }
 
-  /** A random critical-hit clip from the actor's approved voice folder, for the exchange snapshot, or null. */
+  /** A random critical-hit clip from the actor's approved voice folder, for a combat exchange, or null. */
   async criticalVoiceClip(actorUuid) {
     let actor = null;
     try { actor = await globalThis.fromUuid(String(actorUuid ?? '')); } catch (diagnosticError) {
@@ -555,8 +553,8 @@ class FoundryUnitAudioRepository {
   }
 
   /**
-   * A token's footstep facts: whether it's airborne, mounted or armored, and its custom footstep folders, each kept
-   * only if a GM approved it.
+   * What footstep sounds need from a token: whether it's airborne, mounted or armored, and its custom footstep
+   * folders, each kept only if a GM approved it.
    */
   footstepFacts(tokenDocument) {
     const actor = tokenDocument?.actor;
@@ -576,8 +574,8 @@ class FoundryUnitAudioRepository {
   }
 
   /**
-   * Footstep timing for one finished move: the step count and the animation's length. null for a restore write or
-   * a move made outside movement planning.
+   * Footstep timing for one finished move: the step count and the animation's length. null for a move that puts a
+   * token back after a failed command, or a move made outside movement planning.
    */
   movementFootstepFacts(tokenDocument, movement, operation = {}) {
     const waypoints = movement?.passed?.waypoints;
@@ -624,15 +622,15 @@ class FoundryUnitAudioRepository {
     return plainRecord(approvals) && Object.hasOwn(approvals, key) && approvals[key] === path;
   }
 
-  /** Record or clear the exact voice folder a GM approved for privileged browsing. */
+  /** Record or clear the exact voice folder a GM approved, so the host client may list its files. */
   async approveVoicePath(actor, rawPath) {
     const key = voiceApprovalKey(actor);
     return this.#approvePath(key, rawPath);
   }
 
   /**
-   * Approve current voice folders for an imported Actor batch in one setting write, allowing host-side clip
-   * browsing.
+   * Approve the current voice folders of a batch of imported Actors in one setting write, so the host client may
+   * list their clips.
    */
   async approveVoicePathsFor(actors) {
     if (!game.user?.isGM) return 0;
@@ -707,9 +705,8 @@ class FoundryUnitAudioRepository {
 }
 
 /**
- * The single instance for this page. init/system.mjs hands it to unit playback, health, combat, progression and the
- * voice-approval hooks, and ui/apps/menus/acp-app.mjs approves folders through it. Sharing one instance means every
- * approval write queues behind the one before it.
+ * The single instance for this browser tab. Sharing one instance means every approval write queues behind the one
+ * before it.
  */
 export const unitAudioRepository = new FoundryUnitAudioRepository();
 

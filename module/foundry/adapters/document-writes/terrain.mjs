@@ -52,8 +52,8 @@ function readSpawnState(scene) {
 }
 
 /**
- * The Scene paths to capture for these squares' arrival records. On a map that has fired nothing yet the whole flag
- * is captured, so a rollback removes it rather than leaving an empty record behind.
+ * The Scene paths to record for undo for these squares' arrival records. On a map that has fired nothing yet the
+ * whole flag is recorded, so undo removes it rather than leaving an empty record behind.
  */
 function spawnStatePaths(scene, stateKeys) {
   if (scene.getFlag(SYSTEM_ID, TERRAIN_SPAWN_STATE_FLAG) === undefined) return [TERRAIN_SPAWN_STATE_PATH];
@@ -65,9 +65,9 @@ function spawnStatePaths(scene, stateKeys) {
 /* -------------------------------------------- */
 
 /**
- * The Terrain Builder's write port, bound to one Scene and handed to TerrainAuthoringService. The builder edits
- * outside CommandDispatcher. `replace` sends one Scene update in which each entry the plan rewrites is replaced
- * whole and each entry it drops is deleted, so a failed write can't leave an edit half applied.
+ * The Terrain Builder's writes for one Scene, used by TerrainAuthoringService outside any command (so nothing is
+ * recorded for undo). `replace` sends one Scene update that replaces each rewritten entry whole and deletes each
+ * dropped one, so an edit can't half-apply.
  */
 export function createTerrainReplacementPort(scene = globalThis.canvas?.scene, diagnostics = null) {
   requireTerrainScene(scene);
@@ -144,7 +144,7 @@ export class FoundryTerrainRepository {
     this.wait = wait;
   }
 
-  /** Project the board a spawn is placed on, together with what each square has already fired. */
+  /** Read the map a spawn is placed on, together with what each square has already fired. */
   async getSpawnBoard(sceneUuid) {
     const scene = await readPersistedTerrainScene(sceneUuid);
     if (!scene) return null;
@@ -172,7 +172,7 @@ export class FoundryTerrainRepository {
 
   /**
    * The UUID the arrival's Actor will have, for the phase command's lock keys. It works before an unlinked Token
-   * exists by using the id reserved for it.
+   * exists by using the id picked for it.
    */
   async spawnActorUuid({ sceneUuid, uuid, tokenId }) {
     const scene = await readPersistedTerrainScene(sceneUuid);
@@ -184,8 +184,8 @@ export class FoundryTerrainRepository {
   }
 
   /**
-   * Create the arrival's Token. Its id and the square's arrival record are captured in one call, so the cooldown
-   * recordSpawnState writes afterwards needs no capture of its own.
+   * Create the arrival's Token. Its id and the square's arrival record are recorded for undo in one save, so the
+   * cooldown recordSpawnState writes afterwards is already covered.
    */
   async createSpawn({ sceneUuid, uuid, tokenId, footprint, stateKey = '', operation = null }) {
     const scene = await readPersistedTerrainScene(sceneUuid);
@@ -213,8 +213,8 @@ export class FoundryTerrainRepository {
   }
 
   /**
-   * Attach arrival behavior, broadcast the spawn ping and fade in the Token, then wait for the fade on the engine
-   * clock. Everything written here belongs to the Token the same operation created, so nothing is captured.
+   * Attach arrival behavior, broadcast the spawn ping and fade in the Token, then wait out the fade on a timer.
+   * Everything written here belongs to the Token the same command created, so undoing that creation covers it.
    */
   async settleSpawn({ sceneUuid, tokenId, footprint, behavior = '' }) {
     const scene = await readPersistedTerrainScene(sceneUuid);
@@ -240,7 +240,7 @@ export class FoundryTerrainRepository {
 
   /**
    * Record which squares have fired this round. A completed entry is the square's cooldown, which
-   * `collectDueTerrainSpawns` reads on later phases, so it is ordinary Scene state captured like any other.
+   * `collectDueTerrainSpawns` reads on later phases, so it is ordinary Scene state, recorded for undo like any other.
    */
   async recordSpawnState(sceneUuid, fired, operation = null) {
     const scene = await readPersistedTerrainScene(sceneUuid);
@@ -286,8 +286,8 @@ export class FoundryTerrainRepository {
 
   /**
    * Write each expired terrain cell and its journal entry in one Scene update.
-   * Countdown-only changes update the counter, and restores use the receipt's saved after-image. When the caller runs
-   * under a command, its `operation` captures exactly the flag entries this sweep rewrites before the update.
+   * Countdown-only changes update the counter, and restores write back the cell value the plan carries. Under a
+   * command, exactly the flag entries this sweep rewrites are recorded for undo before the update.
    */
   async applyEditSweep(sceneUuid, plan, operation = null) {
     const scene = await readPersistedTerrainScene(sceneUuid);
@@ -345,7 +345,7 @@ export class FoundryTerrainRepository {
   }
 }
 
-/** A sweep result. Its code says what happened: applied, a missing Scene, stale facts, a no-op or a failed write. */
+/** A sweep result. Its code says what happened: applied, a missing Scene, stale records, a no-op or a failed write. */
 function sweepAnswer(code, { stale = 0 } = {}) {
   return {
     ok: code !== TERRAIN_PERSISTENCE_CODES.MISSING_SCENE && code !== TERRAIN_PERSISTENCE_CODES.WRITE_FAILED,
@@ -571,7 +571,7 @@ async function deleteTerrainWall(wallId, scene = globalThis.canvas?.scene) {
   if (wallId) await scene.deleteEmbeddedDocuments('Wall', [wallId]);
 }
 
-/** Delete every wall the builder can edit, leaving a locked Door's own walls to door reconciliation. */
+/** Delete every wall the builder can edit, leaving the walls vision.mjs keeps for locked Doors. */
 async function clearTerrainWalls(scene = globalThis.canvas?.scene) {
   requireTerrainScene(scene);
   const wallIds = collectionValues(scene.walls)
@@ -587,7 +587,10 @@ async function clearTerrainWalls(scene = globalThis.canvas?.scene) {
 let placeableSync = null;
 let queuedPlaceableScene = null;
 
-/** Reconcile painted light and audio fields into Foundry embedded documents. */
+/**
+ * Bring the Scene's generated AmbientLights and AmbientSounds in line with the painted terrain. Runs on the active
+ * GM's client only; a sync asked for while one is running is queued and runs after it.
+ */
 export async function syncTerrainPlaceables(scene = globalThis.canvas?.scene) {
   if (!localUserIsActiveGm() || !scene || !globalThis.canvas?.grid) return;
   if (placeableSync) {
@@ -700,6 +703,11 @@ function embeddedByTerrainFlag(collection, flagName) {
   return result;
 }
 
+/**
+ * Create, update and delete generated documents so they match the painted terrain. With a signature flag (lights),
+ * a document is rewritten only when the painted data changes, so a GM's hand edit stays until then. Without one
+ * (sounds), the live fields are compared, so a hand edit is put back on the next sync.
+ */
 async function reconcileEmbeddedDocuments(scene, documentName, existing, desired, keyFlag, signatureFlag) {
   const toDelete = [...existing].filter(([key]) => !desired.has(key)).map(([, document]) => document.id);
   const toCreate = [];

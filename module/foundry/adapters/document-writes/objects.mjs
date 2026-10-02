@@ -51,10 +51,9 @@ const DROP_CHEST_SCALE = 0.3;
 /**
  * Reads and writes for engine/objects: locks and doors, rack Armaments, and dropping or discarding items.
  *
- * Every write takes the running command's operation (as a parameter, or on the snapshot the engine froze) and
- * captures the before-images of what it will change before its first write. The lock writes rely on
- * captureLockWrites, which records them all up front. CommandDispatcher commits or restores that record, so
- * nothing here has to undo its own writes.
+ * Most writes take the running command's `operation` (its undo record, passed in or carried on the snapshot) and
+ * record what they will change before writing. The lock writes (unlock, consumeKey, spendEnergy) take none; the
+ * command records them all up front through captureLockWrites. Nothing here undoes its own writes.
  */
 export class FoundryObjectRepository {
   constructor({ movements }) {
@@ -62,8 +61,9 @@ export class FoundryObjectRepository {
   }
 
   /**
-   * CommandDispatcher lock keys: the board and the Scenes, Tokens and Actors involved, any drop pile under them,
-   * and every placement of a lock whose art may change. A drop from a unit with no Token locks only its Actor.
+   * What an object command locks while it runs: all movement (`movement:board`), the scenes, tokens and actors
+   * involved, any drop pile under them, and every placement of a lock whose art may change. A drop from a unit with
+   * no Token locks only its Actor.
    */
   async resourceKeys(payload = {}) {
     if (payload.sourceActorUuid) return [`actor:${String(payload.sourceActorUuid)}`];
@@ -88,7 +88,7 @@ export class FoundryObjectRepository {
   }
 
   /**
-   * Project the acting unit, the lock beside or under it, and the Scene state that decides what the attempt costs.
+   * Read the acting unit, the lock beside or under it, and the Scene state that decides what the attempt costs.
    * A hidden lock isn't there, so it reads as none.
    */
   async getLockSnapshot(intent) {
@@ -123,12 +123,12 @@ export class FoundryObjectRepository {
   }
 
   /**
-   * Record everything a lock attempt may change, in the one capture engine/objects/interaction.mjs makes before
-   * `settleLock` writes: the Object and each of its placements (whose art the opening swaps), the acting unit and
-   * its Token, and the key the attempt spends.
+   * Record, in one save before `settleLock` writes (engine/objects/interaction.mjs), everything a lock attempt may
+   * change: the Object and each of its placements (whose art the opening swaps), the acting unit and its Token, and
+   * the key the attempt spends.
    * @param {object} snapshot The lock snapshot the handler validated.
    * @param {{consumesKey?: boolean}} plan The opening plan from game/objects/rules.mjs.
-   * @param {object|null} operation The command's operation handle, or null outside a command.
+   * @param {object|null} operation The command's undo record, or null outside a command.
    */
   async captureLockWrites(snapshot, plan, operation = null) {
     if (!operation) return;
@@ -142,7 +142,7 @@ export class FoundryObjectRepository {
     });
   }
 
-  /** Open the lock and bring each placed Token's art up to date, under the command's current resource holds. */
+  /** Open the lock and bring each placed Token's art up to date. Fails if the command can't lock those Tokens too. */
   async unlock(snapshot, resources) {
     const actor = await resolveActor(snapshot.lock.actorUuid);
     if (!actor || actor.system?.locked !== true) return false;
@@ -162,8 +162,8 @@ export class FoundryObjectRepository {
   }
 
   /**
-   * Write the Energy and Energy-lane commitment a lockpick in free exploration leaves the unit with, the same two
-   * fields the downtime writer spends for gathering, forging and brewing.
+   * Write the Energy and downtime commitment a lockpick in free exploration leaves the unit with, the same two
+   * fields gathering, forging and brewing spend.
    */
   async spendEnergy(snapshot, spend) {
     const actor = await resolveActor(snapshot.source.actorUuid);
@@ -192,7 +192,7 @@ export class FoundryObjectRepository {
   /* -------------------------------------------- */
 
   /**
-   * Project the unit, the Armament named or already borrowed, and whether the unit still stands on it. A hidden
+   * Read the unit, the Armament named or already borrowed, and whether the unit still stands on it. A hidden
    * Armament reads as none, so it can't be taken up, though a unit already borrowing one can still hand it back.
    */
   async getArmamentSnapshot(intent) {
@@ -265,7 +265,7 @@ export class FoundryObjectRepository {
   /* -------------------------------------------- */
 
   /**
-   * Project the unit, the Item it means to set down, and whether it stands on a Scene to drop onto. A unit named by
+   * Read the unit, the Item it means to set down, and whether it stands on a Scene to drop onto. A unit named by
    * its Actor stands on none: it has no Token, Scene or plan, and can only discard what it carries.
    */
   async getDropSnapshot(intent) {
@@ -350,8 +350,8 @@ export class FoundryObjectRepository {
   }
 
   /**
-   * Release the rack once its wielder no longer stands on it. Checked after each movement commit
-   * (engine/movement/commands.mjs) and whenever the wielder's Token moves (foundry/hooks/objects.mjs).
+   * Release the rack once its wielder no longer stands on it. Checked after each movement commit and whenever the
+   * wielder's Token moves.
    */
   async releaseArmamentIfLeft(tokenUuid, operation = null) {
     const snapshot = await this.getArmamentSnapshot({ sourceTokenUuid: tokenUuid, armamentTokenUuid: '' });
@@ -404,9 +404,9 @@ function findDropPile(scene, x, y) {
 }
 
 /**
- * Make the ids a drop is about to create and record its before-images in one capture, so a command that fails
- * afterwards has exactly the copy, bag and template to remove and the original Item to put back. Without an
- * operation nothing is reserved and Foundry assigns the ids.
+ * Pick the ids for what a drop creates (the copy in an existing pile, or a new bag Token and, if the world has
+ * none, the bag template) and record them with the original Item, so a failed command can remove them and give the
+ * Item back. Without an undo record nothing is picked and Foundry assigns the ids.
  * @returns {{itemIds: string[], tokenId: string, templateId: string}} What dropPayloadsAt must create with.
  */
 async function reserveDropPlacement(scene, x, y, payloads, operation = null, deleting = []) {
@@ -464,7 +464,11 @@ function dropChestTemplateActor() {
     .find(actor => actor.getFlag(SYSTEM_ID, DROP_CHEST_TEMPLATE_FLAG) === true) ?? null;
 }
 
-/** The drop-bag template, created under the id reserveDropPlacement reserved when the world has none yet. */
+/**
+ * The drop-bag template, created when the world has none yet. The create passes the id reserveDropPlacement picked
+ * but not `keepId`, so Foundry assigns a new id and undo can't remove the template. The fix-up update on an
+ * existing template isn't recorded for undo either.
+ */
 async function dropChestTemplate(templateId = '') {
   const existing = dropChestTemplateActor();
   if (existing) {
@@ -497,13 +501,13 @@ function dropOutcome(code, reasonCode) {
   return { ok: code === DROP_SETTLEMENT_OUTCOMES.SETTLED, code, reasonCode };
 }
 
-/** A new document id, made before the create so the operation can record what a rollback must remove. */
+/** A new document id, picked before the create so undo knows what to remove. */
 function claimedDocumentId() {
   return foundry.utils.randomID();
 }
 
 /* -------------------------------------------- */
-/*  Armament projection                         */
+/*  Armament reads                              */
 /* -------------------------------------------- */
 
 function projectArmamentSource(token, actor, borrowedUuid) {
@@ -541,7 +545,7 @@ function projectArmament(token, actor) {
 }
 
 /* -------------------------------------------- */
-/*  Lock projection                             */
+/*  Lock reads                                  */
 /* -------------------------------------------- */
 
 function projectLockSource(token, actor, movement, keyName) {
@@ -598,7 +602,7 @@ function carriedKey(actor, keyName) {
 /* -------------------------------------------- */
 
 /**
- * The art facts an Object's appearance is decided from, also read by document-writes/tokens.mjs. An unlinked
+ * The art fields an Object's appearance is decided from, also read by document-writes/tokens.mjs. An unlinked
  * Token's prototype tint comes from its base Actor.
  */
 export function projectObjectArtFacts(actor) {
@@ -628,7 +632,7 @@ function isObjectDestroyed(actor) {
 
 /**
  * Whether a Destructible's Token should render as destroyed, for the token art code in document-writes/tokens.mjs.
- * Only once its saved art matches the broken state, because the host delays that write until smoke covers it.
+ * Only once its saved art matches the broken state, because the host client delays that write until smoke covers it.
  */
 export function isVisuallyDestroyed(token) {
   const actor = token?.actor;
@@ -644,7 +648,7 @@ function beginDestructionSwap(tokenDocument) {
   if (uuid) DESTRUCTION_SWAPS.add(uuid);
 }
 
-/** Release a Token from the concealed swap. */
+/** Stop holding a Token at its intact art. */
 function endDestructionSwap(tokenDocument) {
   DESTRUCTION_SWAPS.delete(String(tokenDocument?.uuid ?? ''));
 }
@@ -652,11 +656,10 @@ function endDestructionSwap(tokenDocument) {
 /**
  * Bring each placed Token's art, scale and tint in line with its Object's state. Only changed fields are written,
  * so the update hooks don't loop. Prototype art is left alone. When a Destructible breaks, smoke is sent first and
- * the texture write waits until the smoke covers it. Called by FoundryObjectRepository.unlock and by the Object
- * update hook in foundry/hooks/objects.mjs.
+ * the texture write waits until the smoke covers it.
  * @param {Actor} actor The Object whose Tokens are being brought up to date.
  * @param {{destructionFx?: boolean, present?: Function, resources?: object}} [options] Optional presentation, and
- *   the resource holds a command's art writes must still own.
+ *   the running command's locks, which must also cover each Token whose art changes.
  * @returns {Promise<boolean>}
  */
 export async function syncObjectTokenAppearance(actor,
@@ -710,9 +713,8 @@ function objectAppearanceKeys(actor) {
 }
 
 /**
- * A command's art write must hold the placement it changes, even on a Scene other than the one the unit stands on.
- * FoundryObjectRepository.unlock passes its resource holds, and a hook-driven sync passes none and just writes.
- * Throws if a hold can't be taken.
+ * A command's art write must also lock the Token it changes, even on a Scene other than the one the unit stands on.
+ * A sync run from a hook passes no locks and just writes. Throws if a lock can't be taken.
  */
 function holdObjectArt(resources, token) {
   if (!resources) return;

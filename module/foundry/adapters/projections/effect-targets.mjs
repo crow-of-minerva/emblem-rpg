@@ -17,9 +17,7 @@ const SPAWN_SOURCE_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPAWN
 const SPAWN_LOCATION_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPAWN_LOCATION_MISSING });
 
 /**
- * The units an effect step's target reference names: 'self', 'target', an explicit actor or token, or an area.
- * FoundryEffectRepository.resolveTargets (document-writes/effect-execution.mjs) calls it, and so do the resolvers
- * below.
+ * The units an effect step's target names: 'self', 'target', an explicit actor or token, or an area.
  */
 export async function resolveEffectTargets(reference, runtime) {
   if (reference === 'self') return identified(runtime.self);
@@ -30,13 +28,12 @@ export async function resolveEffectTargets(reference, runtime) {
 }
 
 /**
- * The documents one mechanical effect step will write, named before it writes any: the units it targets, the Guard
- * partners of any unit it moves, and the Scenes it changes. EffectExecutionService (engine/effects/execution.mjs)
- * claims those actors and Scenes before the step runs. Only units are kept as targets, so a Destructible or scenery
- * named by a mechanical step is left untouched.
+ * The documents one effect step will write, listed before it writes any: the units it targets, the Guard partners
+ * of any unit it moves, and the scenes it changes. The host client locks these actors and scenes before the step
+ * runs. Only units count as targets, so a Destructible or scenery the step names is left untouched.
  * @param {object} operation Prepared effect operation.
  * @param {object} runtime Effect runtime.
- * @param {{guardBonds?: object|null}} [ports] The bond service a moved Token's partner is read from.
+ * @param {{guardBonds?: object|null}} [options] The Guard bond service, used to find a moved token's partner.
  * @returns {Promise<Readonly<{targets: object[], actorUuids: string[], tokenUuids: string[], sceneUuids: string[]}>>}
  */
 export async function resolveEffectWrites(operation, runtime, { guardBonds = null } = {}) {
@@ -104,18 +101,17 @@ function distinct(values) {
 /* -------------------------------------------- */
 
 /**
- * Build a summon's Token data and identity without creating anything, for FoundryEffectRepository.prepareSpawn. The
- * code can take a reserved id and square and adopt a Token already under that id, but the only caller passes no
- * reservation, so every summon gets a fresh random id. The Token is stamped with its summoner under
- * `SUMMONED_BY_FLAG`, beside whatever flags its prototype and the step's overrides carry, which is how an ending
- * encounter finds the summons to remove. No world Actor is created: the Token shows the step's Actor, or an unlinked
- * copy of it that is deleted with the Token. A timed summon also carries its phase countdown. A step that replaces on
- * recast names the caster's earlier summons of the same Actor, other than those in `placed`, and every actor their
- * removal writes, for the engine to claim.
+ * Build a summon's token data without creating anything, for FoundryEffectRepository.prepareSpawn. Each summon gets
+ * a new random token id. The token is flagged with its summoner under `SUMMONED_BY_FLAG`, which is how an ending
+ * encounter finds the summons to remove. No Actor is created: the token points at the step's Actor by id, so that
+ * Actor must be a world Actor; an unlinked token gets its own copy, deleted with the token. A timed summon also
+ * carries its phase countdown. With "replace on recast", it also lists the caster's earlier summons of this Actor
+ * (other than those in `placed`) so they can be removed, and every actor their removal writes.
  * @param {object} step Prepared spawn step.
  * @param {object} runtime Effect runtime.
  * @param {{reserved?: object|null, randomId: function(): string, guardBonds?: object|null, placed?: Set<string>}}
- *   options The recorded reservation, an id source, the bond service, and the Tokens this command already placed.
+ *   options A token id and square to reuse (always null today), an id source, the Guard bond service, and the
+ *   tokens this command already placed.
  * @returns {Promise<Readonly<object>>} The prepared summon, or `{ok: false, code}`.
  */
 export async function prepareEffectSpawn(step, runtime, {
@@ -138,6 +134,8 @@ export async function prepareEffectSpawn(step, runtime, {
     _id: tokenId,
     name: step.name || source?.name,
     actorId: actor.id,
+    // The system forces scene padding to 0 and allows only square or gridless scenes (hooks/scene.mjs), so a cell
+    // times the grid size is the token's pixel position.
     x: Number(location.x) * grid,
     y: Number(location.y) * grid
   };
@@ -186,7 +184,7 @@ function replacedSummons(scene, actor, runtime, guardBonds, placed) {
 }
 
 /* -------------------------------------------- */
-/*  Board geometry                              */
+/*  Map geometry                                */
 /* -------------------------------------------- */
 
 /** A grid square an effect names: explicit coordinates, the aimed location, or a Token reference's own square. */
@@ -208,9 +206,8 @@ export function tokenGridPosition(token, gridSize) {
 
 /**
  * A token's footprint in grid cells, from its saved position (persistedTokenPosition in services/host.mjs) with the
- * corner rounded to the nearest square. Used for effect areas, geometry anchors in
- * document-writes/effect-execution.mjs and the Guard bond check in document-writes/tokens.mjs. The combat
- * projections round the corner down instead (tokenGridRect in combat-context.mjs).
+ * corner rounded to the nearest square. The combat code rounds the corner down instead (tokenGridRect in
+ * combat-context.mjs).
  */
 export function tokenGridRect(token) {
   if (!token) return null;

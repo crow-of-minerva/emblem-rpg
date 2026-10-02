@@ -71,6 +71,10 @@ export class LibraryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._dirty = false;
   }
 
+  /**
+   * The window title, marked "(unsaved)" while edits are unsaved. Foundry writes the title into the window frame
+   * only on the first render, so later changes are written into the frame by hand, as markDirty does.
+   */
   get title() {
     const title = this.options.window.title;
     return this._dirty ? `${title} (unsaved)` : title;
@@ -95,6 +99,7 @@ export class LibraryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (this.rendered) await this.render(false);
   }
 
+  /** Ask before throwing away unsaved edits. */
   async close(options = {}) {
     if (this._dirty && !options.force) {
       const discard = await DialogV2.confirm({
@@ -285,7 +290,7 @@ export class LibraryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     picker.browse();
   }
 
-  /** Send the whole library through the subclass's save command, which surfaces the result. */
+  /** Send the whole library through the subclass's save command. The API shows the result as a notification. */
   static async save() {
     if (this._readOnly) return;
     const { normalize } = this.constructor.LIBRARY;

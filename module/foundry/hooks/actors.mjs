@@ -14,9 +14,9 @@ import { changeLeafPaths } from '../../lib/core/runtime.mjs';
 /* -------------------------------------------- */
 
 /**
- * Class feature hook handlers, on the command host. A Class added to a Character, or a level change not written by
- * progression settlement, submits RECONCILE_FEATURES for its classes. `executeInternal` is
- * MaintenanceScheduler.submit (init/system.mjs).
+ * Class feature hook handlers, on the host client. A Class added to a Character, or a level change the system's own
+ * level-up didn't write, submits RECONCILE_FEATURES for its classes. `executeInternal` queues a system maintenance
+ * command (MaintenanceScheduler.submit in engine/maintenance.mjs).
  */
 export function createClassFeatureHookHandlers({ executeInternal }) {
   return Object.freeze({
@@ -41,7 +41,7 @@ export function createClassFeatureHookHandlers({ executeInternal }) {
 /* -------------------------------------------- */
 /*  Equipment effects                           */
 /* -------------------------------------------- */
-/** The reconciliation results the GM is told about. The rest are silent repairs. */
+/** The equipment check results the GM is told about. The rest are silent repairs. */
 const REPORTED_RECONCILIATIONS = new Set([
   RESULT_CODES.INVENTORY_REQUIREMENTS_UNEQUIPPED,
   RESULT_CODES.INVENTORY_CAPACITY_STORED,
@@ -49,10 +49,10 @@ const REPORTED_RECONCILIATIONS = new Set([
 ]);
 
 /**
- * Equipment hook handlers, on the command host. After a change that could leave a Character's equipment effects
+ * Equipment hook handlers, on the host client. After a change that could leave a Character's equipment effects
  * out of step (on ready, and when it's created or its items, effects, borrowed Armament or own fields change),
  * submit RECONCILE_EFFECTS for it, 25 ms later and once per burst. Caster requirements can read any unit field or
- * status, so changes to those count. The lifecycle's own writes and operation restores are skipped.
+ * status, so changes to those count. Writes the equipment check made itself, and undo restores, are skipped.
  */
 export function createEquipmentEffectLifecycle({ executeInternal, notify = null }) {
   const timers = new Map();
@@ -115,14 +115,14 @@ function worldAndPlacedActors() {
   return actors.values();
 }
 
-/** Writes made by equipment settlement itself, and operation restores (RESTORE_WRITE_OPTION). */
+/** Writes the equipment check made itself, or that an undo restore wrote (RESTORE_WRITE_OPTION). */
 function isEquipmentSettlement(options) {
   return options?.emblemEquipmentSettlement === true || options?.[RESTORE_WRITE_OPTION] === true;
 }
 
 /**
  * Whether an Actor update touched a fact a caster requirement can read: the name or anything under system, except
- * the movement-plan bookkeeping a pickup or put-down writes, which no requirement reads.
+ * the movement-plan fields written when a unit is picked up or put down for a move, which no requirement reads.
  */
 function actorFactsChanged(changes) {
   if (!changes || typeof changes !== 'object') return false;
@@ -140,9 +140,9 @@ export function armamentFlagChanged(changes) {
 /*  Stance                                      */
 /* -------------------------------------------- */
 /**
- * Stance hook handlers, on the command host, for StanceBreakService (engine/combat/damage.mjs). A native or sheet
- * edit of a Character's stance value settles its Stance Break. Writes from the system's own settlements and restores
- * are skipped. On ready, every Character is settled once.
+ * Stance hook handlers, on the host client, for StanceBreakService (engine/combat/damage.mjs). A Foundry or sheet
+ * edit of a Character's stance value re-checks its Stance Break. Writes the system's own commands made, and undo
+ * restores, are skipped. On ready, every Character is checked once.
  */
 export function createStanceHookHandlers({ stances }) {
   return Object.freeze({
@@ -182,8 +182,8 @@ function stanceValueChanged(changes) {
 const SUPPORT_OWN_WRITE_OPTIONS = ['emblemSupportSettlement', 'emblemSupportMirror', RESTORE_WRITE_OPTION];
 
 /**
- * Support hook handler, on the command host. A native write to a Character's support partners submits
- * RECONCILE_MIRROR so the partners' side matches. Support commands already reconcile their own writes.
+ * Support hook handler, on the host client. A Foundry or sheet edit of a Character's support partners submits
+ * RECONCILE_MIRROR so the partners' side matches. Support commands already keep both sides in step themselves.
  */
 export function createSupportHookHandlers({ executeInternal }) {
   return Object.freeze({
@@ -242,7 +242,7 @@ export function createVoiceApprovalHookHandlers({ unitAudioAuthoring, diagnostic
 /* -------------------------------------------- */
 
 /**
- * On the command host, give each player their Lord: restore their ownership of it and set it as their Foundry
+ * On the host client, give each player their Lord: restore their ownership of it and set it as their Foundry
  * Player Character. Runs for every player on ready, followed by party access and Convoy ownership, and for one
  * player when they connect.
  */

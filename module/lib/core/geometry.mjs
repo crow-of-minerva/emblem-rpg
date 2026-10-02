@@ -1,7 +1,7 @@
 /** @layer lib/core */
 
 /*
- * Shared square-grid geometry for game rules and canvas projections. Cell keys are "column,row", and distances are
+ * Shared square-grid geometry for game rules and canvas drawing. Cell keys are "column,row", and distances are
  * measured between footprint edges.
  */
 

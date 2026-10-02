@@ -31,13 +31,12 @@ function calculateCombatCinematicScale(width, height, viewportWidth, viewportHei
 }
 
 /**
- * Own the receiving client's letterbox, camera framing, and reversible UI fade. CombatPresentation opens and closes
- * the letterbox, and the presentation message handler in init/system.mjs sends the phase camera messages here.
+ * Runs this client's combat letterbox, camera framing and UI fade. CombatPresentation opens and closes the
+ * letterbox, and the presentation message handler in init/system.mjs sends the phase camera messages here.
  *
- * Each camera sequence holds the shared `CameraLease` from its first pan until it hands the view back: a letterbox
- * until `end` finishes closing it or `dispose` removes it, the enemy-phase overview until `endEnemyPhaseOverview`,
- * and a framing pan with no letterbox for as long as that pan runs. `UnitCameraPresentation` does not follow a
- * walking unit while a hold is out.
+ * While a letterbox, the enemy-phase overview or a framing pan is running, it holds the shared `CameraLease`, so the
+ * walking-unit camera stays still. A letterbox holds it until `end` finishes closing it or `dispose` removes it, and
+ * the overview until `endEnemyPhaseOverview`.
  */
 export class CombatCinematicPresentation {
   constructor({ diagnostics = null, tokens, zoom = () => 1.5, phaseCamera = () => true, enemyPhaseZoom = () => 1,
@@ -98,10 +97,8 @@ export class CombatCinematicPresentation {
   }
 
   /**
-   * Pan, never zoom, over a phase-opening group, or to this client's own party focus.
-   *
-   * The zoom is kept because the phase overview camera hands back whatever zoom it finds, and a client that
-   * has the phase camera off does not move at all.
+   * Pan to the units starting a phase, or to this player's own units, keeping the current zoom. Players who turned
+   * the phase camera off are not moved.
    * @param {object} message The phase camera message.
    * @returns {Promise<boolean>} Whether the camera moved.
    */
@@ -115,7 +112,11 @@ export class CombatCinematicPresentation {
     return true;
   }
 
-  /** Pull back to the enemy-phase overview by this client's configured factor, remembering where the zoom was. */
+  /**
+   * Pull back to the enemy-phase overview by this client's configured factor, remembering where the zoom was.
+   * The enemy-phase end message releases this camera hold. If it never arrives (the GM's client reloads during the
+   * enemy phase), the walking-unit camera stays off until the next enemy-phase end, a scene change or `dispose`.
+   */
   beginEnemyPhaseOverview(duration = 600) {
     if (this.phaseCamera() === false || pageHidden()) return false;
     const scale = canvas.stage?.scale?.x;
@@ -194,11 +195,11 @@ export class CombatCinematicPresentation {
   }
 
   /**
-   * Retract the letterbox and restore UI and zoom without moving the final camera center.
+   * Close the letterbox and restore the UI and zoom without moving the camera's center.
    *
-   * With nothing open the close is already complete, whether or not the beat was cinematic. A hidden page closes at
-   * once rather than animating a close it would never draw. The letterbox's camera hold is given back once the close
-   * has finished, unless a newer letterbox has taken it in the meantime.
+   * A non-cinematic or object-target beat with no letterbox open has nothing to close. A hidden page closes at once
+   * instead of animating. The letterbox's camera hold is released once the close has finished, unless a newer
+   * letterbox has taken it in the meantime.
    */
   async end(message) {
     const hold = this.holds.get('letterbox');
@@ -254,7 +255,7 @@ export class CombatCinematicPresentation {
     previous?.();
   }
 
-  /** Give back a sequence's hold, or the older hold a close captured before a newer sequence replaced it. */
+  /** Release a sequence's hold. `end` passes the hold it saw when it started, so a newer letterbox's hold is kept. */
   #letGo(sequence, hold = this.holds.get(sequence)) {
     if (this.holds.get(sequence) === hold) this.holds.delete(sequence);
     hold?.();

@@ -114,8 +114,8 @@ export function reportFoundryValidation(sourcePath, error, message, expected = t
 }
 
 /**
- * Show a Foundry notification at `level`. The 'error' level becomes a diagnostic (reportFoundryError) instead, as
- * errors do in the injected presenters.
+ * Show a Foundry notification at `level`. An 'error' is recorded with reportFoundryError instead: a console line
+ * and the short error notification.
  */
 export function notifyFoundry(sourcePath, level, message) {
   if (level === 'error') return reportFoundryError(sourcePath, message);

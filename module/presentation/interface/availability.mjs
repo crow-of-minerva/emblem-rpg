@@ -1,7 +1,7 @@
 /** @layer presentation/interface */
 
 /* -------------------------------------------- */
-/*  Availability vocabulary                     */
+/*  Cursor modes                                */
 /* -------------------------------------------- */
 
 /**
@@ -20,12 +20,12 @@ const PAUSE_FREEZE_CLASS = 'emblem-pause-frozen';
 const SCENE_LOCK_CLASS = 'emblem-scene-locked';
 
 /* -------------------------------------------- */
-/*  Published marks                             */
+/*  Body classes                                */
 /* -------------------------------------------- */
 
 /**
  * Put the class for this cursor mode on the page body, so the stylesheet shows the matching cursor.
- * @param {string} mode One of {@link BOARD_CURSOR_MODES}. Anything else clears the board marks.
+ * @param {string} mode One of {@link BOARD_CURSOR_MODES}. Anything else clears the cursor classes.
  * @returns {string} The mode that was marked.
  */
 export function markBoardCursorMode(mode) {
@@ -39,7 +39,7 @@ export function markBoardCursorMode(mode) {
 
 /**
  * Mark the page body while the game is paused and this user is frozen, so the stylesheet shows a not-allowed cursor
- * over the board and the hotbar. init/hooks.mjs passes localUserFrozenByPause(), which leaves staff unfrozen.
+ * over the map and the hotbar. init/hooks.mjs passes localUserFrozenByPause(), which never freezes a GM.
  * @param {boolean} frozen Whether the local user is frozen.
  * @returns {boolean} The state that was marked.
  */
@@ -65,7 +65,7 @@ export function markSceneLock(locked) {
 /*  Document access                             */
 /* -------------------------------------------- */
 
-/** The list the marks are written to, or nothing at all where no document is mounted. */
+/** The page body's class list, or null when there is no page. */
 function bodyClasses() {
   return globalThis.document?.body?.classList ?? null;
 }

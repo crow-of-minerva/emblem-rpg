@@ -759,6 +759,11 @@ const TOOLTIPS = Object.freeze({
 /* -------------------------------------------- */
 /*  Tooltip lookup                              */
 /* -------------------------------------------- */
+/**
+ * The tooltip text for a catalogue id, or '' for an unknown id; a function entry is called with `data`. The text
+ * usually goes into `data-tooltip`, which Foundry renders as cleaned HTML. The `{{tooltip}}` Handlebars helper
+ * passes its second argument through as `data` unchanged, so an entry may take a bare value.
+ */
 export function getTooltip(id, data = {}) {
   const definition = TOOLTIPS[id];
   return typeof definition === 'function' ? definition(data) : definition ?? '';

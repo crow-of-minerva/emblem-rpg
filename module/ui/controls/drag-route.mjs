@@ -19,7 +19,8 @@ import { reportFoundryError, FoundryDiagnostics } from '../../foundry/adapters/s
  * Make Foundry's own Token drag follow the movement graph. ui/controls/movement.mjs hands these functions to
  * foundry/patches/token-drag.mjs, which registers them as libWrapper wrappers, so each runs with the dragged
  * placeable as `this` and Foundry's own method as `wrapped`. They read the plan held in
- * ui/controls/movement-state.mjs and rewrite the drag's waypoints. They never write the document.
+ * ui/controls/movement-state.mjs and rewrite the drag's waypoints. They never write the document. A drag context
+ * is "pathed" (`emblemMovementPath`) when its token is the unit this client is planning a move for.
  */
 const notifications = new NotificationService({ diagnostics: new FoundryDiagnostics() });
 
@@ -49,7 +50,10 @@ export function initializePathedDrag(wrapped, event) {
   return result;
 }
 
-/** Route every pathed context through the graph. Contexts without a plan keep Foundry's own drag. */
+/**
+ * Route every pathed context through the movement graph. Foundry's own _updateDragDestination is skipped for them,
+ * since it would replace the destination and run its own path search. Contexts without a plan keep Foundry's drag.
+ */
 export function updatePathedDrag(wrapped, point, options = {}) {
   const contexts = Object.values(this.mouseInteractionManager?.interactionData?.contexts ?? {});
   const pathed = contexts.filter(context => context.emblemMovementPath && movementPlanForToken(context.token));
@@ -61,7 +65,7 @@ export function updatePathedDrag(wrapped, point, options = {}) {
   return result;
 }
 
-/** Let Foundry settle the drag, then drop the drag mark and schedule the ruler's cleanup. */
+/** Let Foundry finish the drag, then drop the drag mark and schedule the ruler's cleanup. */
 export function finalizePathedDrag(wrapped, event) {
   const plan = movementPlanFromContexts(event) ?? movementPlanForToken(this);
   const tokens = movementTokensFromContexts(event);
@@ -77,10 +81,10 @@ export function finalizePathedDrag(wrapped, event) {
 }
 
 /**
- * Keep the ruler drawn through the drop, which Foundry would otherwise clear. A stranded unit's drag draws no
- * route, so Foundry sends no move for onPreUpdateTokenMovement to refuse. Instead, a drop that updatePathedContext
- * marked as stranded shows the stranded notice here, unless addPathedDragWaypoint already showed it for a waypoint
- * added in this drag.
+ * Keep the movement ruler drawn through the drop, which Foundry would otherwise clear. A stranded unit (one that
+ * can't take a move of its own, see movementStranded) gets no route, so Foundry sends no move for
+ * onPreUpdateTokenMovement to refuse. Its notice is shown here instead, unless addPathedDragWaypoint already
+ * showed it during this drag.
  */
 export function holdPathedDragRuler(wrapped, event) {
   const contexts = Object.values(event?.interactionData?.contexts ?? {});
@@ -93,7 +97,7 @@ export function holdPathedDragRuler(wrapped, event) {
   return result;
 }
 
-/** Freeze or clear the native ruler refresh while the movement ruler owns the drawn path. */
+/** Freeze or clear Foundry's own ruler refresh while the movement ruler draws the path. */
 export function refreshPathedDragRuler(wrapped, ...args) {
   const mode = movementRulerRefreshMode(this);
   if (mode === 'freeze') return;
@@ -117,8 +121,9 @@ export function refreshPathedDragState(wrapped, ...args) {
 }
 
 /**
- * Route an added waypoint through the movement graph. A waypoint out of range is refused with a notice, and the
- * drag goes on. Contexts without a plan are left to Foundry.
+ * Route a Ctrl+click waypoint through the movement graph, from the last waypoint. A waypoint out of range is
+ * refused with a notice, and the drag goes on. The next pointer move routes again from the drag's start and
+ * replaces these waypoints, so only the notice lasts. Contexts without a plan are left to Foundry.
  */
 export function addPathedDragWaypoint(wrapped, point, options = {}) {
   const contexts = Object.values(this.mouseInteractionManager?.interactionData?.contexts ?? {});
@@ -159,7 +164,7 @@ export function stylePathedDragGrid(wrapped, ...args) {
 /*  Drag bookkeeping                            */
 /* -------------------------------------------- */
 
-/** Whether this Token still carries a pathed drag context, which keeps a released plan alive until it settles. */
+/** Whether this Token still carries a pathed drag context, which keeps a released plan alive until the drop ends. */
 export function hasPathedDragContext(token) {
   const tokenId = token?.document?.id ?? token?.id;
   const contexts = token?.mouseInteractionManager?.interactionData?.contexts ?? {};
@@ -297,7 +302,7 @@ function dragRouteResolution(context, graph, originCell, destinationCell) {
   return resolution;
 }
 
-/** Where the next leg starts: the last waypoint already laid down, else the square the drag began on. */
+/** Where an added waypoint's leg starts: the last waypoint already laid down, else the square the drag began on. */
 function dragLegOrigin(plan, context, gridSize) {
   const origin = context.waypoints.at(-1) ?? context.origin ?? plan.token?.document ?? {};
   return { x: Math.floor(Number(origin.x) / gridSize), y: Math.floor(Number(origin.y) / gridSize) };
@@ -307,6 +312,8 @@ function routeWaypoints(token, context, route, gridSize, options) {
   const waypoints = [];
   for (const [index, cell] of route.entries()) {
     const worldPoint = { x: cell.x * gridSize, y: cell.y * gridSize };
+    // Foundry's options.snap is already false while Shift is held, so this snaps only while Shift is down.
+    // Route squares sit on the grid either way.
     const waypoint = token._getDragWaypointPosition(context.destination, worldPoint, { snap: !options.snap });
     if (!waypoint) continue;
     waypoint.action = token._getDragMovementAction?.();
@@ -324,6 +331,11 @@ function routeWaypoints(token, context, route, gridSize, options) {
   return waypoints;
 }
 
+/**
+ * Move the drag preview to the new destination and redraw Foundry's planned path. In v14 the static
+ * Token.updateDragPreview and Token.recalculatePlannedMovementPath are private, so the fallbacks run: the preview
+ * moves by x and y only, and the instance method redraws the path.
+ */
 function updateFoundryDragPreview(token, context, destination) {
   const TokenClass = globalThis.foundry?.canvas?.placeables?.Token;
   if (typeof TokenClass?.updateDragPreview === 'function') {

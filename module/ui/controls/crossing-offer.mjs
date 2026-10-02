@@ -21,7 +21,7 @@ import { trimContainerSprites } from '../../lib/dom/image-trim.mjs';
  *
  * When one step can reach more than one landing, the dialog opens with a destination select and redraws its body
  * when the choice changes. With a single destination there is no select.
- * @param {object} snapshot The plan's movement snapshot, which names the unit and its odds.
+ * @param {object} snapshot The plan's movement data from the host, which names the unit and its odds.
  * @param {object[]} options The crossings this step leads to.
  * @returns {Promise<object|null>} The confirmed crossing, or null when the player declined.
  */
@@ -125,7 +125,7 @@ function crossingOfferContent(snapshot, option) {
     </div>`;
 }
 
-/** The crossing unit's board sprite, which the prompt frames instead of its avatar. */
+/** The crossing unit's token image, which the prompt frames instead of its avatar. */
 function crossingTokenArt(snapshot) {
   const texture = globalThis.canvas?.tokens?.get?.(snapshot.tokenId)?.document?.texture?.src;
   return String(texture || snapshot.tokenImg || '');

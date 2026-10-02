@@ -13,9 +13,8 @@ const DEFAULT_DUCK_MS = 2000;
 const DUCK_GRACE_MS = 300;
 
 /**
- * The `ui` option a play request carries when it answers the listener's own input. `game` is unit control and
- * dialog confirm and cancel, and `menu` is sheet sounds and menu blips. Requests without one are game events and
- * always play.
+ * Which UI Sounds group a sound belongs to: `game` for unit control and dialog buttons, `menu` for sheet and menu
+ * clicks. Sounds with no group are game events and always play.
  */
 export const UI_SOUND_TIERS = Object.freeze({ GAME: 'game', MENU: 'menu' });
 
@@ -46,15 +45,18 @@ export class AudioService {
     this.lastPlayed = new Map();
   }
 
-  /** Play one stable bundled sound id. */
+  /**
+   * Play one bundled sound by its SOUND_IDS id. Resolves false only when this service skipped it; a sound the player
+   * drops afterwards (hidden page, audio not yet unlocked) still resolves true.
+   */
   async play(soundId, options = {}) {
     return (await this.start(soundId, options)) !== false;
   }
 
   /**
    * Start one bundled sound and return the player's playback handle when there is one. A sound with a `floorMs`
-   * is skipped if it last played less than that long ago, and a `ui` request is skipped when the listener's UI
-   * Sounds setting mutes its tier.
+   * is skipped if it last played less than that long ago, and a `ui` request is skipped when this client's UI
+   * Sounds setting mutes its group.
    */
   async start(soundId, { ui, ...options } = {}) {
     const definition = SOUND_DATABASE[soundId];
@@ -78,7 +80,7 @@ export class AudioService {
     return this.player.preload(`systems/${SYSTEM_ID}/${file}`);
   }
 
-  /** Play an already-authorized authored file, ducking the music for its length when asked to. */
+  /** Play a GM-approved audio file (such as a voice line), lowering the music while it plays if asked. */
   async playFile(src, options = {}) {
     if (!src) return false;
     const { duck = false, duckMs = null, ...request } = options;
@@ -130,6 +132,7 @@ export class AudioDucking {
     const target = this.#node();
     if (!target) return false;
     if (this.depth === 0) {
+      // Foundry's music volume slider sets this same gain node. Remember its level so the release can return to it.
       this.baseGain = target.node.gain.value;
       ramp(target, this.baseGain * AUDIO_DUCKING.factor, AUDIO_DUCKING.fadeDownSeconds, this.diagnostics);
     }
@@ -137,7 +140,7 @@ export class AudioDucking {
     return true;
   }
 
-  /** Release one duck. The music comes back only when the last holder lets go, and the count never goes below zero. */
+  /** Release one duck. The music comes back up only when the last duck is released; the count never goes below zero. */
   release() {
     this.depth = Math.max(0, this.depth - 1);
     if (this.depth > 0 || this.baseGain === null) return false;
@@ -181,7 +184,7 @@ function ramp({ context, node }, target, seconds, diagnostics = null) {
   }
 }
 
-/** Play one game-tier interface sound through the running system, which owns the only audio service. */
+/** Play a unit-control or dialog-button sound on this client. */
 export function playUiSound(soundId, options = {}) {
   void game.emblemRpg.api.presentation.audio.play(soundId, { ui: UI_SOUND_TIERS.GAME, ...options });
 }
@@ -275,7 +278,7 @@ export class UnitAudioService {
     this.movementSchedules = new Map();
   }
 
-  /** Choose one injured or selection voice clip for the movement selection message sent to all listeners. */
+  /** Pick a selection voice clip (an injured one below 40% HP) for the message sent to every client. */
   async selectionMessage(facts) {
     const actorId = String(facts?.actorId ?? '');
     const voicePath = String(facts?.voicePath ?? '');
@@ -300,9 +303,9 @@ export class UnitAudioService {
   }
 
   /**
-   * Choose the committed Rally activation’s voice clip. Leave units without an authored voice folder silent.
-   * @param {object} outcome A committed item-activation outcome.
-   * @param {object} facts The caster's voice facts.
+   * Pick the voice clip for a Rally that landed. Units with no voice folder stay silent.
+   * @param {object} outcome The finished item-activation outcome.
+   * @param {object} facts The caster's voice details: actor id, voice folder and whether the GM approved it.
    * @returns {Promise<object|null>} A voice message, or null.
    */
   async rallyMessage(outcome, facts) {
@@ -351,7 +354,7 @@ export class UnitAudioService {
     return true;
   }
 
-  /** Cancel pending presentation for a superseded movement path. */
+  /** Stop the footsteps still queued for a token whose move was replaced or undone. */
   cancelMovementFootsteps(tokenUuid) {
     const key = String(tokenUuid ?? '');
     const state = this.movementSchedules.get(key);
@@ -363,7 +366,7 @@ export class UnitAudioService {
     return true;
   }
 
-  /** Apply the receiving client's voice gate, then play the resolved message locally. */
+  /** Play a voice line or footstep on this client, skipping voice lines this player muted or heard too recently. */
   async playMessage(message, context = {}) {
     if (message?.kind === 'voice') {
       if (!this.#voiceAllowed(message.actorId, context)) return false;
@@ -503,7 +506,7 @@ const LOCK_CUES = Object.freeze({
   Door: Object.freeze({ open: SOUND_IDS.OBJECT_DOOR_OPEN, close: SOUND_IDS.OBJECT_DOOR_CLOSE })
 });
 
-/** Play what a settled Object event looks and sounds like on every client the GM reached. */
+/** Play the sound (and smoke) for a chest, door or destructible object event on this client. */
 export class ObjectInteractionPresentation {
   constructor({ audio, tokens = null, smoke = null }) {
     this.audio = audio;
@@ -519,7 +522,10 @@ export class ObjectInteractionPresentation {
     return this.audio.play(soundId);
   }
 
-  /** Sound a lock write where it was made: an opening reaches the whole table, a closing only whoever closed it. */
+  /**
+   * Play a chest or door lock cue on the client that made the change. Opening is broadcast to everyone; closing
+   * plays only for whoever closed it.
+   */
   async playLockCue({ objectType, opened } = {}) {
     const cue = LOCK_CUES[String(objectType ?? '')];
     if (!cue) return false;
@@ -527,7 +533,7 @@ export class ObjectInteractionPresentation {
     return this.audio.play(soundId, { channel: AUDIO_CHANNELS.ENVIRONMENT, broadcast: opened === true });
   }
 
-  /** Play destruction sounds and smoke for the Object-art writer’s concealed texture swap. */
+  /** Play the destruction sounds and smoke that hide the swap to the broken art. */
   async #showDestruction(message) {
     const token = await this.tokens?.placeable?.(String(message.tokenUuid ?? '')) ?? null;
     const outcomes = await Promise.allSettled([

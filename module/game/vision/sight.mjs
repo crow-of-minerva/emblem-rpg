@@ -86,7 +86,7 @@ function poolsPartySight(actorType) {
  * Choose whose sight this client pools, for pooledVisionSource in foundry/patches/vision.mjs. A controlled party
  * unit picks its own party, or the empty-string pool when it has none. With no party unit controlled, a player
  * uses their assigned party and a GM sees everything.
- * @param {object} input Controlled-unit facts, the caller's role, and their assigned party.
+ * @param {object} input The controlled units' faction and party, the caller's role, and their assigned party.
  * @returns {string|null} Pooling party id, the empty string for the unassigned pool, or null.
  */
 export function resolveSightPool(input = {}) {
@@ -149,7 +149,8 @@ export function sightRangeWithBonus(input = {}) {
  * Where a unit sees from while it plans a move, for anchoredVisionSourceData in foundry/patches/vision.mjs: the
  * square it committed to, not the preview, keeping the footprint's centre offset for large units. Null outside
  * planning and while exploring, so sight follows the live position.
- * @param {object} input Planning state, board mode, the committed anchor, corner, and centre.
+ * @param {object} input Whether the unit is planning a move or exploring, the committed square, and the token's
+ *   corner and centre.
  * @returns {{x: number, y: number}|null}
  */
 export function committedSightAnchor(input = {}) {
@@ -173,10 +174,10 @@ function exactPixel(value) {
 
 /**
  * Whether gatedInitializeSources in foundry/patches/vision.mjs must let core rebuild a token's sight source. Only an
- * unchanged, anchored planning source that emits no light is skipped. Any lifecycle, visibility or environment
- * change rebuilds it.
- * @param {object|null} previous The frozen facts of the last initialisation core performed, or null.
- * @param {object} current The frozen facts of the call being decided.
+ * unchanged source that emits no light, held at the committed square while its unit plans a move, is skipped. Any
+ * lifecycle, visibility or environment change rebuilds it.
+ * @param {object|null} previous The values recorded at the last rebuild core performed, or null.
+ * @param {object} current The same values for the call being decided.
  * @returns {boolean}
  */
 export function sightReinitializationNeeded(previous, current = {}) {

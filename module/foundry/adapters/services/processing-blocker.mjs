@@ -10,9 +10,9 @@ export const PROCESSING_INPUTS = Object.freeze({
 const BLOCKED_INPUTS = new Set([PROCESSING_INPUTS.GAMEPLAY, PROCESSING_INPUTS.SAVE, PROCESSING_INPUTS.ADMIN]);
 
 /**
- * This client's copy of the host's processing view: which command, if any, is running on the host (`owner`). While
- * one runs, local gameplay, save and admin input is refused and the page shows the busy cursor. Built in
- * init/system.mjs, and fed by the host's execution messages (apply) and by syncWithHost.
+ * Tracks whether the host client is busy running a command (`owner` names it). While it is, this client refuses
+ * gameplay, sheet-save and admin input and shows a busy cursor. The host's busy/idle messages (apply) and
+ * syncWithHost keep it up to date.
  */
 export class ProcessingBlocker {
   #view = Object.freeze({ hostSession: '', generation: 0, owner: null });
@@ -31,27 +31,26 @@ export class ProcessingBlocker {
 
   /**
    * Whether this client is still loading. installProcessingInputGuards silently refuses every local input while
-   * it is true. The hold is local only: admitInput, native writes and the host's view never read it, so the
-   * system's own startup commands and writes proceed.
+   * it is true. Only that input guard reads it, so the system's own startup commands and writes still go through.
    */
   starting() { return this.#starting; }
 
-  /** Called once by the runtime's ready() in init/system.mjs when startup settles, whatever its outcome. */
+  /** Called once by the runtime's ready() in init/system.mjs when startup finishes, whatever its outcome. */
   finishStartup() {
     if (!this.#starting) return;
     this.#starting = false;
     this.#paintStartup();
   }
 
-  /** Subscribe to view changes. The caller runs the returned unsubscribe when its interface closes. */
+  /** Subscribe to busy/idle changes. The caller runs the returned unsubscribe when its interface closes. */
   onChange(listener) {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
   /**
-   * Apply a view from an authenticated host message. It replaces the current view unless it's older and from the
-   * same host page. A view from a new host page retires the old page, and views from a retired page are ignored.
+   * Take a busy/idle update from an authenticated host message. An older update from the same host tab is ignored,
+   * and once a new host tab sends one, updates from the old tab are ignored.
    */
   apply(message) {
     if (!isExecutionMessage(message)) return false;
@@ -60,8 +59,8 @@ export class ProcessingBlocker {
   }
 
   /**
-   * Fetch the host's current view after a late join or reconnect, the same view a live host broadcasts. With no
-   * ready host the hold is cleared. A failed or unreadable status reply changes nothing.
+   * Ask the host for its current busy state after a late join or reconnect. With no ready host, the busy state is
+   * cleared. A failed or unreadable reply changes nothing.
    */
   async syncWithHost({ host, status, localView }) {
     const sync = ++this.#sync;
@@ -86,7 +85,7 @@ export class ProcessingBlocker {
 
   /**
    * Whether local input of this kind may go ahead. Gameplay, save and admin input is refused while the host is busy,
-   * silently, since the busy cursor already shows the hold.
+   * silently, since the busy cursor already shows why.
    */
   admitInput(kind) {
     return !this.engaged() || !BLOCKED_INPUTS.has(kind);

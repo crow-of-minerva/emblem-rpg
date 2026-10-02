@@ -14,11 +14,11 @@ import { GUARD_BOND_FLAGS, GUARD_BOND_ROLES } from '../../../contracts/domains/c
 import { FACTION_ROLES } from '../../../contracts/domains/characters.mjs';
 
 /* -------------------------------------------- */
-/*  Effect projection                           */
+/*  Status icons                                */
 /* -------------------------------------------- */
 /**
- * The status icons a token draws: one plain record per temporary effect on its actor. init/hooks.mjs hands this to
- * the token effect renderer, and the Bar Brawl bars read it to leave room for a wield badge.
+ * The status icons a token draws: one plain record per temporary effect on its actor. The Bar Brawl bars also read
+ * it to leave room for a wield badge.
  */
 export function projectFoundryTokenEffects(token) {
   const effects = token?.actor?.temporaryEffects ?? [];
@@ -58,7 +58,7 @@ export function guardBondPartnerToken(tokenLike) {
 
 /**
  * The Guard bond partner, but only while both units still wear a Guard bond effect, so a bond flag left behind
- * after the bond broke is ignored. Movement occupancy reads it (movement.mjs).
+ * after the bond broke is ignored.
  */
 export function liveGuardBondPartnerToken(tokenLike) {
   const partner = guardBondPartnerToken(tokenLike);
@@ -78,9 +78,9 @@ function wearsGuardBond(actor) {
 /* -------------------------------------------- */
 
 /**
- * The token that takes an attack aimed at this one: its guarder while a Guard bond covers it (from the token's
- * bond flag or its guardee effect), otherwise the token itself. The exchange, item targeting, the unit board and
- * the taunt checks all redirect through here.
+ * The token that takes an attack aimed at this one: its guarder, named by the token's Guard bond flag or by its
+ * guardee effect, otherwise the token itself. The flag is followed without checking that both units still wear a
+ * Guard bond effect (compare liveGuardBondPartnerToken).
  */
 export function redirectFoundryHostileToken(tokenLike) {
   const token = tokenLike?.documentName === 'Token' ? tokenLike : tokenLike?.document;
@@ -109,8 +109,7 @@ export function redirectFoundryHostileToken(tokenLike) {
 /**
  * Where a targeting click on a token really lands. A click on anything other than a unit goes to a unit sharing its
  * square. Scenery with no unit on it is refused, and a Destructible stays the target because attacks can damage its
- * Integrity, unless it is hidden, which makes it scenery (resolveTargetKind). Used by the attack and item targeting
- * projections and by ui/controls/targeting.mjs.
+ * Integrity, unless it is hidden, which makes it scenery (resolveTargetKind).
  * @param {object} tokenLike Clicked Token or TokenDocument.
  * @returns {{token: object|null, redirected: boolean, refused: boolean}}
  */
@@ -153,7 +152,7 @@ function tokenCellKeys(token) {
 }
 
 /* -------------------------------------------- */
-/*  Inspection vocabulary                       */
+/*  Inspection labels                           */
 /* -------------------------------------------- */
 const EFFECTIVE_LABELS = Object.freeze({
   armored: 'Armor', infantry: 'Infantry', cavalry: 'Cavalry', flying: 'Flying',

@@ -53,9 +53,8 @@ const OBJECT_ART_STATES = Object.freeze({
 const notifications = new NotificationService({ diagnostics: new FoundryDiagnostics() });
 
 /*
- * Altar authoring is switched off while `objectSubtypeBracketed` sets the Altar subtype aside, and the sheet shows
- * a notice in its place. These constants and the commented-out handlers below come back unchanged with the
- * template block that uses them. None of it is live code.
+ * Altar authoring is switched off: `objectSubtypeBracketed` marks the Altar subtype as not built yet, and the sheet
+ * shows a notice in its place. These constants and the commented-out handlers below belong to the Altar fields.
  *
  * An altar can give as well as teach, so anything grantable is accepted as a boon.
  * const BOON_ITEM_TYPES = Object.freeze(['Equipment', 'Consumable', 'Miscellaneous', 'Spell', 'Ability']);
@@ -395,7 +394,7 @@ export class ObjectSheet extends EmblemSheetMixin(foundry.applications.sheets.Ac
     return this.document.update({ [FACTIONS_PATH]: kept });
   }
 
-  /** Staff clear one row's Requisitioned marker by hand. The GM's Reset Downtime clears every row's. */
+  /** A GM clears one row's Requisitioned marker by hand. Reset Downtime clears every row's. */
   static async clearFactionLock(_event, target) {
     if (!this.isEditable || !game.user.isGM) return null;
     const id = target.closest('[data-faction-id]')?.dataset.factionId;
@@ -415,7 +414,7 @@ export class ObjectSheet extends EmblemSheetMixin(foundry.applications.sheets.Ac
     return foundry.utils.deepClone(Array.from(this.document.system.requisition.factions));
   }
 
-  /** A subtype set aside by objectSubtypeBracketed can't be authored, so its sheet ignores every drop. */
+  /** A subtype that isn't built yet (objectSubtypeBracketed) can't be authored, so its sheet ignores every drop. */
   async _onDropItem(event, item) {
     if (!this.isEditable || !item) return null;
     if (objectSubtypeBracketed(this.document.system.objectType)) return null;

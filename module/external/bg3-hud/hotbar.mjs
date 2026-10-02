@@ -227,10 +227,8 @@ function hotbarLayoutRevision(actor) {
 
 /**
  * This client's save queue and last known layout revision for each unit, keyed by actor uuid. Core saves a unit's
- * whole layout from several places that don't know about each other: the shown HUD's PersistenceManager, the
- * temporary one its ItemUpdateManager creates for each item change, and this file's own fills and rebuilds. Every
- * save names the revision it replaces, so they all go through one queue per unit, and each sends the revision the
- * host returned for the save before it. A stale refusal then always means another client changed the layout.
+ * layout from several places, so every save goes through one queue per unit and names the revision the previous
+ * save produced. A stale refusal then means another client changed the layout.
  */
 const layoutSaves = new Map();
 
@@ -239,7 +237,7 @@ const TRACKED_LAYOUT_LIMIT = 500;
 
 /**
  * Save a unit's layout on the host through api.character.hotbar.saveLayout, in place of Core's own save (the
- * PersistenceManager patch in core-runtime.mjs). The actor, and whether this user owns it, are captured when Core
+ * PersistenceManager patch in core-runtime.mjs). The actor, and whether this user owns it, are read when Core
  * asks, and the save waits behind this client's other saves for the unit. If the host refuses it as stale, the
  * stored layout is reloaded. A user who doesn't own the unit, such as one inspecting it, changes only the local
  * copy.
@@ -303,7 +301,7 @@ async function sendLayoutSave(actor, state, record) {
 }
 
 /**
- * Reload the stored layout once the unit's queued saves settle. The save doesn't wait for the reload, because Core
+ * Reload the stored layout once the unit's queued saves finish. The save doesn't wait for the reload, because Core
  * may save while loading (when it normalizes the state), and that save would wait behind this one forever. More
  * refusals during the reload share it.
  */
@@ -358,8 +356,8 @@ function showsActor(manager, actorUuid) {
  * Send the layout to the host with its expected revision. An actor that isn't a unit is skipped: Core's
  * ItemUpdateManager creates a temporary PersistenceManager for any Actor an item lands on, so a Convoy, Vendor or
  * Object can reach this save, and the host would refuse it with a message to the user. The save is also skipped
- * while an execution segment is open on this client (an Enemy AI turn, for example), because CommandDispatcher
- * refuses global commands during a segment.
+ * while this client is partway through a multi-step command run (an Enemy AI turn, for example), because
+ * CommandDispatcher refuses global commands until it ends.
  */
 async function requestLayoutSave(actor, state, expectedRevision) {
   const { api } = game.emblemRpg;
@@ -393,7 +391,7 @@ function persistHudLayout(actor, state) {
   return run;
 }
 
-/** Run one save after the unit's queued saves settle, and release its place whether it worked or threw. */
+/** Run one save after the unit's queued saves finish, and release its place whether it worked or threw. */
 function sendLayoutBehind(record, send) {
   return record.queue.then(send).finally(() => { record.pending -= 1; });
 }
@@ -586,7 +584,10 @@ export async function onCreateActorBg3Hud(actor, _options, userId) {
   await refreshCurrentActor(actor);
 }
 
-/** Repair every synthetic Actor copied as part of duplicating a whole Scene. */
+/**
+ * When this user creates a Scene (a duplicate, for example), rebuild the hotbar of each unlinked Character token
+ * that has none, or whose cells name items its actor doesn't carry.
+ */
 export async function onCreateSceneBg3Hud(scene, _options, userId) {
   if (!localCreator(userId)) return;
   const actors = new Map();

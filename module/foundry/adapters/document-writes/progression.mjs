@@ -26,7 +26,7 @@ export class FoundryProgressionRepository {
   }
 
   /**
-   * A Character's level, experience and per-stat growth facts for the progression rules, with a fingerprint
+   * A Character's level, experience and per-stat growth values for the progression rules, with a fingerprint
    * commitSettlement uses to spot changes. null for anything but a Character.
    */
   async getCharacterSnapshot(actorUuid) {
@@ -108,8 +108,8 @@ export class FoundryProgressionRepository {
 
   /**
    * Save an experience gain, with a level-up if one happened. Returns `stale: true` if the Character changed since
-   * the snapshot. The Actor fields and the Budding Talent item are recorded on the caller's operation first, so if a
-   * write fails the command is refused and CommandDispatcher restores them.
+   * the snapshot. The Actor fields and the Budding Talent item are recorded in the caller's undo record first, so a
+   * failed write is undone when the command is refused.
    */
   async commitSettlement({ snapshot, experience, levelUp = null, operation = null }) {
     const actorUuid = snapshot?.actorUuid;
@@ -174,7 +174,7 @@ function progressionFingerprint(snapshot) {
 
 /**
  * What a level-up does to the Budding Talent: the item it removes, or a new id for the one it grants. null if
- * nothing changes. commitSettlement records both on the operation before it writes.
+ * nothing changes. commitSettlement records it for undo before it writes.
  */
 function planBuddingTalent(actor, action) {
   const existing = actor.items.find(item => normalizedName(item.name) === normalizedName(BUDDING_TALENT.name));

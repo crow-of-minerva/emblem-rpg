@@ -82,7 +82,7 @@ import { readDropPayload, resolveItem } from '../../../../foundry/adapters/servi
 import { reportFoundryError, FoundryDiagnostics, reportFoundryProbe } from '../../../../foundry/adapters/services/diagnostics.mjs';
 
 /* -------------------------------------------- */
-/*  Sheet vocabulary                            */
+/*  Sheet constants                             */
 /* -------------------------------------------- */
 const notifications = new NotificationService({ diagnostics: new FoundryDiagnostics() });
 const DROP_LOCK_TTL = 2000;
@@ -213,7 +213,7 @@ export class CharacterSheet extends EmblemSheetMixin(foundry.applications.sheets
     return ActorControlPanel.openFor(this.document);
   }
 
-  /** The Control Panel button, for someone who may author the unit: staff, or a Trusted Player who owns it. */
+  /** The Control Panel button, for someone who may author the unit: a GM, or a Trusted Player who owns it. */
   _sheetFrameButtons() {
     if (!canCurrentUserAuthor(this.document)) return [];
     return [{ action: 'openControlPanel', icon: 'fas fa-sliders', label: 'Control Panel' }];
@@ -451,7 +451,7 @@ export class CharacterSheet extends EmblemSheetMixin(foundry.applications.sheets
     return true;
   }
 
-  /** Link a journal entry or page dropped on the open Notes tab, then ask the host to let the unit's owners read it. */
+  /** Link a journal entry or page dropped on the open Notes tab, then have the GM's client let the owners read it. */
   async _onDropJournal(event, payload) {
     if (!this._isNotesDrop(event) || !this.isEditable) return false;
     const result = await linkJournalToActor(this.document, payload.uuid);
@@ -474,7 +474,7 @@ export class CharacterSheet extends EmblemSheetMixin(foundry.applications.sheets
     return Boolean(notes) && notes.style?.display !== 'none';
   }
 
-  /** Withdraw gold from the party Convoy when its coin icon is dropped here. The host checks the balance again. */
+  /** Withdraw gold from the party Convoy when its coin icon is dropped here. The GM's client rechecks the balance. */
   async _onDropConvoyGold(_event, payload) {
     if (!this.document.isOwner) return false;
     const convoy = resolveDocumentSync(payload.convoyUuid) ?? game.actors.get(payload.convoyId) ?? null;
@@ -749,7 +749,7 @@ export class CharacterSheet extends EmblemSheetMixin(foundry.applications.sheets
 
   /**
    * The right-click editors on the unit types, skills, proficiencies, stats and experience bar, for whoever may edit
-   * the unit: staff, or a Trusted Player who owns it.
+   * the unit: a GM, or a Trusted Player who owns it.
    */
   _wireRightClickEditors(context) {
     for (const element of this.element.querySelectorAll('[data-unit-type]')) {
@@ -1119,7 +1119,11 @@ function showGrowthColumn(root, showGrowths) {
   root.querySelector('.label-show-growths')?.classList.toggle('is-active', showGrowths);
 }
 
-/** Replace the portrait with a clone, which drops the listeners another module bound to it. */
+/**
+ * Replace the portrait with a clone to drop the click listeners other modules add to sheet images in their render
+ * hooks. _onRender queues this so it runs after those hooks. The portrait's data-action still works, since Foundry
+ * handles actions on the sheet element.
+ */
 function stripPortraitListeners(root) {
   for (const element of root?.querySelectorAll?.('.profile-img') ?? []) {
     element.replaceWith(element.cloneNode(true));

@@ -27,13 +27,14 @@ const KIND_NOTES = Object.freeze({ [REQUISITION_KINDS.FUNDING]: 'Gold sent to th
 /* -------------------------------------------- */
 /**
  * Show a Stationary's requisitioners, the request kinds, the factions it lists and the demand with the Civics DC it
- * sets. interactWithStation (ui/controls/interaction.mjs) opens it with the api.downtime.inspectRequisition view. On
- * submit the window closes and one api.downtime.requisition command runs, which shows the work banner and posts the
- * check card and the result card.
+ * sets, from the api.downtime.inspectRequisition view. The button sends one api.downtime.requisition command, which
+ * shows the work banner and posts the check card and the result card. A refusal made on this client, such as a busy
+ * host or a paused table, leaves the window open with the picks; otherwise the window closes while the host runs the
+ * command.
  * @param {object} view The downtime query's requisition view (api.downtime.inspectRequisition).
  * @param {{refresh?: Function}} [handlers] Re-reads the view before the window is rebuilt.
- * @returns {Promise<boolean>} Always false in practice: the window closes before the requisition command answers,
- *   and the caller ignores the value.
+ * @returns {Promise<boolean>} Resolves when the window closes, which is before the command answers, so the value
+ *   does not report the outcome.
  */
 export async function openRequisitionMenu(view, { refresh = null } = {}) {
   if (menuShown(WINDOW_CLASS)) return false;
@@ -116,8 +117,7 @@ function prepareRequisitionView(view, state) {
 
 /**
  * The view's performers as requisitioner candidates. A unit must be marked eligible and linked to a party Convoy,
- * since the funds arrive there as inbound gold. The engine already blocks a unit with no Convoy, and the menu adds
- * that reason itself in case the view gave none.
+ * since the funds arrive there as inbound gold.
  */
 function performerEntries(view) {
   return (view.performers ?? []).map(entry => {
@@ -228,6 +228,10 @@ function positive(value, fallback) {
   return number > 0 ? number : fallback;
 }
 
+/**
+ * Render the body, and write the requisitioner it shows back into the picks, so one who became unavailable is
+ * replaced.
+ */
 async function render(view, state) {
   const prepared = prepareRequisitionView(view, state);
   state.performerUuid = prepared.performers.find(entry => entry.selected)?.actorUuid ?? null;
@@ -324,8 +328,8 @@ function patchDemand(menu) {
 }
 
 /**
- * Close the window, then send the requisition command with the requisitioner, kind, faction and demand. The public
- * API's command path shows the result, refusals included, through its notification service.
+ * Send the requisition command with the requisitioner, kind, faction and demand. The API shows the result,
+ * including any refusal, as a notification.
  */
 async function beginRequisition(menu) {
   const { view, state } = menu;

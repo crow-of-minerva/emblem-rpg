@@ -14,7 +14,7 @@ const COLLAPSE_FADE_MS = 130;
 const COLLAPSE_FADE_CLASS = 'emblem-collapse-fade';
 
 /* -------------------------------------------- */
-/*  Frame options                               */
+/*  Sheet options                               */
 /* -------------------------------------------- */
 const SHEET_DEFAULTS = Object.freeze({
   preserveScroll: true,
@@ -32,12 +32,12 @@ const EDIT_IMAGE_DEFAULTS = Object.freeze({
 /* -------------------------------------------- */
 /*  Shared sheet behavior                       */
 /* -------------------------------------------- */
-/** Whether the local user may author a document through its sheet: Trusted owner or staff. */
+/** Whether the local user may author a document through its sheet: a GM, or a Trusted Player who owns it. */
 export function canCurrentUserAuthor(document) {
   return canFoundryUserAuthorDocument(game.user, document);
 }
 
-/** Whether the local user may use a sheet's gameplay controls, which act through system commands: owner or staff. */
+/** Whether the local user may use a sheet's gameplay controls, which send system commands: the owner or a GM. */
 function canCurrentUserPlay(document) {
   return canFoundryUserPlayDocument(game.user, document);
 }
@@ -46,7 +46,7 @@ function canCurrentUserPlay(document) {
 /*  Sheet mixin                                 */
 /* -------------------------------------------- */
 /**
- * Add the frame every system sheet shares to ActorSheetV2 or ItemSheetV2: rendering from the first PARTS template,
+ * Add the behavior every system sheet shares to ActorSheetV2 or ItemSheetV2: rendering from the first PARTS template,
  * scroll and focus kept across renders, the read-only rules, item drags, the image picker and the collapse fade.
  * The Character, Class, Item, Resource, Object, Convoy and Vendor sheets are built on it.
  * @param {typeof foundry.applications.api.ApplicationV2} Base
@@ -56,16 +56,16 @@ export function EmblemSheetMixin(Base) {
   return class EmblemDocumentSheet extends Base {
     static DEFAULT_TAB = null;
 
-    /** What this sheet wants of the frame, merged over the defaults. */
+    /** Per-sheet options (keep scroll or focus, accept drops, image picker), merged over SHEET_DEFAULTS. */
     static SHEET_OPTIONS = {};
 
     /** Selectors for navigation controls, such as tabs, that stay usable on a read-only sheet. */
     static NAVIGATION_CONTROLS = [];
 
-    /** Selectors for the gameplay controls a read-only sheet keeps usable for someone who plays the unit. */
+    /** Selectors for the gameplay controls a read-only sheet keeps usable for the unit's owner or a GM. */
     static GAMEPLAY_CONTROLS = [];
 
-    /** The frame every system sheet shares. Foundry merges this up the class chain, so a sheet adds only its own. */
+    /** Options every system sheet shares. Foundry merges this up the class chain, so a sheet adds only its own. */
     static DEFAULT_OPTIONS = {
       classes: ['emblem-rpg', 'sheet'],
       tag: 'form',
@@ -108,6 +108,8 @@ export function EmblemSheetMixin(Base) {
       return expandSheet(this, () => super.maximize());
     }
 
+    // These sheets don't use HandlebarsApplicationMixin: the first PARTS template is rendered as the whole content
+    // and _replaceHTML swaps it in, so any other PARTS entries are ignored.
     async _renderHTML(context, options) {
       const part = Object.values(this.constructor.PARTS)[0];
       return foundry.applications.handlebars.renderTemplate(part.template, context);
@@ -117,6 +119,7 @@ export function EmblemSheetMixin(Base) {
       return prepareSheetContext(this, await super._prepareContext(options));
     }
 
+    // Foundry's form data reads an img[data-edit]'s src into the submit; images are saved by editImage instead.
     _prepareSubmitData(event, form, formData) {
       const data = super._prepareSubmitData(event, form, formData);
       for (const image of form.querySelectorAll('img[data-edit]')) delete data[image.dataset.edit];
@@ -136,24 +139,24 @@ export function EmblemSheetMixin(Base) {
       replaceSheetContent(this, result, content);
     }
 
-    /** Wire the frame's own listeners: drops on the content root, and a right-click on the image opening Studio. */
+    /** Wire the shared listeners: drops on the content root, and a right-click on the image opening Studio. */
     _activateSharedListeners(content) {
       activateSharedListeners(this, content);
     }
 
-    /** Editable only by someone who may author the document: staff, or a Trusted Player who owns it. */
+    /** Editable only by someone who may author the document: a GM, or a Trusted Player who owns it. */
     get isEditable() {
       return super.isEditable === true && canCurrentUserAuthor(this.document);
     }
 
-    /** Whether the local user plays the document, so its gameplay controls stay usable on a read-only sheet. */
+    /** Whether the local user is the owner or a GM, so gameplay controls stay usable on a read-only sheet. */
     get canPlay() {
       return canCurrentUserPlay(this.document);
     }
 
     /**
      * Foundry disables every control on a read-only sheet. Turn the navigation controls back on, and the gameplay
-     * controls too for a user who plays the document. The emblem-readonly class lets the stylesheet give disabled
+     * controls too for the owner or a GM. The emblem-readonly class lets the stylesheet give disabled
      * fields a plain cursor, since they only display values there, and disabled buttons the locked cursor.
      */
     _toggleDisabled(disabled) {
@@ -169,7 +172,10 @@ export function EmblemSheetMixin(Base) {
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     }
 
-    /** Start a drag of one of the document's items, carrying its full data so the receiver keeps its state. */
+    /**
+     * Start a drag of one of the document's items. The payload carries its uuid and a full copy of its data; Foundry's
+     * fromDropData builds a parentless copy from that data, so receivers should look the item up by uuid first.
+     */
     _onDragStart(event) {
       startItemDrag(this, event);
     }
@@ -193,9 +199,9 @@ export function EmblemSheetMixin(Base) {
 }
 
 /* -------------------------------------------- */
-/*  Frame behavior                              */
+/*  Mixin helpers                               */
 /* -------------------------------------------- */
-/** A sheet's frame options over the defaults, with the image picker's own defaults filled in. */
+/** A sheet's SHEET_OPTIONS over the defaults, with the image picker's own defaults filled in. */
 function resolveSheetOptions(declared = {}) {
   return {
     ...SHEET_DEFAULTS,
@@ -225,6 +231,11 @@ function replaceSheetContent(sheet, result, content) {
   if (savedFocus) restoreFocus(content, savedFocus);
 }
 
+/**
+ * With dragDrop on, drops are also caught on the content so a read-only sheet still accepts them. On an editable
+ * sheet Foundry's own drop handler on the form runs too, so a sheet using this must stop the drop's propagation or
+ * _onDrop runs twice.
+ */
 function activateSharedListeners(sheet, content) {
   const options = sheet.sheetOptions;
   if (options.dragDrop && !content.hasAttribute('data-drop-listeners-added')) {

@@ -12,13 +12,13 @@
 export const TARGETING_STATES = Object.freeze({
   /** Nothing is aimed, so canvas clicks go to movement. */
   IDLE: 'idle',
-  /** An attack Item is staged and its grid waits for a Token click. */
+  /** An attack Item is chosen and its grid waits for a token click. */
   AIMING: 'aiming',
   /** The combat or Destructible preview for the clicked target is open. */
   PREVIEWING: 'previewing',
   /** An activation is collecting its targets, its aim or its confirmation. */
   SELECTING: 'selecting',
-  /** The collected activation is being reprojected, confirmed and sent. */
+  /** The collected activation is being checked again, confirmed and sent. */
   RESOLVING: 'resolving',
   /** The activation's geometry step waits for one of its candidate squares. */
   PLACING: 'placing'
@@ -89,7 +89,7 @@ export function targetingStateName() {
   return control.name;
 }
 
-/** The staged targeting frame, or null when nothing is aimed. */
+/** The open targeting frame (the chosen item and what it has collected so far), or null when nothing is aimed. */
 export function activeTargeting() {
   return control.frame;
 }
@@ -99,7 +99,7 @@ export function activePlacement() {
   return control.placement;
 }
 
-/** How many times targeting has been entered or left on this client. Nothing in the system reads it. */
+/** How many times targeting has been entered or left on this client. */
 export function targetingGeneration() {
   return control.generation;
 }

@@ -17,7 +17,8 @@ import {
 /**
  * Give the threat overlay (ThreatIndicators in presentation/canvas/threat.mjs) each hostile's reach and how hard
  * it could hit. It uses the injected Foundry reads and the game/combat/threat.mjs rules, and writes nothing.
- * @param {{board: object, matchups: object, diagnostics: object}} ports The projections and the diagnostics port.
+ * @param {{board: object, matchups: object, diagnostics: object}} ports The board and matchup readers, and the
+ *   diagnostics log.
  */
 export function createThreatAssessment({ board, matchups, diagnostics }) {
   requirePorts('createThreatAssessment', { board, matchups, diagnostics });
@@ -49,7 +50,7 @@ export function createThreatAssessment({ board, matchups, diagnostics }) {
     });
   };
 
-  /** Open a threat inspection from the board projection. `advance` measures hostile reaches within a frame budget. */
+  /** Start checking threats to the selected unit. `advance` measures hostiles a few at a time, within one frame. */
   const beginInspection = selectedTokenUuid => {
     const projected = board.projectThreatBoard(selectedTokenUuid);
     if (!projected) return null;

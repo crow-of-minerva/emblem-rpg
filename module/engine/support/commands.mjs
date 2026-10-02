@@ -17,7 +17,7 @@ import { diagnosticData, requirePorts } from '../../contracts/protocol.mjs';
 /**
  * The support command definitions init/system.mjs registers with CommandDispatcher: granting support XP (a child
  * command of downtime activities), setting a unit's partners (api.character.support.setPartners), and the mirror
- * reconciliation foundry/hooks/actors.mjs submits.
+ * clean-up job foundry/hooks/actors.mjs submits.
  */
 export function createSupportCommandContribution({ actors, authority }) {
   requirePorts('createSupportCommandContribution', { actors });
@@ -69,6 +69,8 @@ async function setSupportPartners(context, actors) {
 
     const mirrored = await settleSupportMirror(intent.actorUuid, actors, context);
     const outcome = { actorUuid: intent.actorUuid, partners: intent.partners.length, mirrored: mirrored.changed };
+    // The unit's own list is the one that counts and is already saved, so a failed update of the partners'
+    // copies still accepts, as SUPPORT_MIRROR_PENDING.
     if (mirrored.code) return accept(RESULT_CODES.SUPPORT_MIRROR_PENDING, { ...outcome, ...(mirrored.detail ?? {}) });
     return accept(RESULT_CODES.SUPPORT_PARTNERS_SET, outcome);
   }
@@ -89,7 +91,7 @@ async function reconcileSupportMirror(context, actors) {
 }
 
 /* -------------------------------------------- */
-/*  Support XP settlement                       */
+/*  Support XP                                  */
 /* -------------------------------------------- */
 
 /**
@@ -130,6 +132,7 @@ async function settleSupportXpGrant(context, actors) {
       rankUps: plan.rankUps,
       mirrored: mirrored.changed
     };
+    // As in setSupportPartners, a failed mirror still accepts.
     if (mirrored.code) return accept(RESULT_CODES.SUPPORT_MIRROR_PENDING, { ...outcome, ...(mirrored.detail ?? {}) });
     return accept(RESULT_CODES.SUPPORT_XP_GRANTED, outcome);
   }
@@ -144,7 +147,8 @@ async function settleSupportXpGrant(context, actors) {
  * Rebuild the support entries on each partner so they match the source actor's own list, which is the one that
  * counts.
  * @param {string} actorUuid The unit whose own list is copied to its partners.
- * @param {object} actors Injected Character repository port.
+ * @param {object} actors The Character writer.
+ * @param {object} [context] The running command's context, so the writes share its undo record.
  * @returns {Promise<object>} Either a `changed` count or the result code that refused it.
  */
 async function settleSupportMirror(actorUuid, actors, context = {}) {

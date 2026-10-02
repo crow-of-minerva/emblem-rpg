@@ -10,17 +10,17 @@ import { buildRallyAbility, isRallyAbilityName, rallyAbilityName } from '../supp
 /* -------------------------------------------- */
 export const INNATE_GRANT_FLAG = 'innateGrant';
 
-/** Unit types that fight unarmed when they have nothing in hand. */
+/** Unit types that get the Unarmed Attack grant, when it is their only unit type. */
 const UNARMED_UNIT_TYPES = Object.freeze(['infantry', 'armored']);
 
 /**
- * The items a Character is given automatically while it qualifies. Used by planInnateGrants and INNATE_SOURCE_NAMES
- * here, and by getInnateGrantSnapshot in foundry/adapters/document-writes/characters.mjs, which finds a grant's
- * source item by `itemName` in the world or a compendium, or makes it with `build` from the unit's affinity and the
- * affinity table. `qualifies` is checked again on every sync. `adopts` lets an item the unit already carries become
- * the grant. With `refresh`, changes to the source are copied onto the granted item, keeping the unit's icon,
- * equipment state and spent uses. A built grant's `name` is the name `build` would give it; a unit holding its grant
- * under that name is not synced at all (innateGrantsHeld), so a refresh reaches a held grant only through a rename.
+ * Items a Character gets automatically while it qualifies: Unarmed Attack and Rally. getInnateGrantSnapshot in
+ * foundry/adapters/document-writes/characters.mjs finds a grant's source item by `itemName` in the world or a
+ * compendium, or makes it with `build` from the unit's affinity. `qualifies` is checked on every sync. `adopts` lets
+ * an item the unit already carries become the grant. With `refresh`, changes to the source are copied onto the
+ * granted item, keeping the unit's icon, equipment state and spent uses. `name` is the name `build` would give it.
+ * A unit that already holds each grant under the right name is skipped (innateGrantsHeld), so a refresh only
+ * reaches it when its grant's name changes.
  */
 export const INNATE_GRANTS = Object.freeze([
   Object.freeze({
@@ -58,7 +58,7 @@ const REFRESH_STATE_PATHS = Object.freeze(['isWielded', 'isWorn', 'isEquipped', 
  * Decide which innate items to create, refresh, adopt or delete for one Character. Called by reconcileInnateGrants
  * in engine/character/commands.mjs, whose writer (settleInnateGrants) applies updates, then deletions, then
  * creations. When the unit holds more than one copy of a grant, the first is kept and the rest are deleted.
- * @param {object} unit Detached unit facts: `type`, `actorType`, `unitType`, `items` (each with `innateGrant`).
+ * @param {object} unit A detached copy of the unit: `type`, `actorType`, `unitType`, `items` (each with `innateGrant`).
  * @param {Record<string, object|null>} sources Grant key to the source item's detached data, null when unresolved.
  * @returns {{updates: object[], deleteIds: string[], creates: object[]}}
  */
@@ -145,7 +145,7 @@ function planInnateAdoption(item, grant) {
  * Whether a Character already holds what planInnateGrants would leave it with: one flagged copy of each grant it
  * qualifies for, carrying the grant's current `name` when it has one, and no copy of a grant it doesn't qualify for.
  * foundry/hooks/innate-grants.mjs skips the sync for such a unit without building any source.
- * @param {object} unit Detached unit facts, as planInnateGrants reads them.
+ * @param {object} unit The unit, as planInnateGrants reads it.
  * @param {Record<string, string>} names Grant key to the name its `name` gives this unit now.
  * @returns {boolean}
  */

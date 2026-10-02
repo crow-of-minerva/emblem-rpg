@@ -16,7 +16,7 @@ const RESOURCE_MERCHANDISE = Object.freeze({
   Material: 'material', Textile: 'textile', Reagent: 'reagent', Ingredient: 'ingredient'
 });
 
-/** The merchandise category an Item fact falls under, or an empty string for something no vendor deals in. */
+/** The merchandise category an Item falls under, or an empty string for something no vendor deals in. */
 function merchandiseKey(item) {
   const subtype = String(item.itemType ?? '');
   switch (String(item.type ?? '')) {
@@ -53,10 +53,9 @@ export function isShopGood(item = {}) {
 const WITHIN_REACH = Object.freeze({ ok: true, data: Object.freeze({}) });
 
 /**
- * Check adjacency, elevation and flight between a buyer and a Vendor, for inspectShop in engine/economy/trade.mjs
- * and for the purchase and sale planners below. A flier buying from a Vendor on the ground lands when the visit
- * settles, so it is refused over an obstacle.
- * @param {object} reach The board facts between the two Tokens.
+ * Check adjacency, elevation and flight between a buyer and a Vendor. A flier buying from a Vendor on the ground
+ * lands when it trades, so it is refused over an obstacle.
+ * @param {object} reach Distance, elevation and flight between the two Tokens.
  * @returns {{ok: boolean, code?: string, data: object}} A refusal, or an answer with no code when within reach.
  */
 export function resolveVendorReach(reach = {}) {
@@ -136,7 +135,7 @@ export function purchasePrice(item = {}, disposition = 0) {
 /**
  * What one buyer pays per unit for a shelf entry. The party that sold the entry to this Vendor buys it back at the
  * per-unit gold it was paid, whatever the disposition or haggle; everyone else pays purchasePrice.
- * @param {object} item The shelf entry, carrying its `buyback` (projectVendorItem).
+ * @param {object} item The shelf entry, carrying its `buyback`.
  * @param {{disposition?: number, vendorUuid?: string, key?: string}} buyer The disposition the buyer's party sees,
  *   the Vendor, and the buyer's haggle key (haggleKey in ./haggle.mjs).
  * @returns {number}
@@ -174,7 +173,7 @@ export function shelvedTags(tags = {}, buyback = null) {
 }
 
 /* -------------------------------------------- */
-/*  Settlement                                  */
+/*  Purchases and sales                         */
 /* -------------------------------------------- */
 
 /** Quantity limit enforced by the vendor purchase and sale planners. */
@@ -183,9 +182,9 @@ export const MAX_VENDOR_QUANTITY = 9999;
 const VENDOR_ITEM_TYPES = Object.freeze(['Equipment', 'Consumable', 'Miscellaneous', 'Resource']);
 
 /**
- * Plan a purchase for settleVendorPurchase in engine/economy/trade.mjs from fresh shop projections. Prices, stock
- * and funds come from the projection, never from the caller. The purse pays before Convoy funds, and the
- * destination must have room. Resources transfer by quantity, and other goods one at a time.
+ * Plan a purchase from freshly read shop data. Prices, stock and funds come from saved data, never from the
+ * player's request. The purse pays before Convoy funds, and the destination must have room. Resources transfer by
+ * quantity, and other goods one at a time.
  * @param {object} facts The buyer, the vendor, the destination, the funds, the shelf entry and the quantity.
  * @returns {{ok: boolean, code?: string, data: object}}
  */
@@ -263,10 +262,10 @@ function purchaseRoomRefusal(destination, item, isResource) {
 }
 
 /**
- * Plan a sale for settleVendorSale in engine/economy/trade.mjs from fresh shop projections. A vendor short of gold
- * still buys and pays what it has. A Vendor never buys back what it sold (soldByVendor), and the plan's `buyback`
- * is the tag the shelved copy carries: the seller's haggle key and the per-unit gold actually paid, rounded up so
- * buying the goods back never costs less than the vendor paid.
+ * Plan a sale from freshly read shop data. A vendor short of gold still buys and pays what it has. A Vendor never
+ * buys back what it sold (soldByVendor), and the plan's `buyback` is the tag the shelved copy carries: the seller's
+ * haggle key and the per-unit gold actually paid, rounded up so buying the goods back never costs less than the
+ * vendor paid.
  * @param {object} facts The seller (with its `haggleKey`), the vendor, the source of the goods, the Item and the
  *   quantity.
  * @returns {{ok: boolean, code?: string, data: object}}

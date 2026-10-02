@@ -31,8 +31,8 @@ const GROUP_PRESENT = Object.freeze({
 const OVERWRITE_BEHAVIORS = new Set(['forbid', 'clear', 'clearRespawn']);
 
 /**
- * Build the grouped patch an authored terrainEdit step applies, for that step's writer in
- * foundry/adapters/document-writes/effect-execution.mjs.
+ * Build the patch an authored terrainEdit step applies to each square, grouped as stats, hazard, visual effect and
+ * light. A stat set to its default value clears that field.
  */
 export function buildTerrainEffectPatch(step, lightKey = 'terrain-edit') {
   const patch = {};
@@ -109,8 +109,13 @@ export function terrainEffectPatchIsEmpty(patch) {
 /* -------------------------------------------- */
 
 /**
- * Plan the Scene cells and timed-edit records a terrainEdit step replaces, from detached data, for the step's writer
- * in foundry/adapters/document-writes/effect-execution.mjs.
+ * Plan the Scene squares and timed-edit records a terrainEdit step changes, working on copies of both. Each record
+ * keeps the square's original state so the edit can be undone. With `replacePrevious`, this caster's earlier cast
+ * of the same item is undone first. A square already edited by another cast is restored to its original before the
+ * new patch lands; on a square waiting to respawn, that brings the cleared feature back at once.
+ * A square's authored `overwriteBehavior` decides the rest: a `forbid` square is never edited, a `clear` square is
+ * left bare when the edit ends instead of restored, and a `clearRespawn` square is left bare and restored
+ * `respawnRounds` rounds later.
  */
 export function planTerrainEffectEdit({
   grid = {}, records = {}, cells = [], patch, overwrite = false, duration = 0,
@@ -192,10 +197,9 @@ const PHYSICAL_TYPES = Object.freeze(['slashing', 'piercing', 'crushing', 'missi
 const MAGICAL_TYPES = Object.freeze(['fire', 'ice', 'lightning', 'wind', 'arcane', 'decay', 'shadow', 'holy']);
 
 /**
- * Scan the hazards under a unit's footprint, for the phase-participant projection in
- * foundry/adapters/projections/encounters.mjs and projectTerrainHazardAt in projections/board.mjs. Each damage type
- * and each kind of healing takes its highest value across the tiles, not the sum. Tiles the unit is exempt from are
- * skipped. When two tiles tie for a damage type, either one's lethal flag counts.
+ * Scan the hazards under a unit's footprint. Each damage type and each kind of healing takes its highest value
+ * across the tiles, not the sum. Tiles the unit is exempt from are skipped. When two tiles tie for a damage type,
+ * either one's lethal flag counts.
  * @param {object} grid Persisted terrain grid.
  * @param {Array<[number, number]>} cells Footprint cells as column and row pairs.
  * @param {object|null} profile Normalized exception profile for the unit standing there.
@@ -230,10 +234,10 @@ export function scanTerrainImpacts(grid, cells, profile) {
 }
 
 /**
- * Apply defenses to scanTerrainImpacts output before engine health settlement.
+ * Apply defenses to scanTerrainImpacts output before the damage and healing are applied.
  * Defense and Resistance reduce only damage types the unit is protected against.
  * @param {object|null} scan Result of `scanTerrainImpacts`.
- * @param {object} defenses Detached `protections`, `defense` and `resistance` facts for the unit.
+ * @param {object} defenses The unit's `protections`, `defense` and `resistance`.
  * @returns {{heal: {hp: number, stance: number}|null, damage: Array<{type: string, amount: number}>}}
  */
 export function resolveTerrainImpacts(scan, defenses = {}) {
@@ -254,7 +258,7 @@ export function resolveTerrainImpacts(scan, defenses = {}) {
 }
 
 /**
- * Cap terrain damage before engine health settlement, in application order. Player HP is protected only from
+ * Cap terrain damage before it is applied, in application order. Player HP is protected only from
  * non-lethal entries, and the damage resolver handles lethal overkill. Zero-damage entries are left out.
  * @param {ReadonlyArray<{type: string, amount: number, canKillPlayer?: boolean}>} damage Resolved hazard damage.
  * @param {{hp?: number, actorType?: string}} [standing] The unit's health as the damage begins, and its faction role.
@@ -290,7 +294,7 @@ function mitigateTerrainDamage(effect, protections, defenses) {
 /* -------------------------------------------- */
 
 /**
- * The phase a spawned unit arrives in, for engine/terrain/effects.mjs. Neutrals arrive in the Enemy phase.
+ * The phase a spawned unit arrives in. Neutrals arrive in the Enemy phase.
  * @param {string} actorType Faction of the unit being spawned.
  * @returns {string}
  */
@@ -301,8 +305,9 @@ export function spawnPhaseFor(actorType) {
 }
 
 /**
- * Select terrain spawns for engine phase opening in stable cell-key order: each square whose round window is open
- * and whose last arrival is off cooldown.
+ * Select the terrain spawns due as a phase opens, sorted by square key: each spawn whose round window is open and
+ * whose last arrival is off cooldown. Cooldowns are kept by square and the spawn's position in that square's list
+ * (`key#index`), so reordering a square's spawns moves their cooldowns.
  * @param {object} grid Persisted terrain grid.
  * @param {number} round Current round.
  * @param {object} state Per-square arrival records.
@@ -358,8 +363,7 @@ function spawnArrivalRound(entry) {
 /* -------------------------------------------- */
 
 /**
- * Build the record `TerrainPhaseService` writes through `recordSpawnState` once a square's arrival completed. It
- * puts the square on cooldown, which `spawnArrivalRound` reads on later phases.
+ * The record saved after a spawn fires. It starts that spawn's cooldown.
  * @param {number} round Round the arrival happened in.
  * @returns {{stage: string, round: number}}
  */
@@ -372,11 +376,11 @@ export function projectSpawnRecord(round) {
 /* -------------------------------------------- */
 
 /**
- * Plan timed terrain expiry for engine phase changes and encounter end.
- * Phase sweeps decrement matching records. Encounter end expires all records without scheduling respawn.
- * Each cell either restores its original value, clears or clears and schedules respawn.
+ * Plan timed terrain expiry at a phase change or when the encounter ends.
+ * Phase sweeps count down matching records. Encounter end expires all records without scheduling respawn.
+ * Each square either gets its original back, is left bare, or is left bare and scheduled to respawn.
  * @param {object} grid Persisted terrain grid.
- * @param {object} records Persisted terrain edit journals.
+ * @param {object} records The saved terrain edit records.
  * @param {object} options `decrement` and the `closingPhase` a record must tick on.
  * @returns {{cells: Array<object>, counters: Array<object>}}
  */
@@ -410,8 +414,7 @@ export function planTerrainEditSweep(grid, records, { decrement = true, closingP
 }
 
 /**
- * Name the terrain squares and counters one sweep will rewrite, so `TerrainPhaseService.projectTimedExpiry` can
- * tell the phase change which Scene flag entries to capture before its first write.
+ * The terrain squares and counters a sweep will change, so the phase change can back them up before writing.
  * @param {object} plan The sweep {@link planTerrainEditSweep} produced.
  * @returns {Readonly<{counters: ReadonlyArray<object>, cells: ReadonlyArray<object>}>} Square keys alone.
  */

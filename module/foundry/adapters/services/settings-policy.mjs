@@ -51,7 +51,7 @@ export function initializeCoreSettingsPolicy() {
 }
 
 /**
- * Write the enforced values of core and Sequencer settings, on the command host. Runs on `ready` and whenever
+ * On the host client, set the core and Sequencer settings this system requires. Runs on `ready` and whenever
  * onEnforcedCoreSettingChanged sees one change.
  */
 export async function enforceCoreSettingsPolicy() {
@@ -122,7 +122,7 @@ export async function stampWorldSchema() {
 
 /**
  * Record the system schema version on a world `migrateWorldContent` (init/migrate-world.mjs) has just brought up to
- * date. Only the command host writes it, and a world a newer build stamped keeps its version.
+ * date. Only the host client writes it, and a world a newer build stamped keeps its version.
  * @returns {Promise<boolean>} Whether the version was written.
  */
 export async function stampMigratedWorldSchema() {
@@ -143,7 +143,7 @@ export function worldExperienceMultiplier() {
 
 /**
  * The world scale on a critical's bonus damage against a Lord or Retainer, clamped to the slider's range, or 1 when
- * the setting is unreadable. FoundryHealthRepository.getSnapshot puts it on every Character's health target.
+ * the setting is unreadable.
  */
 export function worldPlayerCriticalBonusScale() {
   const value = Number(readSystemSetting(PLAYER_CRITICAL_BONUS_SETTING));

@@ -34,7 +34,7 @@ function movementState(actor) {
   };
 }
 
-/** Whether the movement facts still match the state the command planned against. */
+/** Whether the unit's turn state and position still match what the command planned against. */
 export function snapshotStillCurrent(token, actor, snapshot) {
   const turn = actor.system?.turn ?? {};
   return (Number(turn.movementSpent) || 0) === snapshot.movementSpent
@@ -52,10 +52,9 @@ export function snapshotStillCurrent(token, actor, snapshot) {
 const TURN_PATH = 'system.turn.';
 
 /**
- * The Actor fields a movement settlement writes: the unit's turn block and, when a flier lands or takes off, its
- * Grounded status and the flag a stance break sets (taking off clears it). Every writer here and in
- * document-writes/movement.mjs records the Actor through movementActorCapture, so the operation keeps just these
- * fields rather than the whole Character source.
+ * The Actor fields a movement write changes: the unit's turn block and, when a flier lands or takes off, its
+ * Grounded status and the flag a Stance Break sets (taking off clears it). movementActorCapture records only these
+ * paths for undo, not the whole Character.
  */
 const TURN_PATHS = Object.freeze(['system.turn']);
 const TURN_AND_GROUNDED_PATHS = Object.freeze([
@@ -67,10 +66,10 @@ export function movementActorCapture(actor, { grounds = false } = {}) {
 }
 
 /**
- * Whether a turn write actually took effect. A preUpdate hook can veto an update without an error, so every
- * movement settlement reads the saved turn back before it releases the board lock or reports success.
+ * Whether a turn write actually took effect. A preUpdate hook can veto an update without an error, so movement
+ * writes read the saved turn back before they release the movement lock or report success.
  *
- * Only the turn paths are compared, because a settlement may write other fields alongside the turn and Foundry adds
+ * Only the turn paths are compared, because a write may change other fields alongside the turn and Foundry adds
  * `_id` to the changes object it is given. Callers still hand Foundry a copy, not the object they check afterwards.
  */
 export function turnChangesLanded(actor, changes) {
@@ -80,7 +79,7 @@ export function turnChangesLanded(actor, changes) {
     .every(([path, value]) => structurallyEqual(turn[path.slice(TURN_PATH.length)], value));
 }
 
-/** Whether both positions identify the same board square. */
+/** Whether both positions have the same x and y on the map. */
 export function samePosition(left, right) {
   const a = left?._source ?? left;
   const b = right?._source ?? right;
@@ -101,15 +100,15 @@ function movementCancelEffectIds(actor) {
 }
 
 /* -------------------------------------------- */
-/*  Board lock                                  */
+/*  Movement lock                               */
 /* -------------------------------------------- */
 
-/** A copy of the board-lock setting, safe to compare or record. */
+/** A copy of the movement-lock setting, safe to compare or record. */
 export function movementLockNow() {
   return clone(game.settings.get(SYSTEM_ID, USER_LOCK_SETTING)) ?? null;
 }
 
-/** Normalize the stored board lock into the plain shape engine/movement reads. */
+/** Normalize the stored movement lock into the plain shape engine/movement reads. */
 export function normalizeLock(lock) {
   if (!lock?.holderId || !lock?.tokenUuid) return null;
   return Object.freeze({
@@ -134,8 +133,8 @@ export function sameLock(left, right) {
 const PAGE_STARTED_AT = Date.now();
 
 /**
- * Whether a planning lock is stale: its holder has disconnected, or this user took it before the page last loaded.
- * A plan has no timeout while its holder stays connected, but staff can restore and release a live plan.
+ * Whether a planning lock is stale: the user holding it has disconnected, or this user took it before the page last
+ * loaded. A plan has no timeout while that user stays connected, but the GM can restore and release a live plan.
  */
 export function lockIsStale(lock) {
   const user = game.users.get(lock.holderId);
@@ -144,13 +143,13 @@ export function lockIsStale(lock) {
 }
 
 /* -------------------------------------------- */
-/*  Plan settlements                            */
+/*  Closing a plan                              */
 /* -------------------------------------------- */
 
 /**
- * The documents closing a plan may change besides the unit's own Actor and Token: the Guard-bond partners a recheck
- * may write, the bond effects it deletes, and the effects a cancelled move removes. FoundryMovementRepository adds
- * them to its single capture, so everything is recorded before the first write.
+ * Other documents closing a plan can change besides the unit's own Actor and Token: Guard partners and their bond
+ * effects, and effects that end on cancel. FoundryMovementRepository records them with the rest before the first
+ * write.
  */
 export function planEndCaptures(actor, token, { guardBonds = null, cancelled = false } = {}) {
   const deleting = cancelled ? movementCancelEffects(actor) : [];
@@ -174,8 +173,8 @@ export async function settlePlanEnd(actor, token, { cancelled = false, guardBond
 }
 
 /**
- * Close a movement plan: write the turn the caller planned, release the board lock, then settle the plan's end.
- * Everything is recorded on the caller's operation first, so CommandDispatcher can roll back a later failure.
+ * Close a movement plan: write the turn the caller planned, release the movement lock, then finish the plan's end
+ * (settlePlanEnd). Everything is recorded in the caller's undo record first, so a later failure can be undone.
  * @returns {Promise<boolean>} false if the token, turn or lock changed while closing, or the turn write didn't take.
  */
 export async function closeMovementPlan({
@@ -208,8 +207,8 @@ export function teleportOutcome(code, reasonCode) {
 }
 
 /**
- * Settle one teleport hop for FoundryMovementRepository.teleport, in this order: move the token pad to pad, write
- * the movement charge the rules worked out, and release the board lock if the hop ends the plan. A refused write
+ * Carry out one teleport hop for FoundryMovementRepository.teleport, in this order: move the token pad to pad, write
+ * the movement charge the rules worked out, and release the movement lock if the hop ends the plan. A refused write
  * returns REVERTED, which engine/movement/commands.mjs refuses as TELEPORT_SETTLEMENT_FAILED.
  */
 export async function settleTeleportHop(snapshot, resolution, charge, token, actor, operation = null) {
@@ -226,6 +225,7 @@ export async function settleTeleportHop(snapshot, resolution, charge, token, act
     return teleportOutcome(TELEPORT_SETTLEMENT_OUTCOMES.STALE, 'movement.teleport-facts-stale');
   }
   try {
+    // Foundry v14 ignores the `teleport` key here; the 'displace' action is what makes the move instant.
     const landed = await token.move({ ...destination, teleport: true, action: 'displace' }, movementRestoreOptions());
     if (landed === false || !samePosition(token, destination)) throw new Error('movement.teleport-hop-refused');
     await actor.update(clone(changes), {});
@@ -239,7 +239,7 @@ export async function settleTeleportHop(snapshot, resolution, charge, token, act
   return teleportOutcome(TELEPORT_SETTLEMENT_OUTCOMES.SETTLED, '');
 }
 
-/** The turn a hop leaves behind: its movement charge, the action or bonus it spends, and its new anchor. */
+/** The turn a hop leaves behind: its movement charge, the action or bonus it spends, and its new starting point. */
 function teleportTurnChanges(snapshot, resolution, charge, destination) {
   const changes = {
     'system.turn.movementSpent': planMovementSpend({
@@ -270,7 +270,7 @@ function teleportTurnChanges(snapshot, resolution, charge, destination) {
 /*  Cancellation cleanup                        */
 /* -------------------------------------------- */
 
-/** Delete the effects authored to lapse with a cancelled move, recording them on the operation first. */
+/** Delete the effects authored to lapse with a cancelled move, recording them for undo first. */
 async function removeMovementCancelEffects(actor, operation = null) {
   const effects = movementCancelEffects(actor);
   if (!effects.length) return Object.freeze([]);
@@ -286,7 +286,7 @@ function movementCancelEffects(actor) {
   return collectionValues(actor?.effects).filter(effect => ids.has(String(effect?.id ?? '')));
 }
 
-/** The bond halves FoundryGuardBondRepository deletes when a bond breaks, captured before the recheck runs. */
+/** The Guard bond effects FoundryGuardBondRepository deletes when a bond breaks, recorded before the recheck runs. */
 function guardBondEffects(actor) {
   return collectionValues(actor?.effects).filter(effect => (
     effect?.name === GUARD_BOND_EFFECT_NAME && Boolean(effect?.flags?.[SYSTEM_ID]?.guardRole)

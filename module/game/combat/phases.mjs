@@ -70,7 +70,7 @@ const TURN_INACTIVE = Object.freeze({
 });
 
 /**
- * The update paths that write a unit's turn state back from a detached turn snapshot. restoreUpdate in
+ * The update paths that write a unit's turn state back from a saved copy of it. restoreUpdate in
  * foundry/adapters/document-writes/development.mjs uses it when FoundryDevelopmentRepository restores units.
  */
 export function turnUpdate(turn) {
@@ -128,7 +128,7 @@ export function nextEncounterPhase(phase, round) {
  * The turn-state updates for every unit when a phase opens, which engine/combat/encounters/phases.mjs writes through
  * applyTurnUpdates. Each unit's turn state is replaced whole. The acting faction's Willpower and Dexterity are
  * refilled, and at encounter start both factions' pools are, Extra Actions included. Extra Actions refill only then.
- * @param {object[]} units Detached unit facts carrying `actorUuid`, `actorType`, and `special` pools.
+ * @param {object[]} units Units with `actorUuid`, `actorType` and `special` pools.
  * @param {string} phase The phase opening.
  * @param {object} [options]
  * @param {boolean} [options.encounterStart] Whether this opening is the encounter's first.
@@ -166,7 +166,7 @@ export function phaseParticipants(units = [], phase) {
  * Group units for the camera pans when a phase opens (engine/combat/encounters/phases.mjs). Each group grows from
  * the leftmost ungrouped unit while its bounds fit within `span`. Units without a cell come last, in one group with
  * no pan.
- * @param {object[]} units Detached facts carrying `cell` {x, y, width, height} in squares.
+ * @param {object[]} units Units with a `cell` {x, y, width, height} in squares.
  * @param {number} [span] Widest cluster on either axis.
  * @returns {object[][]}
  */
@@ -215,7 +215,7 @@ function unionBox(a, b) {
 /**
  * The track to play for the current phase, or null to keep the scene's music. Used by the phase-music service in
  * foundry/adapters/services/audio.mjs.
- * @param {object} music The configured facts: the live phase, the encounter switch, and each phase's track.
+ * @param {object} music The current phase, the encounter music switch, and each phase's track.
  * @returns {string|null} A Playlist or PlaylistSound uuid.
  */
 export function phaseMusicTrack(music = {}) {
@@ -256,8 +256,8 @@ export function phaseRosterProgress(units = [], phase) {
 }
 
 /**
- * The Token fields a roster row never reads: a write touching only these leaves every row as it was. That covers
- * everything a movement write names, and the facing flip.
+ * Token fields the combat tracker rows never show: everything a movement write names, and the facing flip. A write
+ * touching only these leaves every row as it was.
  */
 const ROSTER_INERT_TOKEN_KEYS = Object.freeze([...TOKEN_MOVEMENT_WRITE_KEYS, 'rotation', 'texture.scaleX']);
 
@@ -299,10 +299,9 @@ export function enemyListingFlipped(listed, listedNow) {
 }
 
 /**
- * Whether an enemy on the scene has no record from the roster's last render, such as one placed since then.
- *
- * ui/apps/foundry/combat-tracker.mjs asks this on a player's vision refresh. Every enemy the last render saw is
- * followed through its own Token's visibility refresh instead, so only an enemy it never saw needs the render.
+ * Whether an enemy on the scene was missing from the combat tracker's last render, such as one placed since then,
+ * so the tracker must render again. ui/apps/foundry/combat-tracker.mjs asks this on a player's vision refresh;
+ * enemies it already rendered are followed through their own Token's visibility refresh.
  * @param {{has: Function}} recorded Token ids of the enemies the last render recorded, listed or not.
  * @param {Iterable<{tokenId: string, actorType: string}>} units Every unit on the Scene.
  * @param {readonly string[]} playerFactions The factions the roster lists as player rows.
@@ -344,11 +343,10 @@ export function planExplorationTurnUpdates(units = [], active) {
 /* -------------------------------------------- */
 
 /**
- * The paused-encounter record that pauseEncounter (engine/combat/encounters/phases.mjs) saves on the scene. It keeps
- * the round and the resolved objective targets with their progress, because defeated targets may no longer exist.
- * It also keeps the auto-advance switch, which lived on the deleted Combat, so resumeEncounter can write it onto the
- * new one. Only a stored false turns it off, so a record without the field resumes with auto-advance on.
- * Units aren't recorded, because the engine resets their turn state when the encounter resumes.
+ * The paused-encounter record that pauseEncounter (engine/combat/encounters/phases.mjs) saves on the scene: the
+ * round, the objective targets with their progress (defeated targets may no longer exist), and the auto-advance
+ * switch from the deleted Combat, which resumeEncounter writes onto the new one. Only a stored false turns
+ * auto-advance off. Units aren't recorded; their turn state is reset when the encounter resumes.
  */
 export function planPausedEncounter({ round, phase, pausedAt, targets, progress, autoAdvance } = {}) {
   return Object.freeze({
@@ -362,7 +360,7 @@ export function planPausedEncounter({ round, phase, pausedAt, targets, progress,
   });
 }
 
-/** Coerce a stored paused record into canonical shape, or null when the map has none. */
+/** Clean up a saved paused-encounter record, or null when the map has none. */
 export function normalizePausedEncounter(raw) {
   return raw && typeof raw === 'object' ? planPausedEncounter(raw) : null;
 }
@@ -372,13 +370,12 @@ export function normalizePausedEncounter(raw) {
 /* -------------------------------------------- */
 
 /**
- * Plan what an ended encounter clears from its map, for the teardown in engine/combat/encounters/objectives.mjs:
- * every Guard bond, every status the map's units wear (see `isEncounterStatus`), every record of the Rallies a unit
- * cast this map (see `planRallyRecordReset`), and every Token an effect summon placed. An unlinked summon's statuses
- * leave with its Token, so only a linked summon's Actor is purged, and an Actor standing behind several Tokens is
- * purged once. A paused encounter clears nothing and never plans this.
- * @param {ReadonlyArray<object>} units Detached `{tokenUuid, actorUuid, linked, summoned, guardBonded, rallied,
- *   effects}` facts, one per placed Token.
+ * Plan what an ended encounter clears from its map, for engine/combat/encounters/objectives.mjs: Guard bonds,
+ * statuses (see `isEncounterStatus`), Rally records (see `planRallyRecordReset`), and summoned Tokens. An unlinked
+ * summon's statuses go with its Token, and an Actor behind several Tokens is cleared once. A paused encounter never
+ * runs this.
+ * @param {ReadonlyArray<object>} units One `{tokenUuid, actorUuid, linked, summoned, guardBonded, rallied,
+ *   effects}` entry per placed Token.
  * @returns {{bondedTokenUuids: string[], statuses: object[], ralliedActorUuids: string[],
  *   summonTokenUuids: string[]}} The Tokens whose bonds break, each Actor's status effect ids, the Actors whose
  *   Rally records clear, and the summoned Tokens to remove.
@@ -406,7 +403,7 @@ export function planEncounterAftermath(units = []) {
  * Plan what a phase's end does to the timed summons on its map, for engine/combat/encounters/phases.mjs: each summon
  * whose countdown ticks on `closingPhase` loses a phase, and one with none left is removed. A summon without a
  * countdown lasts until the encounter ends.
- * @param {ReadonlyArray<object>} units Detached `{tokenUuid, summoned, summonRemaining, summonTicksOn}` facts.
+ * @param {ReadonlyArray<object>} units One `{tokenUuid, summoned, summonRemaining, summonTicksOn}` entry per Token.
  * @param {string} closingPhase The phase now ending.
  * @returns {{expiredTokenUuids: string[], counters: Array<{tokenUuid: string, remaining: number}>}}
  */
@@ -426,7 +423,7 @@ export function planSummonExpiry(units = [], closingPhase) {
 /**
  * The Actors on a map whose record of this map's Rallies must clear, each once, for an encounter's start
  * (beginEncounter in engine/combat/encounters/phases.mjs) and its end (planEncounterAftermath).
- * @param {ReadonlyArray<object>} units Detached `{actorUuid, rallied}` facts, one per placed Token.
+ * @param {ReadonlyArray<object>} units One `{actorUuid, rallied}` entry per placed Token.
  * @returns {string[]}
  */
 export function planRallyRecordReset(units = []) {

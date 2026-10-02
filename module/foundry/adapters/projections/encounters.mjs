@@ -51,14 +51,13 @@ import { resolveScene, resolveViewedScene, unpackFlagKeys } from '../services/ho
 import { reportFoundryError } from '../services/diagnostics.mjs';
 
 /* -------------------------------------------- */
-/*  Encounter projection                        */
+/*  Encounter state                             */
 /* -------------------------------------------- */
 
 const PHASE_TRIGGERS = Object.freeze(['onPhaseBegin', 'onPhaseEnd']);
 
 /**
- * The Scene phase, roster and objective snapshots the encounter engine (engine/combat/encounters) reads.
- * FoundryEncounterRepository in document-writes/encounters.mjs passes these reads through to this class.
+ * Reads a scene's phase, units and objectives for the encounter commands (engine/combat/encounters).
  */
 export class FoundryEncounterProjection {
   /**
@@ -74,7 +73,7 @@ export class FoundryEncounterProjection {
 
   /**
    * Every Actor placed on the Scene right now, including units placed or spawned after the command took its keys.
-   * A running encounter command claims all of them before it writes (holdsPlacedActors in
+   * A running encounter command locks all of them before it writes (holdsPlacedActors in
    * engine/combat/encounters/commands.mjs).
    */
   async getWritableActorUuids(sceneUuid) {
@@ -82,10 +81,9 @@ export class FoundryEncounterProjection {
   }
 
   /**
-   * Units still carrying an unanswered end-of-turn continuation, one entry per Actor. At startup,
-   * completeInterruptedTurns in init/system.mjs sends a finish command for each one to close turns whose prompt was
-   * lost when the host reloaded, and that command (settleLostContinuation) reads the list again to check the
-   * request is still current.
+   * Units still waiting on an unanswered end-of-turn prompt, one entry per Actor. When the host client starts,
+   * completeInterruptedTurns in init/system.mjs finishes each of these turns, since the prompt was lost when the
+   * host reloaded.
    * @returns {ReadonlyArray<{sceneUuid: string, actorUuid: string, tokenUuid: string, requestId: string}>}
    */
   getPendingContinuations() {
@@ -108,7 +106,7 @@ export class FoundryEncounterProjection {
     return Object.freeze([...found.values()]);
   }
 
-  /** The Scene's phase, round and objective state, with each phase-taking unit's terrain, decay and passive facts. */
+  /** The scene's phase, round and objectives, with each phase-taking unit's terrain, timed effects and passives. */
   async getSnapshot(sceneUuid) {
     const scene = await resolveScene(sceneUuid);
     if (!scene) return null;
@@ -124,7 +122,7 @@ export class FoundryEncounterProjection {
     });
   }
 
-  /** Project the objective board and stored encounter state without the per-unit passive facts. */
+  /** The scene's objectives, units and saved encounter state, without each unit's passive effects. */
   async getObjectiveSnapshot(sceneUuid) {
     const scene = await resolveScene(sceneUuid);
     return scene ? projectObjectiveBoard(scene) : null;
@@ -150,14 +148,12 @@ function phaseParticipantTokens(scene) {
 }
 
 /* -------------------------------------------- */
-/*  Objective projection                        */
+/*  Objectives                                  */
 /* -------------------------------------------- */
 
 /**
- * Project one Scene's placed units, terrain points, authored spec, and stored encounter state.
- *
- * The terrain grid is the expensive half and only the objective-point checks read it, so a caller
- * that only needs the roster asks for the board without it.
+ * One scene's placed units, terrain, authored objectives and saved encounter state. Only the objective-point
+ * checks read the terrain grid; pass `terrain: false` to leave it out.
  */
 export function projectObjectiveBoard(scene, { terrain = true } = {}) {
   if (!scene) return null;
@@ -202,7 +198,7 @@ export function projectEncounterState(sceneUuid = '') {
   });
 }
 
-/** Every placed unit reduced to the facts objectives and the roster read. */
+/** Every placed phase-taking unit, with what objectives and the roster read about it. */
 function projectBoardUnits(scene, phase) {
   const units = [];
   for (const token of collectionValues(scene.tokens)) {
@@ -219,6 +215,7 @@ function projectBoardUnits(scene, phase) {
       actorName: String(actor.name ?? ''),
       actorType,
       hidden: token.hidden === true,
+      // Whether this client can see the token: for display only, never for rules the host client decides.
       visible: token.object?.visible !== false,
       x: Number(token.x) || 0,
       y: Number(token.y) || 0,
@@ -248,7 +245,7 @@ function projectBoardUnits(scene, phase) {
   return Object.freeze(units);
 }
 
-/** The Item facts the roster's loot badge reads: what a thief may lift, and what a defeat would leave behind. */
+/** What the roster's loot badge reads from an item: what a thief may lift, and what a defeat would leave behind. */
 function projectLootFacts(item) {
   const system = item.system ?? {};
   return Object.freeze({
@@ -380,7 +377,7 @@ export function projectTrackFacts(uuid) {
 }
 
 /**
- * Read objective marker ids for Token badges without building the full objective board.
+ * Read objective marker ids for token badges without reading the rest of the objective data.
  * @param {object} [scene] The scene whose encounter is read.
  * @returns {{defeat: string[], protected: string[]}}
  */
@@ -389,7 +386,7 @@ export function projectObjectiveMarkerTargets(scene = globalThis.canvas?.scene) 
   return objectiveMarkers(normalizeObjectiveSnapshot(combat?.getFlag?.(SYSTEM_ID, OBJECTIVE_FLAGS.TARGETS)));
 }
 
-/** The hold a companion module has taken over the board, read straight from the world setting. */
+/** Which companion module (such as Enemy AI) is running a whole phase, if any, from the world setting. */
 export function projectDrivenHold() {
   try {
     return normalizeDrivenHold(globalThis.game?.settings?.get?.(SYSTEM_ID, DRIVEN_HOLD_SETTING));
@@ -406,7 +403,7 @@ export function findSceneCombat(scene) {
   return combats.find(candidate => candidate.scene?.id === scene.id) ?? null;
 }
 
-/** Whether a Scene is running the exploration board rather than an encounter. */
+/** Whether a scene is in exploration mode rather than running an encounter. */
 export function sceneExplorationActive(scene) {
   return scene?.getFlag?.(SYSTEM_ID, 'explorationMode') === true;
 }
@@ -470,7 +467,7 @@ function readPendingEnd(combat) {
 }
 
 /* -------------------------------------------- */
-/*  Unit projection                             */
+/*  Phase units                                 */
 /* -------------------------------------------- */
 
 function projectEncounterUnit(token, actor, actorType, board = {}) {
@@ -501,10 +498,8 @@ function projectEncounterUnit(token, actor, actorType, board = {}) {
 }
 
 /**
- * Project the terrain a unit is standing on, with the defenses that decide how much of it lands.
- *
- * The scan is null on a bare square, which is the cheap gate that keeps the phase from entering the
- * expensive settlement path for every unit on the map.
+ * The terrain a unit is standing on, with the defenses that decide how much of its damage lands. `scan` is null
+ * on plain ground, so units there skip terrain damage at phase change.
  */
 function projectUnitTerrain(token, actor, { terrainGrid = {}, gridSize = 1 } = {}) {
   const footprint = {
@@ -594,12 +589,10 @@ function projectPhaseEntries(actor) {
 /* -------------------------------------------- */
 
 /**
- * What an ending encounter clears from its map, read by FoundryEncounterRepository for the teardown in
- * engine/combat/encounters/objectives.mjs: every placed Token, whether an effect summon placed it, whether it stands
- * in a Guard bond, whether its Actor has Rallied anyone this map, and the effects its Character wears as the
- * detached facts `planEncounterAftermath` classifies. Neutral units are included. An encounter's start reads the
- * same facts to clear the map's Rally records (clearRallyRecords in phases.mjs), and a phase's end reads a timed
- * summon's countdown from them (planSummonExpiry).
+ * What an ending encounter clears from its map: every placed token, whether an effect summoned it, whether it is
+ * in a Guard bond, whether its actor has Rallied anyone on this map, and the effects its Character wears (sorted by
+ * `planEncounterAftermath`). Neutral units are included. An encounter's start also reads this to clear Rally
+ * records, and each phase's end reads it to count down timed summons.
  * @param {object} scene The map whose encounter is ending or starting.
  * @returns {Readonly<{sceneUuid: string, units: readonly object[]}>}
  */
@@ -611,8 +604,8 @@ export function projectEncounterAftermath(scene) {
 }
 
 /**
- * One placed Token as an ended encounter's cleanup reads it. `linked` tells a Token showing a world Actor, which
- * outlives it, from one whose unlinked Actor lives and dies with the Token.
+ * One placed token as the end-of-encounter cleanup reads it. `linked` is true for a token showing a world Actor,
+ * which outlives it, and false for one whose unlinked actor is deleted with the token.
  */
 function projectAftermathUnit(token) {
   const actor = token.actor ?? null;

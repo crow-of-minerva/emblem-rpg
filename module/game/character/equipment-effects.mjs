@@ -11,14 +11,15 @@ const MOUNT_STAT_KEYS = Object.freeze(['mov', 'hp', 'stn', 'eva', 'atk', 'spd', 
 const EQUIP_FLAGS = Object.freeze(['isWielded', 'isWorn', 'isEquipped']);
 
 /* -------------------------------------------- */
-/*  Reconciliation planning                     */
+/*  Equipment effect planning                   */
 /* -------------------------------------------- */
 /**
  * The wield, armor and mount effects a unit should carry for the gear it has in use: which stray or duplicate
- * effects to delete and which missing ones to create. Called by engine/character/commands.mjs when it reconciles a
- * Character's equipment effects, and by the other planners in this file. FoundryActorRepository
+ * effects to delete and which missing ones to create. Called by engine/character/commands.mjs when it brings a
+ * Character's equipment effects up to date, and by the other planners in this file. FoundryActorRepository
  * (foundry/adapters/document-writes/characters.mjs) writes the plan.
- * @param {object} actor Inventory facts from FoundryActorRepository.getInventorySnapshot.
+ * @param {object} actor The unit's items, effects and borrowed Armament, from
+ *   FoundryActorRepository.getInventorySnapshot.
  * @returns {{deleteIds: string[], createIntents: object[]}}
  */
 export function planEquipmentEffectReconciliation(actor) {
@@ -52,13 +53,12 @@ export function planEquipmentEffectReconciliation(actor) {
 /**
  * The effect and resource changes that follow an equipment toggle planned by buildEquipmentToggle. Called by
  * engine/character/commands.mjs for a toggle and for items whose requirements have lapsed.
- * Stn follows one rule for every piece of gear, measured by stanceGrantChange. A piece coming off takes back the max
- * Stn it granted, never going below 0. A piece going on then adds the max Stn it grants, unless the unit is
- * stance-broken, because any Stn would lift the break (compileCharacterData still raises its max). A mount that
- * becomes active also adds its HP. Wielding a carried weapon clears the borrowed Armament reference.
+ * Removing gear takes away the Stn it gave, never below 0. Equipping gear then adds the Stn it gives, unless the
+ * unit is stance-broken, because any Stn would end the break (its max Stn still rises). Mounting adds the mount's
+ * HP; dismounting does not take it back. Wielding a carried weapon drops the borrowed Armament.
  * FoundryActorRepository.settleEquipmentToggle writes the resulting `resourceValues`.
- * @param {object} actor Inventory facts from FoundryActorRepository.getInventorySnapshot, with the unit's detached
- *   compile source as `stanceSource` (FoundryActorRepository.getStanceSource) when Stn is to be measured.
+ * @param {object} actor The unit from FoundryActorRepository.getInventorySnapshot, with a detached copy of its data
+ *   as `stanceSource` (FoundryActorRepository.getStanceSource) when Stn is to be measured.
  * @param {object[]} updates The toggle's item updates.
  * @returns {{effects: object, resourceValues: Record<string, number>}}
  */
@@ -94,7 +94,7 @@ export function planEquipmentTransferConsequences(actor, itemIdToRemove, { move 
 /**
  * The Stn a unit keeps when a piece of its gear leaves it (an inventory transfer or a capacity move): the piece comes
  * off first, so it takes back the max Stn it granted, never below 0. Nothing changes for gear that was not in use.
- * @param {object} actor Inventory facts with `stanceSource`, as for planEquipmentToggleConsequences.
+ * @param {object} actor The unit with `stanceSource`, as for planEquipmentToggleConsequences.
  * @param {string} itemIdToRemove The departing Item.
  * @returns {Record<string, number>} `{stn}` when the value changes, else empty.
  */
@@ -109,12 +109,11 @@ export function planEquipmentDepartureResources(actor, itemIdToRemove) {
 /*  Stance grants                               */
 /* -------------------------------------------- */
 /**
- * Measure what a change of equip flags does to a unit's max Stn by compiling its detached source three ways: as it
- * stands, with only the pieces coming off removed, and with the whole change applied. The pieces coming off take
- * back the first difference and the pieces going on grant the second, so a swap takes the old piece's Stn before it
- * adds the new one's. Anything that raises the max counts: armor, shields, mounts and equipped-only item modifiers.
- * With no source (a Convoy, or a caller that measures nothing), nothing is lost or gained.
- * @param {object|null} source Detached compile source from projectCharacterSource.
+ * Compile the unit as it stands, with only the pieces coming off removed, and with the whole change, to see how much
+ * max Stn the change takes away and how much it adds. Removals are measured first, so a swap takes the old piece's
+ * Stn before it adds the new one's. Anything that raises the max counts: armor, shields, mounts and equipped-only
+ * item modifiers. With no source (a Convoy, or a caller that measures nothing), nothing is lost or gained.
+ * @param {object|null} source A detached copy of the unit's data from projectCharacterSource.
  * @param {object[]} updates Item updates keyed `system.isWielded`, `system.isWorn` or `system.isEquipped`.
  * @returns {{lost: number, gained: number}}
  */

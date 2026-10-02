@@ -120,7 +120,8 @@ const STEP_KIND_MEANINGS = Object.freeze({
 });
 
 /**
- * The add-step picker's groups after the templates. Guard is placed by the system and stays out of the menu.
+ * The add-step picker's groups after the templates. Guard is left out of the menu: a guard step only arrives with an
+ * item that already has one.
  * @type {ReadonlyArray<{label: string, kinds: string[]}>}
  */
 const ADD_STEP_GROUPS = Object.freeze([
@@ -357,6 +358,8 @@ function isGroupATrigger(triggerKey) {
 /**
  * The triggers an entry may be re-pointed to, read off its own trigger and, where two groups share that trigger
  * (a kill and an evade are authored both on a swing and on a Passive), off the group the owning item belongs to.
+ * An entry whose trigger belongs to another group, for example after the item's kind was changed, is offered that
+ * other group's triggers, none of which fire on this item.
  * @param {string} group          The owning item's trigger group.
  */
 function triggerPoolFor(group, triggerKey) {
@@ -410,7 +413,7 @@ const AOE_KINDS = new Set(['damage', 'heal', 'applyEffect', 'terrainEdit']);
 const DMG_TYPE_OPTIONS = DAMAGE_TYPES.map(t => ({ value: t, label: t }));
 
 /**
- * The statuses an apply-effect step can hand out, split by whether they help or harm, plus the custom escape hatch.
+ * The statuses an apply-effect step can hand out, split by whether they help or harm, plus a custom status.
  * @type {object[]}
  */
 const PRESET_OPTIONS = [
@@ -431,9 +434,9 @@ const WHO_OR_AREA = { ...WHO, options: AOE_TARGET_OPTIONS };
 
 /**
  * The field descriptors for each step kind, used both to render a card and to read it back. Each carries the
- * `label` its card shows and the `tooltip` id `renderField` puts on that label. `unit` draws a unit inside the
- * input, and `span` makes the field take a whole grid row. Terrain edits, move steps, animations and if steps lay
- * out their own bodies.
+ * `label` its card shows and the `tooltip` id `renderField` puts on that label. `unit` shows a measurement label
+ * such as ms or sq inside the input, and `span` makes the field take a whole grid row. Animation, move, guard and
+ * if steps lay out their own bodies. A terrain edit shows its "who" field from here, then its own panel.
  * @type {Record<string, object[]>}
  */
 const FIELDS_BY_KIND = {
@@ -545,9 +548,13 @@ const FIELDS_BY_KIND = {
   if: []
 };
 /* -------------------------------------------- */
-/*  Terrain Preset Projection                   */
+/*  Terrain Presets                             */
 /* -------------------------------------------- */
 
+/**
+ * Load the default terrain presets and the world's custom ones, once per session. They are not reloaded, so presets
+ * saved later in the Terrain Builder show up only after a reload, and a failed load stays empty until then.
+ */
 function terrainPresetsReady() {
   terrainPresetPromise ??= Promise.all([
     readSystemJson('terrain.json').catch((diagnosticError) => {
@@ -1037,9 +1044,9 @@ const EMPTY_SLOT_HTML = '<div class="ed-summary">no steps</div>';
 /* -------------------------------------------- */
 
 /**
- * The shared card list bound to this editor's step markup. `stepCards.state` carries which cards are collapsed and
- * which conditions are folded, so the steps themselves hold only what `openEffectActionEditor` saves. One instance
- * serves every open effect dialog: each keeps its own step objects, and an id is minted per object.
+ * The card list for this editor's step markup. `stepCards.state` carries which cards are collapsed and which
+ * conditions are folded, so the steps themselves hold only what `openEffectActionEditor` saves. One list is shared
+ * by every open effect editor; each step object gets its own id.
  * @type {object}
  */
 const stepCards = createCardList({
@@ -1090,8 +1097,8 @@ function isGeometryMoveStep(step) {
 /* -------------------------------------------- */
 
 /**
- * What a card's JSON textarea shows: the text the author typed while it doesn't parse, and otherwise the value the
- * step holds, written out. `readStepJson` is what puts unfinished text into `stepCards.state` to begin with.
+ * What a card's JSON textarea shows: the author's unfinished text if it doesn't parse yet, otherwise the step's
+ * current value written out.
  * @param {Function} stored       Writes out the value the step holds.
  */
 function jsonFieldText(step, field, stored) {
@@ -1589,7 +1596,8 @@ function conditionTemplateOptions() {
 /* -------------------------------------------- */
 
 /**
- * The step fields authored as raw JSON, and so the ones that can be malformed.
+ * The step fields authored as raw JSON, and so the ones that can be malformed. No step kind has a `filter` field
+ * today.
  * @type {string[]}
  */
 const JSON_STEP_FIELDS = ['customData', 'animation', 'filter'];
@@ -1598,10 +1606,8 @@ const JSON_STEP_FIELDS = ['customData', 'animation', 'filter'];
 const JSON_STEP_FIELD_WORDS = Object.freeze({ customData: 'custom status', animation: 'animation', filter: 'filter' });
 
 /**
- * Everything wrong with the effect as it stands. Malformed JSON is checked first and named by position, since a
- * parse failure would otherwise show up as a confusing structural error about a step the user can't identify. The
- * text itself stays on its card (`readStepJson`), so this keeps naming the same step until the author finishes it.
- * The entry is checked against the item it sits on, so steps its trigger can't support there are errors too.
+ * Every error and warning for the effect as it stands. Broken JSON is reported first, by step number. The entry is
+ * also checked against the item it is on.
  * @param {object} state                  The editor's state, whose source entry the read entry keeps its fields from.
  * @returns {{errors: string[], warnings: string[]}}
  */
@@ -1623,7 +1629,7 @@ function collectValidationErrors(dialogEl, state) {
   return { errors, warnings: r.warnings };
 }
 
-/** Validate an entry against the document it sits on, which supplies the trigger rules' carrier. */
+/** Validate an entry against the item it is on, so triggers and steps that can't work on that item are caught. */
 function validateEntryOnItem(entry, document) {
   return validateEffectEntry(entry, { carrier: document ? effectCarrier(document) : null });
 }
@@ -1750,10 +1756,7 @@ function syncItemNamesField(dialogEl) {
   field.hidden = dialogEl.querySelector('[data-entry-field="trigger"]')?.value !== 'onUseItem';
 }
 
-/**
- * Name what the collapse-all button would do next, from the display state the cards were painted with rather than
- * from the last click, so a repaint can't leave the label saying the opposite of what the button does.
- */
+/** Set the collapse-all button's label from the cards' current state. */
 function syncCollapseAllLabel(dialogEl) {
   const button = dialogEl.querySelector('[data-action="collapse-all"]');
   if (!button) return;
@@ -2194,8 +2197,8 @@ function readEntryFromDom(dialogEl, source = {}) {
 /* -------------------------------------------- */
 
 /**
- * A newly added step of a kind, filled in enough to be meaningful. The defaults are chosen so a step added and left
- * alone does something sensible rather than nothing.
+ * A newly added step of a kind, with starting values. Spawn token, terrain edit and expression steps start empty
+ * and block Save until they are filled in, and a floating text step shows nothing until it has text.
  */
 function makeStepDefault(kind) {
   switch (kind) {
@@ -2341,7 +2344,7 @@ const ENTRY_LOST_MESSAGE = 'This effect was changed, moved or removed while the 
 
 /**
  * Open the effect editor on a copy of one entry, through openEffectEditor (dialogs.mjs). An entry-level condition
- * is shown as an if step wrapping the steps. The trigger choices are limited to the item's group, and the complete
+ * is shown as an if step wrapping the steps. The trigger choices come from `triggerPoolFor`, and the complete
  * entry is validated before saving. An entry opened with `isNew` (one `createEffectEntry` just appended) is removed
  * again when the dialog closes without saving.
  * @param {ItemSheet} itemSheet           The sheet it was opened from.
@@ -2363,6 +2366,8 @@ export async function openEffectActionEditor(itemSheet, entryIndex, { group = ''
     entry: foundry.utils.deepClone(entry),
     action: actionIsPopulated(entry.action) ? foundry.utils.deepClone(entry.action) : emptyAction()
   };
+  // The entry condition is saved back as an if step. A failing entry condition skipped the whole entry; a failing
+  // if step still lets the entry's delay and hold pose run.
   if (entry.condition && !conditionIsEmpty(entry.condition)) {
     state.action.steps = [{
       kind: 'if',

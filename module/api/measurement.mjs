@@ -6,11 +6,11 @@ import { SETTLE_BARRIER_TIMING } from '../contracts/domains/combat.mjs';
 /* -------------------------------------------- */
 
 /**
- * The read-only board questions Enemy AI and other planning modules ask through api/facade.mjs: encounter state,
+ * The read-only map questions Enemy AI and other planning modules ask through api/facade.mjs: encounter state,
  * matchups, sight, flanking, terrain, auras and factions. A Scene read uses the Scene it's given, or the one this
  * client is viewing. Nothing here writes documents. All reads are synchronous except board.awaitSettled, and a
  * read for a missing unit or Scene returns null.
- * @param {object} [ports] The projections and services init/system.mjs passes in.
+ * @param {object} [ports] The read functions and services init/system.mjs passes in.
  * @returns {Readonly<object>} The `encounters`, `combat`, `terrain`, `board` and `factions` namespaces.
  */
 export function createMeasurementApi({ encounters, combat, terrain, board, factions } = {}) {
@@ -80,7 +80,7 @@ function flightReach(facts) {
 }
 
 /**
- * Build the combat projection request. Omit defenderWeaponId to use the defender's equipped weapon. A planner that
+ * Build the combat forecast request. Omit defenderWeaponId to use the defender's equipped weapon. A planner that
  * has already read the standing square's ground may pass it back as `terrainModifiers`, `auraFields` or both.
  * `hypotheticalGround` in `projections/attack-targeting.mjs` reads whichever one is missing.
  */
@@ -150,7 +150,7 @@ function terrainMeasurement(ports) {
 }
 
 /* -------------------------------------------- */
-/*  Board settling                              */
+/*  Waiting for the map to go quiet             */
 /* -------------------------------------------- */
 
 function boardMeasurement(ports) {
@@ -180,7 +180,7 @@ function factionMeasurement(ports) {
 /*  Intent helpers                              */
 /* -------------------------------------------- */
 
-/** Normalize a grid cell for measurement reads. Null tells the projection to use the unit's current cell. */
+/** Normalize a grid cell for measurement reads. Null means the unit's current cell. */
 function square(value) {
   const x = Number(value?.x);
   const y = Number(value?.y);

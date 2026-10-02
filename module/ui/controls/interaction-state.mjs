@@ -8,10 +8,10 @@
  * The states of this client's interaction pick: the door, trade, steal or socialize ring that
  * ui/controls/interaction.mjs draws. Open windows (a station menu, trade window, shop or social menu) are not
  * states. They are counted separately and read through {@link interactionHoldsBoard}, because a window can be
- * open with no pick behind it, and a pick can be reopened while the window it opened is still settling.
+ * open with no pick behind it, and a pick can be reopened while the window it opened is still finishing.
  */
 export const PICK_STATES = Object.freeze({
-  /** No pick is drawn and no answered pick is still settling. */
+  /** No pick is drawn, and no clicked pick is still waiting on its window or command. */
   IDLE: 'idle',
   /** The door ring is drawn and waiting for its click. */
   DOORS: 'doors',
@@ -109,26 +109,26 @@ export function activePick() {
   return control.pick;
 }
 
-/** The hotbar Ability staged as the picking unit's activation, or null. */
+/** The hotbar Ability the picking unit is set to use on its pick, or null. */
 export function stagedPickActivation() {
   return control.activation;
 }
 
-/** Whether a door or unit pick owns the canvas: drawn and awaiting its click, or settling the click it took. */
+/** Whether a door or unit pick owns the canvas: drawn and awaiting its click, or still answering the click it took. */
 export function pickOwnsCanvas() {
   return control.name !== S.IDLE;
 }
 
-/** Whether this client is mid-interaction: a pick is drawn or settling, or an interaction window is open. */
+/** Whether this client is mid-interaction: a pick is drawn or answering its click, or an interaction window is open. */
 export function interactionHoldsBoard() {
   return control.name !== S.IDLE || control.windows > 0;
 }
 
 /**
  * The single writer of interaction-pick state. Opening, answering, reopening and closing a pick, counting the
- * windows a pick handed off to and marking the staged Ability all pass through here.
+ * windows a pick handed off to and marking the chosen hotbar Ability all pass through here.
  * @param {string} event A value of {@link PICK_EVENTS}.
- * @param {object} [payload] `pick` for an opening, `activation` for the staged Ability.
+ * @param {object} [payload] `pick` for an opening, `activation` for the chosen Ability.
  * @returns {object} The state after the event.
  */
 export function advanceInteractionPick(event, { pick = null, activation = null } = {}) {

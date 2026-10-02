@@ -12,9 +12,9 @@ const SCENE_VIEW_TARGET = 'foundry.documents.Scene.prototype.view';
 /**
  * Wrap Scene.view to keep clients on the running encounter's Scene. Views of other Scenes and GM activation changes
  * are refused, and joining clients are moved to the encounter. Pausing or ending the encounter releases the lock.
- * @param {{notify?: Function, defer?: Function, mark?: Function}} [ports] The notice a refused change shows, how a
- *   move waits for the hook that raised it to return, and how the lock is announced to this client's interface.
- * @returns {Readonly<object>} `install` and the handlers the hook catalogue routes here.
+ * @param {{notify?: Function, defer?: Function, mark?: Function}} [options] The notice a refused change shows, how a
+ *   move waits for the hook that raised it to return, and how the lock is shown in this client's interface.
+ * @returns {Readonly<object>} `install` and the handlers init/hooks.mjs calls.
  */
 export function createEncounterSceneLock({ notify = null, defer = task => setTimeout(task, 0), mark = null } = {}) {
   let arriving = '';

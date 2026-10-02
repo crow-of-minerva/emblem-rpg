@@ -15,7 +15,7 @@ import {
 /*  Authored specification                      */
 /* -------------------------------------------- */
 
-/** Normalize stored Scene objectives for the encounter projections and objective editor. */
+/** Clean up the objectives saved on a Scene, for the encounter code and the objective editor. */
 export function normalizeObjectiveSpec(raw) {
   const list = Array.isArray(raw?.objectives) ? raw.objectives : [];
   const objectives = list.map(normalizeObjectiveCard).filter(Boolean);
@@ -62,7 +62,10 @@ function deadlineReached(deadline, roundEnded) {
 /*  Objective points                            */
 /* -------------------------------------------- */
 
-/** Every terrain key a unit's footprint covers, so a large unit partly on a point counts. */
+/**
+ * Every terrain key a unit's footprint covers, so a large unit partly on a point counts. The `row-col` keys are
+ * built by hand and must match terrainKey() in contracts/domains/terrain.mjs.
+ */
 function footprintKeys({ x, y, width, height }, gridSize) {
   const size = Number(gridSize);
   if (!Number.isFinite(size) || size <= 0) return [];
@@ -93,7 +96,7 @@ function standsOnPoint(footprint, points) {
   return footprint.some(key => points.has(key));
 }
 
-/** The units of a projected board standing on any of a set of squares. */
+/** The units on the map standing on any of a set of squares. */
 function unitsOnPoints(units, points, gridSize) {
   if (!points.size) return [];
   return (units ?? []).filter(unit => standsOnPoint(footprintKeys(unit, gridSize), points));
@@ -103,7 +106,7 @@ function unitsOnPoints(units, points, gridSize) {
 /*  Roster predicates                           */
 /* -------------------------------------------- */
 
-/** Whether a projected unit still has HP. */
+/** Whether a unit still has HP. */
 function unitAlive(unit) {
   return Number(unit?.hp ?? 0) > 0;
 }
@@ -144,7 +147,7 @@ function routMet(objective, { initial, kills, living }) {
 }
 
 /**
- * The rout roster's units that are neither on the board nor among the counted kills, for a Rout objective with a
+ * The rout roster's units that are neither on the map nor among the counted kills, for a Rout objective with a
  * kill count. Their fate is unknown, so they're never counted as kills. runObjectiveCheck
  * (engine/combat/encounters/objectives.mjs) warns the GM about them.
  */
@@ -182,7 +185,7 @@ function anyProtectedFallen(protectedIds, isDefeated) {
 /*  Target resolution                           */
 /* -------------------------------------------- */
 
-/** Every unit on a projected board a GM-authored reference could mean. */
+/** Every unit on the map that a reference the GM typed could mean: a token or actor id, uuid or name. */
 function resolveObjectiveRef(ref, units) {
   const needle = String(ref ?? '').trim().toLowerCase();
   if (!needle) return [];
@@ -197,10 +200,9 @@ function resolveObjectiveRef(ref, units) {
 }
 
 /**
- * Turn the GM's authored references into token ids for the target snapshot that snapshotObjectiveTargets
- * (engine/combat/encounters/objectives.mjs) saves once the encounter is running. The roster then stays fixed, so
- * deleted targets and later reinforcements don't change the objective list. `unresolved` lists the references no
- * token matched.
+ * Turn the GM's references into token ids. snapshotObjectiveTargets (engine/combat/encounters/objectives.mjs) saves
+ * the result once the encounter is running, and the list then stays fixed, so deleted targets and later
+ * reinforcements don't change it. `unresolved` lists the references no token matched.
  */
 export function resolveObjectiveTargets(units, spec) {
   const unresolved = [];
@@ -241,7 +243,7 @@ export function resolveObjectiveTargets(units, spec) {
   };
 }
 
-/** Coerce a stored target snapshot into canonical shape. */
+/** Clean up the saved objective target list. */
 export function normalizeObjectiveSnapshot(raw) {
   const list = value => Object.freeze(Array.isArray(value) ? [...value] : []);
   return Object.freeze({
@@ -252,7 +254,7 @@ export function normalizeObjectiveSnapshot(raw) {
   });
 }
 
-/** Coerce stored objective progress into canonical shape. */
+/** Clean up the saved objective progress: kills and arrivals. */
 export function normalizeObjectiveProgress(raw) {
   return Object.freeze({
     kills: Object.freeze(Array.isArray(raw?.kills) ? [...raw.kills] : []),
@@ -282,10 +284,10 @@ export function objectiveSetupWarnings(spec, board, unresolved) {
 }
 
 /* -------------------------------------------- */
-/*  Marker projection                           */
+/*  Markers                                     */
 /* -------------------------------------------- */
 
-/** Which units carry a defeat-target or protected marker under the resolved snapshot. */
+/** Which units carry a defeat-target or protected marker, from the saved target list. */
 export function objectiveMarkers(snapshot) {
   const targets = new Set();
   for (const list of snapshot?.defeat ?? []) for (const id of list ?? []) targets.add(id);
@@ -363,7 +365,10 @@ function defendLocationHeld(spec, board) {
   return unitsOnPoints(livingRoutUnits(board?.units), points.defend, board?.gridSize).length > 0;
 }
 
-/** The checkpoint an end reason belongs to. authoritativeEndReason checks a delayed end again at that checkpoint. */
+/**
+ * When a queued map end for this reason is checked again before it takes effect: at once, in the player phase, or
+ * in the enemy phase (see authoritativeEndReason).
+ */
 export function checkpointFor(reason) {
   if ([OBJECTIVE_END_REASONS.PROTECTED_DEFEAT, OBJECTIVE_END_REASONS.DEFEAT_OR_ROUT_VICTORY].includes(reason)) {
     return OBJECTIVE_END_CHECKPOINTS.IMMEDIATE;
@@ -436,18 +441,20 @@ export function authoritativeEndReason(spec, snapshot, progress, board, pending)
 
 
 /* -------------------------------------------- */
-/*  Settlement barrier                          */
+/*  Waiting for quiet                           */
 /* -------------------------------------------- */
 
 /** The statuses a queued end may report that are worth trying again rather than abandoning. */
 export const OBJECTIVE_END_RETRY_STATUSES = Object.freeze(['commit-contended', 'teardown-failed']);
 
 /**
- * One reading of the settle barrier that waitForSettledProcessing (foundry/adapters/services/processing-blocker.mjs)
- * polls: settled once nothing has been busy for `stableMs`, expired once `deadline` passes. A busy reading restarts
- * the quiet period, because a short gap between command stages doesn't prove the work has finished.
+ * One check of whether the system's pending work has finished, polled by waitForSettledProcessing
+ * (foundry/adapters/services/processing-blocker.mjs): settled once nothing has been busy for `stableMs`, expired
+ * once `deadline` passes. A busy reading restarts the quiet period, because a short gap between the steps of one
+ * command doesn't mean the work is done.
  * @param {{busy: boolean, now: number, quietSince: number|null, deadline: number, stableMs?: number}} facts
- *   Barrier facts, the quiet window defaulting to the settlement barrier's own.
+ *   Whether work is running now, the current time, when the quiet period began, the deadline, and the quiet period's
+ *   length (SETTLE_BARRIER_TIMING.stableMs by default).
  * @returns {{settled: boolean, expired: boolean, quietSince: number|null}}
  */
 export function readSettleBarrier({

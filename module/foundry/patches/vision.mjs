@@ -46,7 +46,7 @@ let revealing = false;
 /**
  * Install the system's vision rules in Foundry's canvas, from the `setup` hook (init/hooks.mjs): square-by-square
  * sight and light, sight from the committed square while a unit plans a move, shared party sight, the sight-range
- * bonus, doors that stay visible, the sight re-initialisation gate and the Map Visible fog gate. A group that can't
+ * bonus, doors that stay visible, skipping repeat sight setup, and the Map Visible fog gate. A group that can't
  * be installed is logged, as an error for a required group and a warning otherwise, and the other groups still
  * install.
  */
@@ -65,6 +65,10 @@ export function installVisionPatches() {
         fn: rectilinearLightPolygon,
         type: 'OVERRIDE'
       },
+      // These two replace Foundry's detection tests outright. Range is counted in squares from the token's footprint,
+      // with no elevation check. Line of sight uses the squares the token's sight reaches, for every detection mode:
+      // modes core lets ignore walls or the vision angle (See Invisibility, Tremor, Sense All) are blocked by walls
+      // and held to sight range here, and Levels are not considered.
       {
         target: 'foundry.canvas.perception.DetectionMode.prototype._testRange',
         fn: rectilinearTestRange,
@@ -152,6 +156,9 @@ export function installVisionPatches() {
 /* -------------------------------------------- */
 /*  Rectilinear sight                           */
 /* -------------------------------------------- */
+// Squares are read straight from canvas pixels (x / grid size), the same rule as Foundry's square grid
+// (SquareGrid#getOffset). Every Scene is kept square or gridless, with no padding (createSceneLifecycle in
+// foundry/hooks/scene.mjs), so these squares are the ones drawn on the map.
 
 /** A sight range with the blindness cap applied, in scene distance units. */
 function effectiveRange(tokenDocument, range) {
@@ -288,8 +295,8 @@ function rectilinearTestRange(visionSource, mode, _target, test) {
 /**
  * Whether a point is in line of sight, read from the cached cell set.
  *
- * Falls back to the core's own shape where no cache exists, which is the case for a source whose polygon has not
- * been built this frame or fell back to the core shape.
+ * Falls back to the core's own shape where no cell set is cached: the source's restricted polygon hasn't been built
+ * yet, or it fell back to the core shape.
  * @param {object} visionSource The source.
  * @param {object} _mode The detection mode.
  * @param {object} _target The target.
@@ -469,8 +476,10 @@ function sourceIdOf(source) {
 /* -------------------------------------------- */
 /*  Shared party sight                          */
 /* -------------------------------------------- */
-/** Make a unit a vision source on this client when it shares the sight pool resolveSightPool chose here. */
-/** Also ensures NPCs with OBSERVER level permissions for players don't add to their vision*/
+/**
+ * Give party members shared sight on this client (the sight group resolveSightPool picks here), and stop tokens a
+ * player only observes from giving them vision.
+ */
 function pooledVisionSource(wrapped, ...args) {
   const pool = resolveSightPool(projectSightPoolContext());
   if (pool !== null
@@ -549,6 +558,7 @@ function revealEntireFog() {
   vision.addChild(g);
   revealing = true;
   try {
+    // While the fog texture isn't a render texture yet, Foundry's commit only copies it into one, so commit twice.
     if (!(fog.sprite.texture instanceof PIXI.RenderTexture)) fog.commit();
     fog.commit();
     const landed = fog.sprite?.texture;

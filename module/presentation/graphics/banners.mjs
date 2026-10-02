@@ -55,6 +55,7 @@ export class BannerPresentation {
     const cue = BANNER_CUES[String(variant)];
     if (cue) void this.audio?.play?.(cue, { channel: 'interface' });
 
+    // Reading offsetHeight forces a layout, so the fade-in below starts from opacity 0.
     void root.offsetHeight;
     root.style.transition = `opacity ${BANNER_FADE_MS}ms ease-in-out`;
     root.style.opacity = '1';
@@ -380,8 +381,8 @@ export class ConversationBanner {
   /**
    * Open the banner on both speakers and start the conversation. Resolves once the banner is up, while the chatter
    * carries on behind it.
-   * @param {{left?: object, right?: object}} speakers `{name, image, avatarScale}` for the driving unit on the left
-   *   and the visited unit on the right.
+   * @param {{left?: object, right?: object}} speakers `{name, image, avatarScale}` for the acting unit on the left
+   *   and the unit it visits on the right.
    * @returns {Promise<boolean>} Whether the banner opened.
    */
   async show({ left = {}, right = {} } = {}) {
@@ -506,9 +507,10 @@ export class ConversationBanner {
 
 /**
  * Snap a banner open from nothing: one frame to lay it out, an overshoot past 28% of the viewport while the flash
- * colour settles, then the settle to its height. WorkBanner and ConversationBanner share it.
+ * colour changes, then a drop back to that height. WorkBanner and ConversationBanner share it.
  */
 async function raiseBand(container, settleColor, timing) {
+  // Reading offsetHeight forces a layout, so the height transition starts from the closed banner.
   void container.offsetHeight;
   await wait(timing.settleFrame);
   const target = window.innerHeight * 0.28;

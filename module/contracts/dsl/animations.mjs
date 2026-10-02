@@ -15,7 +15,11 @@ export const RANGE_KINDS = Object.freeze(['melee', 'ranged', 'self']);
 /** Occasions an item may carry an animation slot for. */
 export const SLOT_KINDS = Object.freeze(['attack', 'critical', 'activation']);
 
-/** Symbolic locations a step may anchor to, resolved against the live sequence context at play time. */
+/**
+ * Location names a step may anchor to, worked out when the animation plays. `token-facing-target` places at the
+ * acting token, as `token` does, and `target-endpoint` falls back to the target, since nothing sets the end point it
+ * reads. Only `atLocation` and a tokenAnim's `target` are checked against this list.
+ */
 const LOCATION_REFS = Object.freeze([
   'token',
   'target',

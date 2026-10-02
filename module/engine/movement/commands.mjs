@@ -192,7 +192,7 @@ async function takeOff(context, movements, events, authority) {
 }
 
 /**
- * Set a unit's flight state from the staff Token HUD control in ui/apps/foundry/token-hud.mjs. It costs no
+ * Set a unit's flight state from the flight control on the Token HUD (ui/apps/foundry/token-hud.mjs). It costs no
  * action, ends no turn and needs no movement plan, so it takes the authoring authority rather than the
  * controller authority the flight action and the free take-off take.
  */
@@ -252,6 +252,10 @@ async function enforcePermissions(context, movements, inventory) {
   return accept(RESULT_CODES.MOVEMENT_PERMISSIONS_ENFORCED, { sceneUuid, permission: board.permission, settled });
 }
 
+/**
+ * Open a movement plan. It first frees the movement lock if the player holding it has left: there is one lock for
+ * the whole map, so any player's begin can clear it. If this begin then refuses, that clearing is undone too.
+ */
 async function beginMovement(context, movements) {
   const drivenHold = movements.getDrivenHold?.() ?? null;
   if (drivenHold) return refuse(RESULT_CODES.MOVEMENT_LOCKED, { holderName: drivenHold.label });
@@ -280,9 +284,9 @@ async function beginMovement(context, movements) {
  * Close a leg of a plan the way planMovementSettlement says.
  *
  * A commit that ends the turn by the unit's own choice is a rest, and the resting Stn comes back only once the
- * close is written, so a refused close grants nothing. A canter's close is not a rest, because the exchange
- * already spent that turn. A stranded unit (movementStranded in game/movement/pathfinding.mjs) may still close
- * its plan where it stands, but never a leg that moved it.
+ * close is written, so a refused close grants nothing. A canter's close is not a rest, because the attack
+ * already spent that turn. A unit that can't leave its square (movementStranded in game/movement/pathfinding.mjs)
+ * may still close its plan where it stands, but never a leg that moved it.
  */
 async function commitMovement(context, movements, events, objects, services) {
   const checked = await ownedMovementSnapshot(context, movements, { requirePlan: true });
@@ -370,7 +374,7 @@ async function cancelMovement(context, movements, keepPlanning, events, objects)
 /**
  * Give up a canter, which forfeits its movement and ends the turn where the exchange left the unit.
  *
- * The token returns to the anchor first and the plan is then settled from a fresh projection, so the
+ * The token returns to the square the plan started on first, and the plan is then closed from a fresh read, so the
  * end-turn commit reads the restored square rather than the abandoned preview. Giving up counts as a cancel, so
  * the close also removes effects authored to end when a move is cancelled.
  */
@@ -398,9 +402,9 @@ async function abandonCanter(context, movements, snapshot, events, objects) {
 
 /**
  * The drive command, api.movement.drive, which the Enemy AI uses to move a unit along a route it planned. The
- * route is checked against a fresh movement graph, the movement port walks the token, and the plan then closes as
- * the drive asks: keep planning, stand, or end the turn. Teleports use useTeleport instead. A stranded unit can't
- * walk, but a drive with an empty route still opens a plan, stands or ends the turn.
+ * route is checked against a fresh movement graph, the movement writer walks the token, and the plan then closes
+ * as the drive asks: keep planning, stand, or end the turn. Teleports use useTeleport instead. A unit that can't
+ * leave its square can't walk, but a drive with an empty route still opens a plan, stands or ends the turn.
  */
 async function driveMovement(context, movements, events, objects, services) {
   const intent = drivenMovementIntent(context.payload);
@@ -419,7 +423,7 @@ async function driveMovement(context, movements, events, objects, services) {
   return settleDrivenWalk(context, movements, intent, events, objects, services);
 }
 
-/** Settle the leg the Token just walked, from a fresh projection of where it actually came to rest. */
+/** Close the leg the Token just walked, from a fresh read of where it actually stopped. */
 async function settleDrivenWalk(context, movements, intent, events, objects, services, { moved = true } = {}) {
   const fresh = await movements.getSnapshot(intent.tokenUuid);
   if (!fresh) return refuse(RESULT_CODES.MOVEMENT_TOKEN_NOT_FOUND);
@@ -515,8 +519,8 @@ function drivenMovementIntent(payload) {
 
 /**
  * The teleport command. The landing is checked before any cost is spent. When the hop ends the turn, the resting
- * Stn comes back only after the teleport has settled. A hop is the unit's own move, so a stranded unit can't take
- * one.
+ * Stn comes back only after the teleport is written. A hop is the unit's own move, so a unit that can't leave its
+ * square can't take one.
  */
 async function useTeleport(context, movements, events, objects, services) {
   const checked = await ownedMovementSnapshot(context, movements, { requirePlan: true });
@@ -565,8 +569,8 @@ async function useTeleport(context, movements, events, objects, services) {
 }
 
 /**
- * Refuse a hop the settlement could not finish: stale facts refuse as ordinary movement staleness, a refused
- * write as a failed settlement. The operation the handler ran under puts the pad, the charge and the lock back.
+ * Refuse a hop the teleport writer could not finish: a unit that changed refuses as ordinary stale movement, a
+ * refused write as a failed teleport. The command's undo data puts the pad, the charge and the lock back.
  */
 function refuseTeleportSettlement(services, settlement, details) {
   const code = String(settlement?.code ?? TELEPORT_SETTLEMENT_OUTCOMES.STALE);
@@ -582,11 +586,10 @@ function refuseTeleportSettlement(services, settlement, details) {
 }
 
 /**
- * The board resolveTeleportLanding judges a hop's exit on. Its occupied squares are the snapshot's `occupiedCells`,
- * every square another unit stands on and this one can't stop on, allies' squares included. `blockedCells` holds
- * only the squares it can't walk through, which leaves an ally's square out. The unit's own Token is never in
- * either list (projectTokenOccupancy in foundry/adapters/projections/movement.mjs skips it), so it can't block its
- * own landing.
+ * The map resolveTeleportLanding checks a hop's exit against. `occupied` (the read's `occupiedCells`) is every
+ * square another unit stands on, allies included, where this unit can't stop. `blocked` holds only the squares it
+ * can't walk through, which leaves an ally's square out. The unit's own Token is in neither (projectTokenOccupancy
+ * in foundry/adapters/projections/movement.mjs leaves it out), so it can't block its own landing.
  */
 function teleportBoard(snapshot) {
   const blocked = new Set([
@@ -703,7 +706,7 @@ async function forceCrossing(context, movements, services) {
 
 /**
  * Roll the crossing check, post its card, wait CROSSING_ATTEMPT_TIMING.diceSettleHold, then grant the skill XP.
- * FoundryMovementRepository.captureCrossing has already added the karma ledger the check may book to the operation.
+ * FoundryMovementRepository.captureCrossing has already saved undo data for the karma ledger the check may write to.
  */
 async function rollCrossingCheck(snapshot, crossing, services, context, movements) {
   const { skillKey, check } = resolveCrossingCheck(crossing, crossingUnit(snapshot.source));
@@ -814,11 +817,9 @@ function crossingUnit(source) {
 /*  Interrupted-plan recovery                   */
 /* -------------------------------------------- */
 /**
- * Release a plan whose holder left the table. The `recovery.clear-lock` command calls this through
- * init/system.mjs, the GM restore (engine/development.mjs) forces it on a live holder too, and beginMovement runs
- * the same settleStaleMovement first. Each passes its own operation, so a failure puts the plan back exactly as it
- * stood. Only a forced release frees a lock whose unit carries a plan the lock did not start;
- * FoundryMovementRepository.recoverStalePlan then closes that plan where its Token stands.
+ * Free the movement lock of a player who left, closing their unit's plan. The GM can force it on a lock whose
+ * player is still here. Only a forced release frees a lock whose unit is mid-move for someone else; that move is
+ * closed where its Token stands. A failure is undone with the command that asked.
  */
 export async function recoverStaleMovement(context, movements, options = {}) {
   const recovery = await settleStaleMovement(movements, context, options);

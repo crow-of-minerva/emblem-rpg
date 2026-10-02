@@ -22,7 +22,10 @@ export const UNIT_SELECTION_OUTCOMES = Object.freeze({
   NONE: 'none'
 });
 
-/** Let ui/controls/movement.mjs adopt an unknown begin outcome only when the persisted lock and plan match. */
+/**
+ * Whether this client may take over a movement plan whose start it never heard back about: the saved movement lock
+ * and the Actor's plan must both belong to this user and token.
+ */
 export function canAdoptMovementPlan({ lock, snapshot, userId, tokenUuid }) {
   return Boolean(lock && snapshot && userId && tokenUuid)
     && lock.holderId === userId && lock.tokenUuid === tokenUuid
@@ -65,25 +68,25 @@ export const MOVEMENT_INPUT_REASONS = Object.freeze({
 /*  Input policy                                */
 /* -------------------------------------------- */
 /**
- * Whether a movement input may go ahead, for movementInputPermission and canvasMarqueePermission in
- * ui/controls/unit-access.mjs. It gates each Token position update before ui/controls/movement.mjs resolves the
- * step, and every marquee selection.
- * @param {object} facts Plain movement-control facts.
+ * Whether a movement input may go ahead. It is checked on every Token position update, before the step is
+ * resolved, and on every marquee selection.
+ * @param {object} facts The input and this client's movement plan.
  * @param {string} [facts.kind] Semantic input kind.
  * @param {boolean} [facts.userIsGm] Whether the authenticated user is a GM.
  * @param {boolean} [facts.planActive] Whether this client is controlling an active movement plan.
  * @param {boolean} [facts.planMatches] Whether the local plan belongs to this Token.
- * @param {boolean} [facts.planAcceptsInput] Whether the plan is outside prompts and settlement.
+ * @param {boolean} [facts.planAcceptsInput] Whether the plan is taking input, not waiting on a prompt or finishing.
  * @param {boolean} [facts.graphReady] Whether the local movement graph exists.
- * @param {boolean} [facts.actorPlanning] Whether persisted Actor planning is active.
+ * @param {boolean} [facts.actorPlanning] Whether the Actor's saved data says it is planning a move.
  * @param {boolean} [facts.controllerMatches] Whether the Actor controller matches the user.
- * @param {boolean} [facts.lockMatches] Whether the world lock matches the user and Token.
+ * @param {boolean} [facts.lockMatches] Whether the saved movement lock matches the user and Token.
  * @param {boolean} [facts.tokenEngaged] Whether the Token is controlled or in a verified drag handoff.
  * @param {boolean} [facts.trading] Whether this unit is in a trade. No user input may move it then.
  * @param {boolean} [facts.targeting] Whether this unit is aiming. Keyboard and drag input may not move it then,
  *   except a GM's drag while no movement lock is held.
- * @param {boolean} [facts.drivenHold] Whether a module holds the board. Keyboard and drag input are refused then.
- * @param {boolean} [facts.paused] Whether Foundry's world pause is on, which freezes everyone but staff.
+ * @param {boolean} [facts.drivenHold] Whether a companion module has taken over the map. Keyboard and drag input
+ *   are refused then.
+ * @param {boolean} [facts.paused] Whether Foundry's world pause is on, which freezes everyone but GMs.
  * @returns {{allowed: boolean, reason: string}} Immutable policy result.
  */
 export function resolveMovementInputPermission(facts = {}) {
@@ -155,7 +158,7 @@ export function verticalMovementActionIds(actions = []) {
  * Whether a core key action may run, for the KeyboardManager patch in foundry/patches/token-drag.mjs. Elevation
  * actions never run. When core has no separate elevation binding, the zoom keys are blocked while a Token is
  * controlled, because they would change its elevation.
- * @param {object} facts Plain facts: the action `id`, the `verticalIds` the registry carries, `tokenControlled`.
+ * @param {object} facts The action `id`, the elevation action ids (`verticalIds`) and `tokenControlled`.
  * @returns {boolean}
  */
 export function coreKeybindingAllowed(facts = {}) {
@@ -170,18 +173,18 @@ export function coreKeybindingAllowed(facts = {}) {
 /*  Unit selection policy                       */
 /* -------------------------------------------- */
 /**
- * Choose movement planning or read-only inspection for ui/controls/movement.mjs.
+ * Choose movement planning or read-only inspection when a unit is selected.
  * With neither an encounter nor Free Exploration, selection does nothing.
- * @param {object} facts Plain selection facts.
+ * @param {object} facts The user, the unit and the encounter state.
  * @param {boolean} [facts.playing] Whether an encounter is running or Free Exploration is on.
  * @param {boolean} [facts.isUnit] Whether the Token carries a turn-taking unit.
  * @param {boolean} [facts.controllable] Whether the authenticated user may command it.
  * @param {boolean} [facts.owned] Whether the unit is the user's to command when nothing is holding them back.
  * @param {boolean} [facts.standardAvailable] Whether its standard action is unspent.
  * @param {boolean} [facts.movementAvailable] Whether its movement action is unspent.
- * @param {boolean} [facts.otherUnitControlled] Whether the board already holds a controlled Token.
- * @param {boolean} [facts.paused] Whether Foundry's world pause is on, which freezes everyone but staff.
- * @param {boolean} [facts.userIsGm] Whether the authenticated user is staff, whom a pause leaves free to act.
+ * @param {boolean} [facts.otherUnitControlled] Whether another Token on the map is already controlled.
+ * @param {boolean} [facts.paused] Whether Foundry's world pause is on, which freezes everyone but GMs.
+ * @param {boolean} [facts.userIsGm] Whether the authenticated user is a GM, whom a pause leaves free to act.
  * @returns {{outcome: string, reason: string}} Policy result.
  */
 export function resolveUnitSelection(facts = {}) {
@@ -212,24 +215,24 @@ export function resolveUnitSelection(facts = {}) {
 /* -------------------------------------------- */
 /*  Unit cycle policy                           */
 /* -------------------------------------------- */
-/** Which units the cycle key walks: the presser's own, one faction family, or every unit on the board. */
+/** Which units the cycle key walks: the presser's own, one faction family, or every unit on the map. */
 const UNIT_CYCLE_SCOPES = Object.freeze({ OWNED: 'owned', FAMILY: 'family', ANY: 'any' });
 
 const CYCLE_ORIGIN = Object.freeze({ x: 0, y: 0 });
 
 /**
- * Choose the next visible unit for ui/controls/unit-cycle.mjs. Visit each eligible unit once, nearest-first.
+ * Choose the next visible unit for the unit cycle key. Visit each eligible unit once, nearest-first.
  * With nobody named, players walk their own units and GMs every unit, preferring units with a turn left.
  * Standing on a unit walks that unit's faction family: only units with a turn left if it has one, otherwise all.
  * A continuing lap keeps the rule it started with, so a walk from nothing is not narrowed by the unit it lands on.
  * Return updated lap state so the next press skips visited units.
- * @param {object} facts Plain cycle facts.
- * @param {Array<object>} [facts.units] `{tokenId, x, y, faction, owned, ready, visible}` for every unit on the board.
+ * @param {object} facts The units on the map and the lap so far.
+ * @param {Array<object>} [facts.units] `{tokenId, x, y, faction, owned, ready, visible}` for every unit on the map.
  * @param {string} [facts.currentTokenId] The unit the cycle stands on, selected or pretend-selected.
  * @param {Array<string>} [facts.visitedTokenIds] Units this lap has already reached.
  * @param {{scope: string, family: ?string, ready: boolean}} [facts.lapRule] The rule of the lap being continued.
  * @param {{x: number, y: number}} [facts.origin] Where to measure from when no unit is named: the view centre.
- * @param {boolean} [facts.userIsGm] Whether the presser is staff, who walk every unit from nothing.
+ * @param {boolean} [facts.userIsGm] Whether the presser is a GM, who walks every unit from nothing.
  * @returns {{tokenId: ?string, scope: string, family: ?string, ready: boolean, visited: ReadonlyArray<string>}}
  */
 export function resolveUnitCycle(facts = {}) {
@@ -286,17 +289,16 @@ function cycleResult(tokenId, rule, ready, visited) {
 }
 
 /* -------------------------------------------- */
-/*  Plan settlement                             */
+/*  Closing a plan                              */
 /* -------------------------------------------- */
 /** How Space closes a plan: the options prompt, the one-button end-turn confirmation, or nothing at all. */
 export const MOVEMENT_PROMPTS = Object.freeze({ OPTIONS: 'options', END_TURN: 'end-turn', NONE: 'none' });
 
 /**
- * Choose how closing a plan confirms, rolls back and ends the turn, for ui/controls/movement.mjs and
- * engine/movement/commands.mjs. Exploration closes without costs or prompts. A Canter can only end the turn already
- * spent, and cancelling it forfeits its remaining movement. An ordinary plan that ends the turn rests the unit,
- * which restores stance, but a Canter never does.
- * @param {object} facts Plain plan facts.
+ * Choose how closing a plan confirms, rolls back and ends the turn. Exploration closes without costs or prompts. A
+ * Canter can only end the turn already spent, and cancelling it forfeits its remaining movement. An ordinary plan
+ * that ends the turn rests the unit, which restores stance, but a Canter never does.
+ * @param {object} facts The plan being closed.
  * @param {boolean} [facts.canter] Whether the plan is the post-exchange canter.
  * @param {boolean} [facts.exploring] Whether the map is in free exploration.
  * @param {boolean} [facts.resume] Whether the caller asked to keep planning after the commit.
@@ -323,10 +325,9 @@ function settlement({
 }
 
 /**
- * The movement spent after a commit, for the movement writers in foundry/adapters/document-writes/movement.mjs and
- * movement-settlements.mjs, and for resolveStandingMovementSpent. Every commit adds its leg to the legs before it,
- * a post-action remainder plan included, so the remainder is what the turn has left. Exploration adds nothing.
- * @param {object} facts Plain commit facts.
+ * Movement spent after this leg: what was spent before plus this leg. A leg that is not charged, such as one
+ * walked in exploration, adds nothing.
+ * @param {object} facts The leg being committed.
  * @param {number} [facts.priorSpent] Movement spent before this commit.
  * @param {number} [facts.legCost] The cost of the leg being committed.
  * @param {boolean} [facts.charges] Whether movement is charged at all.
@@ -347,9 +348,9 @@ export function resolveStandingMovementSpent(movement) {
 }
 
 /**
- * The effects to delete when a movement plan is cancelled, picked by their `removeWhenPathfindingEnds` flag, for
- * foundry/adapters/document-writes/movement-settlements.mjs. A confirmed plan keeps them.
- * @param {ReadonlyArray<{id: string, removeWhenPathfindingEnds?: boolean}>} effects Detached effect facts.
+ * The effects to delete when a movement plan is cancelled, picked by their `removeWhenPathfindingEnds` flag. A
+ * confirmed plan keeps them.
+ * @param {ReadonlyArray<{id: string, removeWhenPathfindingEnds?: boolean}>} effects The unit's effects.
  * @returns {string[]} The ids to delete.
  */
 export function planMovementCancelEffects(effects = []) {
@@ -393,12 +394,11 @@ export function mountsForbidden(permission) {
 }
 
 /**
- * Plan the grounding and dismounting a map's movement permission forces, for engine/movement/commands.mjs. A map
- * without flight grounds every flier on it that does not levitate, wherever it stands. That landing is not a stance
- * break, so it strands nobody.
- * @param {object[]} units Detached facts: `actorUuid`, `flying`, `grounded`, `levitating`, `mountItemId`.
+ * Plan the grounding and dismounting a map's movement permission forces. A map without flight grounds every flier
+ * on it that does not levitate, wherever it stands. That landing is not a stance break, so it leaves no unit stuck.
+ * @param {object[]} units Each unit's `actorUuid`, `flying`, `grounded`, `levitating` and `mountItemId`.
  * @param {string} permission The Scene's permission.
- * @returns {object[]} One `{actorUuid, ground}` or `{actorUuid, dismountItemId}` per unit to settle.
+ * @returns {object[]} One `{actorUuid, ground}` or `{actorUuid, dismountItemId}` per unit to change.
  */
 export function planPermissionEnforcement(units = [], permission) {
   const plan = [];
@@ -430,7 +430,7 @@ export const MOVE_SCALINGS = Object.freeze({
 /** The Scene flag a map's move scaling is stored under. An absent flag reads as None. */
 export const MOVE_SCALING_FLAG = 'moveScaling';
 
-/** The Actor flag the board settles a placed unit's map scaling onto, cleared once the unit leaves the map. */
+/** The Actor flag that holds the map's move scaling for a unit placed on it, cleared once the unit leaves the map. */
 export const UNIT_MOVE_SCALING_FLAG = 'sceneMoveScaling';
 
 export const MOVE_SCALING_LABELS = Object.freeze({
@@ -456,10 +456,7 @@ export function resolveMoveScalingDelta(scaling, { total = 0, mounted = false } 
   }
 }
 
-/**
- * Plan the move-scaling flag each unit on the board should carry, for engine/board.mjs. A unit that has left the
- * map goes back to None.
- */
+/** Plan the move-scaling flag each unit on the map should carry. A unit that has left the map goes back to None. */
 export function planMoveScalingFields(board) {
   const owed = normalizeMoveScaling(board.moveScaling);
   const plans = [];
@@ -479,18 +476,18 @@ export function planMoveScalingFields(board) {
 /*  Flight                                      */
 /* -------------------------------------------- */
 /**
- * The Actor flag a stance break sets when it grounds a flier, and taking off clears. While the unit stands grounded
- * on an obstacle it is stranded (movementStranded in pathfinding.mjs), and the Enemy AI reads it to take the unit
- * back into the air once its stance recovers.
+ * The Actor flag a stance break sets when it grounds a flier, and taking off clears. While the unit is on the
+ * ground over an obstacle it cannot move (movementStranded in pathfinding.mjs). The Enemy AI reads the flag to take
+ * the unit back into the air once its stance recovers.
  */
 export const GROUNDED_BY_STANCE_BREAK_FLAG = 'groundedByStanceBreak';
 
 /**
- * Validate the staff flight control on the Token HUD, which writes the flight state and nothing else. It spends no
+ * Validate the GM's flight control on the Token HUD, which writes the flight state and nothing else. It spends no
  * action and ends no turn, so it checks only that the unit's flight is its own to change and that the map allows
  * flight. Like the flight action, it never sets a flier down on an obstacle. A request that matches the current
  * state is accepted and writes nothing.
- * @param {object} facts Plain flight facts.
+ * @param {object} facts The unit's flight state and the map's permission.
  * @param {boolean} [facts.flying] Whether the unit is a flier at all.
  * @param {boolean} [facts.levitating] Whether an effect holds it aloft regardless.
  * @param {boolean} [facts.grounded] Whether it is currently on the ground.
@@ -512,7 +509,7 @@ export function planFlightAuthoring(facts = {}) {
 /**
  * Validate the engine's flight action. Landing remains allowed on no-flying maps, but not on obstacle cells, and a
  * unit whose stance is broken cannot take off until it recovers.
- * @param {object} facts Plain flight facts.
+ * @param {object} facts The unit's flight state, its turn and the map's permission.
  * @param {boolean} [facts.flying] Whether the unit is a flier at all.
  * @param {boolean} [facts.levitating] Whether an effect holds it aloft regardless.
  * @param {boolean} [facts.grounded] Whether it is currently on the ground.
@@ -533,10 +530,10 @@ export function planFlightToggle(facts = {}) {
 }
 
 /**
- * Validate free takeoff from the Grounded marker for engine movement commands.
+ * Validate a free takeoff from the Grounded marker.
  * It is free outside combat and for GMs, but players in combat must spend the flight action. Nobody lifts a unit
  * whose stance is broken until it recovers.
- * @param {object} facts Plain flight facts.
+ * @param {object} facts The unit's flight state, the map's permission and who is asking.
  * @param {boolean} [facts.flying] Whether the unit is a flier at all.
  * @param {boolean} [facts.levitating] Whether an effect holds it aloft regardless.
  * @param {boolean} [facts.grounded] Whether it is currently on the ground.
@@ -560,8 +557,8 @@ export function planFreeTakeOff(facts = {}) {
 
 /**
  * Whether an interaction sets its flier down: trade, theft, touch casting or paid container access. Free container
- * inspection neither commits movement nor lands the unit. The trade, steal, shop and item-activation checks ask it.
- * @param {object} facts Plain interaction facts.
+ * inspection neither commits movement nor lands the unit.
+ * @param {object} facts The acting unit and what it reached for.
  * @param {boolean} [facts.sourceAirborne] Whether the acting unit is in the air.
  * @param {boolean} [facts.targetAirborne] Whether what it reached for is too.
  * @param {boolean} [facts.committed] Whether the interaction cost the unit its position.
@@ -572,10 +569,9 @@ export function groundsOnInteraction(facts = {}) {
 }
 
 /**
- * Whether an action that would set its flier down may go ahead. Only a stance break lands a unit on a square it
- * could not land on (resolveStanceBreak in game/combat/damage.mjs), so trade, theft, touch casting, a lock attempt,
- * a shop visit and Armament use are refused while the flier they would ground is over one.
- * @param {object} facts Plain landing facts.
+ * Refuse an action that would set a flier down over an obstacle, such as a trade, a theft, touch casting, a lock
+ * attempt, a shop visit or Armament use. Only a stance break may land a flier there.
+ * @param {object} facts Whether the action grounds the unit, and what is under it.
  * @param {boolean} [facts.grounds] Whether the action sets the unit down.
  * @param {boolean} [facts.landingBlocked] Whether an obstacle lies under its footprint.
  * @returns {{ok: boolean, code?: string}}
@@ -586,10 +582,10 @@ export function planForcedLanding(facts = {}) {
 }
 
 /**
- * Validate a crossing offer for movement UI and engine commands. Require an action, spare movement
- * at the edge and a grounded, unmounted unit with stance. Exploration has no crossing actions, and a stranded unit
- * (movementStranded in pathfinding.mjs) takes no move of its own until it takes off.
- * @param {object} facts Plain turn and unit facts.
+ * Validate a crossing attempt. Require an action, spare movement at the edge and a grounded, unmounted unit with
+ * stance. Exploration has no crossing actions, and a unit stuck over an obstacle (movementStranded in
+ * pathfinding.mjs) cannot move until it takes off.
+ * @param {object} facts The unit's state and what its turn has left.
  * @returns {{ok: boolean, code?: string}}
  */
 export function planCrossingAttempt(facts = {}) {
@@ -606,9 +602,9 @@ export function planCrossingAttempt(facts = {}) {
 }
 
 /**
- * Gate crossing prompts in ui/controls/movement.mjs. A held key stops at the border, and only a fresh keyboard
- * press may offer the crossing.
- * @param {object} facts Plain input facts.
+ * Whether an input may offer a crossing. A held key stops at the edge, and only a fresh keyboard press may offer
+ * the crossing.
+ * @param {object} facts The input.
  * @param {string} [facts.kind] Semantic input kind.
  * @param {boolean} [facts.freshPress] Whether a keyboard step came from a press rather than a hold's repeat.
  * @returns {boolean}

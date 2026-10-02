@@ -78,10 +78,10 @@ const ATTACK_TARGET_REASONS = Object.freeze({
 /*  Available ranges                            */
 /* -------------------------------------------- */
 /**
- * Resolve the ranges a unit can actually threaten from detached Actor and Item facts, for the movement snapshot in
+ * Resolve the ranges a unit can actually threaten from its plain actor and item data, for
  * foundry/adapters/projections/movement.mjs.
  * @param {object} source Plain proficiencies, status, inventory, and derived wielded range.
- * @returns {readonly object[]} Immutable inclusive range bands.
+ * @returns {readonly object[]} Frozen range bands, both ends included.
  */
 export function resolveAttackRanges(source = {}) {
   const actor = { silenced: source.silenced === true };
@@ -143,10 +143,10 @@ export function resolveEffectiveAttackRange(authoredValue, derivedValue) {
 /*  Engagement                                  */
 /* -------------------------------------------- */
 /**
- * Classify an attack as melee or ranged, for the combat projections and compilation. A grounded attack on an
- * airborne target that melee cannot reach (airborneBeyondMelee) is ranged. Otherwise an adjacent target within one
- * floor is melee and any other is ranged. Airborne attackers are judged by board distance and height too.
- * @param {object} input Plain distance, the two units' floor elevations, and the flight facts airborneBeyondMelee
+ * Classify an attack as melee or ranged. A grounded attack on an airborne target that melee cannot reach
+ * (airborneBeyondMelee) is ranged. Otherwise an adjacent target within one floor is melee and any other is ranged.
+ * Airborne attackers are judged by map distance and height too.
+ * @param {object} input Plain distance, the two units' floor elevations, and the flight fields airborneBeyondMelee
  *   reads.
  * @returns {string} An engagement kind, or an empty string.
  */
@@ -161,9 +161,8 @@ export function resolveEngagement(input = {}) {
  * Whether a target in the air is out of a melee strike's reach: it is airborne with its stance whole, the attacker
  * is on the ground, the world does not play Classic flyer targeting, and the map allows flight. A broken stance
  * opens even a levitating flier to melee, and so does a map without flight, where only a levitating unit is aloft.
- * Every melee-against-airborne check uses it: resolveEngagement and validateAttackTarget here, the threat
- * lines in game/combat/threat.mjs, Shove and Retrieve in game/items/activation.mjs, the exchange's target check and
- * the planning API's engagement check, and the Enemy AI through `api.combat.airborneBeyondMelee`.
+ * Used everywhere a melee attack on a flier is checked, including the Enemy AI through
+ * `api.combat.airborneBeyondMelee`.
  * @param {object} facts `sourceAirborne`, `targetAirborne`, `targetStanceBroken`, `classicFlyers` and
  *   `flightForbidden`, which says the map forbids flight.
  * @returns {boolean}
@@ -174,7 +173,7 @@ export function airborneBeyondMelee(facts = {}) {
 }
 
 /**
- * Whether a target is in melee range by board geometry alone: adjacent and within melee's elevation reach. Authored
+ * Whether a target is in melee range by map position alone: adjacent and within melee's elevation reach. Authored
  * conditions and the engagement checks read it, and resolveEngagement applies the flight rules separately.
  * @param {object} input Plain distance and the two units' floor elevations.
  * @returns {boolean}
@@ -190,7 +189,7 @@ export function isInMeleeRange(input = {}) {
  * unless an airborne attacker strikes down at an adjacent target.
  * @param {unknown} value Authored range string.
  * @param {number} distance Squares to the foe.
- * @param {string} [engagement] Engagement kind, when the board has judged one.
+ * @param {string} [engagement] Engagement kind, when one has been judged from the map.
  * @param {boolean} [airborne] Whether the wielder is airborne.
  * @returns {boolean}
  */
@@ -204,9 +203,9 @@ export function rangeReachesEngagement(value, distance, engagement = '', airborn
 /*  Attack tile geometry                        */
 /* -------------------------------------------- */
 /**
- * Calculate every in-bounds cell threatened from one token anchor.
- * @param {number} startX Anchor column.
- * @param {number} startY Anchor row.
+ * Calculate every in-bounds cell threatened from one token position.
+ * @param {number} startX The token's top-left column.
+ * @param {number} startY The token's top-left row.
  * @param {object} range Inclusive range, shape, and optional directional sectors.
  * @param {number} columns Scene width in cells.
  * @param {number} rows Scene height in cells.
@@ -306,6 +305,7 @@ function inTargetingArea(dx, dy, sectors, shape, band) {
 }
 
 function inConeSector(dx, dy, sector, band) {
+  // A diagonal sector is a wedge around the diagonal, with depth counted as ceil(2(h+v)/3) rather than diagonal steps.
   if (sector.ux !== 0 && sector.uy !== 0) {
     const horizontal = dx * sector.ux;
     const vertical = dy * sector.uy;
@@ -397,8 +397,9 @@ function usesChebyshev(shape) {
 }
 
 /**
- * How far a range reaches in straight (non-diagonal) steps, for distance prefilters. Square and Cone ranges measure
- * diagonally, so their far corner is twice the maximum away. Only Armaments carry those shapes.
+ * How far a range reaches in straight (non-diagonal) steps, for the distance checks that skip far-away units.
+ * Square and Cone ranges measure diagonally, so their far corner is twice the maximum away. Only Armaments carry
+ * those shapes.
  * @param {{maxRange: number, shape?: string}} range A range from {@link resolveAttackRanges}.
  * @returns {number}
  */
@@ -434,7 +435,8 @@ function offsetFromBounds(x, y, bounds) {
 const HEIGHTMAP_EYE_ALLOWANCE = 1;
 
 /**
- * Decide whether an intermediate terrain column rises above the sightline between two cells.
+ * Decide whether an intermediate terrain column rises above the sightline between two cells. Cells must be whole
+ * numbers; the line walk never ends otherwise.
  * @param {number} x0 Source column.
  * @param {number} y0 Source row.
  * @param {number} x1 Target column.
@@ -554,7 +556,7 @@ export function reachableFootprintElevation(input = {}) {
 }
 
 /**
- * Drop the cells whose floor lies further from the looker's than an adjacency-reach interaction can cross.
+ * Drop the cells whose floor is further from the looker's than `maxDifference`.
  * @param {object} input Plain cell keys, elevations, source elevation, and the allowed difference.
  * @returns {Set<string>} The surviving cell keys.
  */
@@ -670,7 +672,8 @@ function splitKey(key) {
 /* -------------------------------------------- */
 /**
  * Validate a hotbar attack before ui/controls/targeting.mjs opens its grid.
- * @param {object} input Plain control, movement, Actor, and Item facts.
+ * @param {object} input Whether the unit is controlled and planning a move, and the item's owner, type, uses and
+ *   requirements.
  * @returns {{ok: boolean, reason: string}}
  */
 export function validateAttackActivation(input = {}) {
@@ -701,9 +704,9 @@ export function validateAttackActivation(input = {}) {
 /*  Grid                                        */
 /* -------------------------------------------- */
 /**
- * Build attack cells for ui/controls/targeting.mjs from a detached Scene projection.
+ * Build attack cells for ui/controls/targeting.mjs from plain scene and unit data.
  * Retain height-occluded cells for airborne targets and return them separately for overlay dimming.
- * @param {object} input Plain source, Item range, Scene bounds, and footprint facts.
+ * @param {object} input Plain source, item range, scene bounds, and footprint data.
  * @returns {Readonly<{targetableCells: readonly object[], targetableKeys: ReadonlySet<string>,
  *   flyersOnlyKeys: ReadonlySet<string>}|null>}
  */
@@ -733,9 +736,9 @@ export function buildAttackTargetingGrid(input = {}) {
 }
 
 /**
- * Check a clicked attack target against fresh projected facts, for openPreviewForTarget in ui/controls/targeting.mjs
+ * Check a clicked attack target against freshly read map data, for openPreviewForTarget in ui/controls/targeting.mjs
  * before it opens a preview. An attack is always a Hostile pick, whatever target type its weapon names.
- * @param {object} input Plain source, target, grid, faction, and sight facts.
+ * @param {object} input Plain source, target, grid, faction, and sight data.
  * @returns {{ok: boolean, reason: string}}
  */
 export function validateAttackTarget(input = {}) {
@@ -773,11 +776,10 @@ export function validateAttackTarget(input = {}) {
 }
 
 /**
- * Judge an exchange snapshot by the facts the host's validateSnapshot (engine/combat/exchanges/gates.mjs) refuses
- * on, for openPreviewForTarget in ui/controls/targeting.mjs. The Combat Preview then names the first one instead of
- * offering an Attack the host would refuse. The fingerprint, the movement plan and a grounding landing stay the
- * host's to check.
- * @param {object|null} snapshot FoundryCombatStateRepository's snapshot of the attack.
+ * Repeat the host client's attack checks (validateSnapshot in engine/combat/exchanges/gates.mjs) for
+ * openPreviewForTarget in ui/controls/targeting.mjs, so the Combat Preview can name the problem instead of offering
+ * an Attack the host would refuse. A few checks, such as whether the map changed since, stay with the host client.
+ * @param {object|null} snapshot The attack's details as FoundryCombatStateRepository reads them.
  * @returns {{ok: boolean, reason: string}}
  */
 export function validateAttackSnapshot(snapshot) {
@@ -815,6 +817,7 @@ export function hasRequiredProficiency(proficiencies, rawRequired, rawRank) {
   return holdsProficiencyRank(totals, rawRequired, Math.max(0, Math.floor(Number(rawRank) || 0)));
 }
 
+/** Height dimming, and the melee height limit, apply only under the normal sight rule. */
 function applyGridSight(keys, source, input) {
   if (input.losRule !== 'normal') return new Set();
   const flyersOnly = heightOccludedCells({

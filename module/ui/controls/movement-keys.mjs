@@ -54,7 +54,7 @@ export function installMovementKeyBlocker() {
   browserWindow.addEventListener('visibilitychange', releaseHeldMovementKeys, true);
 }
 
-/** Report whether Foundry is currently processing a held directional key. */
+/** Whether a held directional key is auto-repeating, from the browser's own repeat or from the bridge below. */
 export function isHeldMovementRepeating() {
   return repeatingMovementKeys.size > 0;
 }
@@ -102,6 +102,7 @@ function coreMovementKeys() {
   return keys;
 }
 
+/** Replay a held key through Foundry's KeyboardManager at a steady pace until the browser's own repeat takes over. */
 function startMovementRepeatBridge(event) {
   const delay = Math.max(0, Number(MOVEMENT_HOLD_REPEAT_DELAY_MS) || 0);
   const code = String(event?.code ?? '');
@@ -132,6 +133,7 @@ function startMovementRepeatBridge(event) {
       repeat: true
     });
     if (movementRepeatBridges.get(code) !== bridge) return;
+    // emulateKeypress removes the key from Foundry's held keys when it finishes. The key is still down, so add it back.
     game.keyboard.downKeys.add(code);
     bridge.timer = setTimeout(repeat, delay);
   };

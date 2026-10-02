@@ -19,9 +19,9 @@ import { requirePorts } from '../../contracts/protocol.mjs';
 /* -------------------------------------------- */
 
 /**
- * What happened at one spawn square: the unit arrived, it was legitimately skipped, its writes did not land, or the
- * running command could not add the arrival's actor to its resource keys (a malformed key or a run that has
- * already settled), which stops the batch before the arrival is created.
+ * What happened at one spawn square: the unit arrived, it was skipped on purpose, its writes did not land, or the
+ * running command could not add the arrival's actor to its resource keys (a malformed key or a finished run),
+ * which stops the batch before the arrival is created.
  */
 const SPAWN_OUTCOMES = Object.freeze({
   ARRIVED: Object.freeze({ spawned: true, unfinished: false }),
@@ -43,16 +43,16 @@ export class TerrainPhaseService {
     this.wait = wait;
   }
 
-  /** A copy whose health commands add their resource keys through the running phase command's `hold`. */
+  /** A copy whose damage and healing commands add their resource keys to the running phase change (its `hold`). */
   withResources(resources) {
     return new TerrainPhaseService({ terrain: this.terrain,
       impacts: this.impacts.withResources(resources), wait: this.wait });
   }
 
   /**
-   * Apply healing before hazards at phase start. A failed impact stops the phase change, which then restores. Once a
-   * hazard defeats a unit, the rest of its hazards are skipped.
-   * @param {object[]} units Projected phase participants carrying their scanned terrain facts.
+   * Apply healing before hazards at phase start. A failed impact stops the phase change, which is then undone. Once
+   * a hazard defeats a unit, the rest of its hazards are skipped.
+   * @param {object[]} units The units taking part in the phase, each with the terrain scan of its square.
    * @returns {Promise<{ok: boolean, applied: number}>}
    */
   async applyPhaseStartImpacts(units = []) {
@@ -91,7 +91,7 @@ export class TerrainPhaseService {
    * @param {string} closingPhase Phase that is ending.
    * @param {number} round Round the closing phase belongs to.
    * @param {{resources?: {hold: function(string[]): boolean}|null, operation?: object|null}} [options] The running
-   *   command's hold and the operation its writes are captured into.
+   *   command's `hold` (adds resource keys) and its undo record.
    * @returns {Promise<{ok: boolean, spawned: number, unfinished: number, busy: boolean}>}
    */
   async firePhaseEndSpawns(sceneUuid, closingPhase, round, { resources = null, operation = null } = {}) {
@@ -116,8 +116,8 @@ export class TerrainPhaseService {
   }
 
   /**
-   * Place one due arrival: reserve its Token id in the operation, create the Token, settle its behaviour and fade,
-   * then write the completed record that puts the square on cooldown.
+   * Place one due arrival: reserve its Token id in the undo record, create the Token, apply its behaviour and
+   * fade-in, then write the completed record that puts the square on cooldown.
    */
   async #settleSpawnOccurrence({ sceneUuid, closingPhase, round, board, occupied, entry, resources, operation }) {
     const reference = await this.terrain.getSpawnReference(String(entry.spawn.uuid));
@@ -144,7 +144,7 @@ export class TerrainPhaseService {
 
   /**
    * Add the actor a reserved arrival will write to the running command's resource keys. This fails only for a
-   * malformed key or a run that has already settled.
+   * malformed key or a run that has already finished.
    */
   async #holdsArrival(sceneUuid, uuid, tokenId, resources) {
     const actorUuid = await this.terrain.spawnActorUuid({ sceneUuid, uuid, tokenId });
@@ -160,8 +160,8 @@ export class TerrainPhaseService {
   }
 
   /**
-   * Name the terrain cells and counters one phase's expiry will rewrite, so the phase change can capture exactly
-   * those flag entries before its first write. `expireTimedEdits` plans afresh from the same rules.
+   * Name the terrain cells and counters one phase's expiry will rewrite, so the phase change can save exactly those
+   * flag entries for undo before its first write. `expireTimedEdits` plans afresh from the same rules.
    * @param {string} sceneUuid Scene whose phase is closing.
    * @param {string} closingPhase Phase that is ending.
    * @returns {Promise<{ok: boolean, code: string, counters: object[], cells: object[]}>}
@@ -188,7 +188,7 @@ export class TerrainPhaseService {
    * Count the closing phase's timed terrain edits down and restore the squares whose time ran out.
    * @param {string} sceneUuid Scene whose phase is closing.
    * @param {string} closingPhase Phase that is ending.
-   * @param {object|null} [operation] The phase change's operation, which the Scene write captures into.
+   * @param {object|null} [operation] The phase change's undo record, which the Scene write saves into.
    * @returns {Promise<{ok: boolean, code: string, cells: number}>}
    */
   async expireTimedEdits(sceneUuid, closingPhase, operation = null) {
@@ -199,7 +199,7 @@ export class TerrainPhaseService {
    * Revert every timed terrain edit at once, for the end of a battle where the counters mean nothing, and for the
    * GM Macros compendium's Clear Terrain Effects. Edits authored with no duration are left standing.
    * @param {string} sceneUuid Scene whose battle has been decided, viewed on the canvas or not.
-   * @param {object|null} [operation] The running command's operation.
+   * @param {object|null} [operation] The running command's undo record.
    * @returns {Promise<{ok: boolean, code: string, cells: number}>} `cells` counts the squares put back.
    */
   async revertTimedEdits(sceneUuid, operation = null) {
@@ -239,13 +239,13 @@ function spawnAnswer(spawned, unfinished, busy = false) {
 }
 
 /* -------------------------------------------- */
-/*  Health dispatch                             */
+/*  Health commands                             */
 /* -------------------------------------------- */
 
 /**
- * The health port for terrain, phase-tick, rest and fall impacts: APPLY_DAMAGE and APPLY_HEALING run as child
- * commands through CommandDispatcher's `invokeWithin` (wired in init/system.mjs), so they join the running
- * command's operation and their health writes are captured there.
+ * The health service for terrain, phase-tick, rest and fall impacts: APPLY_DAMAGE and APPLY_HEALING run as child
+ * commands through CommandDispatcher's `invokeWithin` (wired in init/system.mjs), so their health writes go into
+ * the running command's undo record.
  */
 export function createTerrainImpactPort(execute, resources = {}) {
   return Object.freeze({

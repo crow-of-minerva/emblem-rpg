@@ -64,7 +64,7 @@ export async function clampItemUses(item) {
 /* -------------------------------------------- */
 
 /**
- * Fill an Item to its effective maximum, writing the persisted maximum too unless the uses are conditional.
+ * Fill an Item to its effective maximum, writing the saved maximum too unless the uses are conditional.
  * @param {Item} item The Item to fill.
  * @returns {Promise<boolean>} Whether a write was needed.
  */
@@ -83,9 +83,10 @@ async function fillItemUses(item) {
 /**
  * Tidy an Item an Actor has just received. Called by the active GM's createItem hook
  * (createItemArrivalHookHandlers in foundry/hooks/items.mjs). The item arrives unequipped, and a Lord or Retainer's
- * copy stops being stealable. A new item is filled to its maximum uses, while one moved by a transfer or combat
- * settlement keeps its uses. A second Mount is deleted, since a unit holds only one. Coinpurses, and items put back
- * by an operation restore, are left alone.
+ * copy stops being stealable. A new item is filled to its maximum uses, while one moved by a transfer or written by
+ * combat keeps its uses. A second Mount is deleted, since an actor holds only one. The creating command does not
+ * wait for this hook, so these writes are not in its undo record and a deleted Mount may already have been reported
+ * as received. Coinpurses, and items put back by an undo or startup recovery, are left alone.
  * @param {Item} item The created Item.
  * @param {object} [options] The creation options.
  * @returns {Promise<{ok: boolean, reasonCode: string, data?: object}>} A refused second Mount carries its reasonCode.

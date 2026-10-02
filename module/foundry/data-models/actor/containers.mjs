@@ -15,7 +15,7 @@ export class ConvoyDataModel extends foundry.abstract.TypeDataModel {
       }),
       capacity: new F.NumberField({ initial: 100, min: 0 }),
       gp: new F.NumberField({ initial: 0, min: 0 }),
-      /** Gold on its way to the Convoy from a granted requisition or staff authoring. A delivery moves it into gp. */
+      /** Gold on its way to the Convoy from a granted requisition or a GM's edit. A delivery moves it into gp. */
       inboundGp: new F.NumberField({ initial: 0, min: 0 }),
       notes: new F.SchemaField({ description: new F.StringField({ initial: '' }) })
     };

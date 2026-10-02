@@ -18,14 +18,15 @@ import { RESULT_CODES, accept, refuse } from '../contracts/results.mjs';
 const MAX_RESOURCE_KEY_LENGTH = 256;
 const MAX_SEGMENT_LABEL_LENGTH = 64;
 
-/** Holders gameplay may wait a bounded moment for, instead of refusing at once. */
+/** If one of these is running, a gameplay command waits briefly instead of being refused as busy. */
 const YIELDING_LANES = new Set([COMMAND_LANES.MAINTENANCE, COMMAND_LANES.STARTUP, COMMAND_LANES.RECOVERY]);
 
 /**
- * Runs authenticated CommandGateway requests one at a time: a root command holds world execution until its handler
- * settles, and inspection commands run without holding it. A request that finds execution held is refused as busy,
- * except that gameplay waits a bounded moment behind maintenance, startup or recovery work. Results are remembered
- * by caller, request id and payload, so a repeated delivery never runs a command twice.
+ * Runs commands on the host client one at a time. A command keeps the command slot until its handler finishes;
+ * read-only (inspect) commands run without taking it. A command that finds the slot taken is refused as busy,
+ * except that gameplay commands wait briefly behind maintenance, startup or recovery work. A driver on the host,
+ * such as the Enemy AI, can keep the slot across several actions; the code calls that a segment. Results are
+ * remembered by user, request id and payload, so a command delivered twice runs once.
  */
 export class CommandDispatcher {
   #definitions = new Map();
@@ -51,9 +52,10 @@ export class CommandDispatcher {
   #openSegments = new Set();
 
   /**
-   * Every port but the three production constants comes from init/system.mjs: `operations` is OperationRecovery,
-   * `executor` answers whether this page hosts, `admission` is the startup and pause gate, `wait` is the
-   * presentation pacing clock, and the four callbacks report execution changes and drive segment boundaries.
+   * Everything but `timing`, `memory` and `now` comes from init/system.mjs: `operations` is OperationRecovery (the
+   * undo log), `executor` answers whether this page is the host client, `admission` applies the startup and pause
+   * checks, `wait` is the presentation delay, and the four callbacks report slot changes and run clean-up work
+   * while a segment holds the slot.
    */
   constructor({ diagnostics, operations, executor, admission, onSettled, onExecutionChanged, segmentBoundary,
     segmentTeardown, wait, timing = COMMAND_TIMING, memory = COMMAND_REQUEST_MEMORY, now = () => Date.now() }) {
@@ -86,21 +88,21 @@ export class CommandDispatcher {
   }
 
   /* -------------------------------------------- */
-  /*  Execution owner                             */
+  /*  Command slot                                */
   /* -------------------------------------------- */
 
-  /** Whether a command or segment holds world execution right now. */
+  /** Whether a command or segment holds the command slot right now. */
   executionHeld() {
     return this.#owner !== null;
   }
 
-  /** Whether execution is free and no gameplay request is waiting to take it. */
+  /** Whether the command slot is free and no gameplay command is waiting for it. */
   executionFree() {
     return this.#owner === null && this.#waiters.length === 0;
   }
 
   /**
-   * Whether nothing is running: execution is free, or a segment holds it between actions. api.board.awaitSettled
+   * Whether nothing is running: the slot is free, or a segment holds it between actions. api.board.awaitSettled
    * reads this, so a driver such as the Enemy AI can wait between its own actions without waiting on itself.
    */
   executionIdle() {
@@ -116,7 +118,7 @@ export class CommandDispatcher {
     return Boolean(run) && !run.settled && keys.some(key => run.keys.has(key));
   }
 
-  /** A detached view of who holds execution, for host status replies and every client's processing blocker. */
+  /** A frozen copy of who holds the slot, for host status replies and every client's "processing" blocker. */
   executionSnapshot() {
     const owner = this.#owner;
     return Object.freeze({
@@ -133,12 +135,14 @@ export class CommandDispatcher {
   }
 
   /**
-   * Give up on a holder that never settles, for the forced recovery.clear-busy in engine/recovery/commands.mjs.
-   * The abandoned run is settled, so its later resource claims and nested invokeWithin calls refuse, and a segment
-   * finds itself released. Nothing stops writes the old handler makes directly if it ever resumes, and its
-   * operation record is left open on purpose: `recorded` tells the caller the host must reload so startup
-   * restores it.
-   * @returns {{commandId: string, lane: string, recorded: boolean}|null} The holder, or null when execution was free.
+   * Free the slot from a command that never finishes, for the forced recovery.clear-busy in
+   * engine/recovery/commands.mjs. The abandoned run is marked finished, so resource claims through its own context
+   * refuse, and so do child commands that pass its context as `scope`. A child command called without a scope is
+   * not checked: if the old handler resumes, it joins whichever command holds the slot then (see invokeWithin).
+   * A segment's next action is refused as released. Nothing stops writes the old handler makes directly, and its
+   * undo record is left open on purpose: `recorded` tells the caller the host must reload so startup restores it.
+   * @returns {{commandId: string, lane: string, recorded: boolean}|null} The command that held the slot, or null
+   *   when it was free.
    */
   abandonExecution() {
     const owner = this.#owner;
@@ -153,11 +157,11 @@ export class CommandDispatcher {
   }
 
   /**
-   * Give up on the running operation without touching execution, for the page-unload handlers in init/system.mjs.
-   * A page that is closing keeps running its handler for a while, so its settle must not start a restoration the
-   * next page would load through: the abandoned run settles as `abandoned`, its record stays open, and the new
-   * page's startup `OperationRecovery.restoreUnfinished()` restores it against a consistent world.
-   * @returns {boolean} Whether the abandoned operation still holds a durable record.
+   * When the host page unloads, leave the running command's undo record for the next page load to apply (called
+   * from the page-unload handlers in init/system.mjs). A closing page may keep running the handler for a moment, so
+   * its run ends as `abandoned` instead of starting an undo, and the next page's startup
+   * `OperationRecovery.restoreUnfinished()` applies the record.
+   * @returns {boolean} Whether the abandoned command still has a saved undo record.
    */
   abandonOperation() {
     return this.#owner?.run?.operation?.abandon() === true;
@@ -167,7 +171,10 @@ export class CommandDispatcher {
   /*  Requests                                    */
   /* -------------------------------------------- */
 
-  /** Dispatch a CommandGateway envelope using the transport-authenticated sender id. */
+  /**
+   * Run a CommandGateway request. `userId` is the sender id socketlib takes from the Foundry server, so a player
+   * cannot forge it.
+   */
   async dispatch(envelope, userId) {
     const requestId = String(envelope?.id ?? '');
     const commandId = String(envelope?.commandId ?? '');
@@ -218,9 +225,11 @@ export class CommandDispatcher {
   }
 
   /**
-   * Run a child command inside the running command, with its execution token, operation and resource keys and no
-   * second root request. `scope` is the parent's context. Refuses when no command is running or the scope's
-   * execution token is not the current one. The child's own authorize slot still runs.
+   * Run a child command inside the running command, sharing its undo record and resource keys, without a second
+   * request. `scope` is the parent's handler context. Refuses when no command is running, or when `scope` carries
+   * an `execution` token that is not the running command's. A call without a scope (init/system.mjs defaults it to
+   * `{}`) skips the token check and joins whichever command is running. The child's authorize check runs with
+   * `userId`; init/system.mjs always passes the host GM's id, so the parent's own authorization is the real check.
    */
   async invokeWithin(commandId, payload, userId, requestId, scope = {}) {
     const parent = scope ?? {};
@@ -250,12 +259,12 @@ export class CommandDispatcher {
   }
 
   /* -------------------------------------------- */
-  /*  Admission                                   */
+  /*  Root requests                               */
   /* -------------------------------------------- */
 
   /**
-   * Admit a root CommandGateway request: check startup and authorization, acquire execution,
-   * then authorize again with fresh resources. Release execution regardless of the handler's outcome.
+   * Run a root CommandGateway request: check startup and authorization, take the command slot, then authorize
+   * again now that nothing else can run. The slot is released whatever the handler returns.
    */
   async #admit(context) {
     const definition = this.#definitions.get(context.commandId);
@@ -282,10 +291,10 @@ export class CommandDispatcher {
   }
 
   /**
-   * Resolve fresh resource keys under the held owner, then run the handler with them, a claim port and the
-   * operation its writers capture through. The operation settles from the handler's own outcome. A root is
-   * authorized here a second time, now under the owner. A segment action or a maintenance run under a segment
-   * arrives `authorized`, because its caller already checked it under this same owner.
+   * Run the command while it holds the slot, then keep its writes if it succeeded or undo them if it failed. Its
+   * resource keys are worked out fresh here. A root command is authorized a second time here. A segment action or
+   * a clean-up job inside a segment arrives with `authorized` set, because its caller already checked it while
+   * holding the same slot.
    */
   async #runUnder(owner, definition, context, { authorized = false } = {}) {
     const run = this.#beginRun(owner, context);
@@ -308,9 +317,9 @@ export class CommandDispatcher {
   }
 
   /**
-   * Commit the run's operation when its handler succeeded, and put its before-images back otherwise.
-   * A commit that cannot be saved is itself a failure, so the caller is told the restoration's outcome through
-   * `data.restored`. engine/recovery/operations.mjs has already reported anything it could not resolve.
+   * Keep the run's writes when its handler succeeded, and undo them otherwise. A commit that cannot be saved counts
+   * as a failure, and `data.restored` tells the caller whether the undo worked. engine/recovery/operations.mjs has
+   * already reported anything it could not undo. An abandoned run passes the handler's result through unchanged.
    */
   async #settleOperation(operation, result) {
     const settled = await operation.settle(result?.ok === true);
@@ -324,8 +333,8 @@ export class CommandDispatcher {
   }
 
   /**
-   * Run a definition after checking again that this client still hosts and that startup admits the command, then
-   * authorize it unless the caller already did under the held owner.
+   * Run a definition after checking again that this client is still the host and that startup allows the command,
+   * then authorize it unless the caller already did while holding the slot.
    */
   async #invoke(definition, context, { authorized = false } = {}) {
     try {
@@ -339,8 +348,8 @@ export class CommandDispatcher {
   }
 
   /**
-   * Take execution now, or resolve null when it is held. Only gameplay may wait, for up to `maintenanceYieldMs`, and
-   * only behind maintenance, startup or recovery work (#yielding).
+   * Take the slot now, or resolve null when it is taken. Only gameplay commands may wait, for up to
+   * `maintenanceYieldMs`, and only behind maintenance, startup or recovery work (#yielding).
    */
   #acquire(context, lane) {
     const owner = this.#take(context, lane);
@@ -355,7 +364,7 @@ export class CommandDispatcher {
     });
   }
 
-  /** Check and set the owner in one synchronous step, so two admissions can never both take it. */
+  /** Check and take the slot in one synchronous step, so two requests can never both get it. */
   #take(context, lane) {
     if (this.#owner || (lane !== COMMAND_LANES.GAMEPLAY && this.#waiters.length)) return null;
     this.#generation += 1;
@@ -368,12 +377,12 @@ export class CommandDispatcher {
     return this.#owner;
   }
 
-  /** Whether gameplay may wait for the current holder: maintenance, startup or recovery work, never a segment. */
+  /** Whether a gameplay command may wait for what holds the slot: maintenance, startup or recovery, never a segment. */
   #yielding() {
     return Boolean(this.#owner) && !this.#owner.segment && YIELDING_LANES.has(this.#owner.lane);
   }
 
-  /** Free the owner, hand it straight to the first waiting gameplay request, and report the release. */
+  /** Free the slot, hand it straight to the first waiting gameplay command, and report the release. */
   #release(owner) {
     if (this.#owner !== owner) return;
     if (owner.run) owner.run.settled = true;
@@ -386,6 +395,8 @@ export class CommandDispatcher {
       clearTimeout(waiter.timer);
       waiter.resolve(this.#take(waiter.context, waiter.lane));
     }
+    // The others only waited because maintenance work held the slot. Behind another gameplay command they are
+    // refused as busy, as a new request would be.
     if (this.#owner?.lane === COMMAND_LANES.GAMEPLAY) {
       for (const waiter of this.#waiters.splice(0)) {
         clearTimeout(waiter.timer);
@@ -402,8 +413,8 @@ export class CommandDispatcher {
   }
 
   /**
-   * Report the execution change through the `onExecutionChanged` port. A failure there is only recorded, so it never
-   * changes who holds execution.
+   * Report the slot change through the `onExecutionChanged` callback. A failure there is only recorded, so it never
+   * changes who holds the slot.
    */
   #announceExecution() {
     try { this.#onExecutionChanged(this.executionSnapshot()); }
@@ -419,7 +430,7 @@ export class CommandDispatcher {
     return refuse(lane === COMMAND_LANES.RECOVERY ? RESULT_CODES.RECOVERY_BUSY : RESULT_CODES.COMMAND_EXECUTION_BUSY, data);
   }
 
-  /** Start one handler's run under the owner. A segment starts a fresh run, with fresh keys, for every action. */
+  /** Start one handler's run in the slot. A segment starts a fresh run, with fresh keys, for every action. */
   #beginRun(owner, context) {
     if (owner.run) owner.run.settled = true;
     owner.run = { commandId: context.commandId, requester: context.requester, keys: new Set(), settled: false,
@@ -428,8 +439,8 @@ export class CommandDispatcher {
   }
 
   /**
-   * Add keys to the running handler's resource keys. Refuses a malformed key or a run that has settled. The keys
-   * lock nothing, because world execution already keeps other commands out.
+   * Add keys to the running handler's resource keys. Refuses a malformed key or a run that has finished. The keys
+   * lock nothing, because holding the slot already keeps other commands out.
    */
   #claim(run, keys) {
     if (run.settled || this.#owner?.run !== run) return false;
@@ -440,13 +451,13 @@ export class CommandDispatcher {
   }
 
   /* -------------------------------------------- */
-  /*  Execution segments                          */
+  /*  Segments                                    */
   /* -------------------------------------------- */
 
   /**
-   * Hold execution for a host-local driver such as the Enemy AI (api.protocol). Each action run through the segment
-   * is authorized and gets its resource keys afresh. Other gameplay stays out until the segment is released or
-   * closed, and both wait for a running action to finish first.
+   * Let a driver on the host client, such as the Enemy AI (api.protocol), keep the slot across several actions so
+   * players can't act in between. Each action is authorized and gets its resource keys afresh. Other gameplay stays
+   * out until the segment is released or closed, and both wait for a running action to finish first.
    * @param {{userId: string, label?: string}} intent The host user and a short label for status views.
    * @returns {Promise<object>} `command.segment-opened` carrying `data.segment`, or the refusal.
    */
@@ -460,9 +471,9 @@ export class CommandDispatcher {
   }
 
   /**
-   * Mark open segments after CommandGateway authenticates a staff stop request.
+   * Mark open segments as asked to stop, once CommandGateway has checked the request came from a GM or Assistant.
    * The driver reads stopRequested between actions and closes its handle. This method does not
-   * cancel an action, release execution or prevent further driver calls.
+   * cancel an action, release the slot or prevent further driver calls.
    * @param {{userId: string}} intent The authenticated user asking for the stop.
    * @returns {object} `command.segment-stop-requested` with how many segments were marked, or the refusal.
    */
@@ -477,7 +488,7 @@ export class CommandDispatcher {
     return accept(RESULT_CODES.COMMAND_SEGMENT_STOP_REQUESTED, { segments: open.length, alreadyRequested });
   }
 
-  /** The owner for a segment, or the refusal that stops it. */
+  /** Take the slot for a segment, or return the refusal. */
   async #acquireSegment(context) {
     if (!context.userId) return refuse(RESULT_CODES.COMMAND_FAILED);
     if (!this.#executor()) return refuse(RESULT_CODES.NO_ACTIVE_GM);
@@ -488,7 +499,7 @@ export class CommandDispatcher {
     return owner;
   }
 
-  /** Build the api.protocol segment handle, binding actions, stop state and pacing to its execution owner. */
+  /** Build the segment handle api.protocol gives the driver: run actions, wait, release, take back, close. */
   #segment(context, initialOwner) {
     const state = { owner: initialOwner, closed: false, lost: false, active: null, actions: 0,
       stopRequested: false, openedAt: initialOwner.since };
@@ -557,10 +568,8 @@ export class CommandDispatcher {
   }
 
   /**
-   * Run the teardown injected by init/system.mjs before releasing segment execution.
-   * It rechecks plan ownership and identity before closing a movement plan left by the driver, and releases it
-   * through the runner given here, so that release is an ordinary command with its own operation record rather
-   * than a bare write under the segment's owner.
+   * When a segment closes, run the teardown from init/system.mjs before freeing the slot. It releases any move the
+   * driver left open, as a normal command with its own undo record.
    */
   async #releaseSegmentHolds(context, state) {
     try {
@@ -574,8 +583,8 @@ export class CommandDispatcher {
   }
 
   /**
-   * Drain MaintenanceScheduler work under the segment's execution before its next action.
-   * This lets turn completion and reconciliation settle between automatically driven units.
+   * Before each segment action, run the queued MaintenanceScheduler jobs while the segment holds the slot, so turn
+   * completion and other clean-up finish between the driver's units.
    */
   async #segmentBoundaryThenAction(state, segment, commandId, payload) {
     try {
@@ -590,8 +599,8 @@ export class CommandDispatcher {
   }
 
   /**
-   * Run one command as its own root, with fresh keys and its own operation, inside execution a segment already
-   * holds. Both the reconciliation drain between driver actions and the teardown release enter here.
+   * Run one command as its own root, with fresh keys and its own undo record, while a segment holds the slot. Used
+   * for the clean-up jobs between driver actions and for the teardown release.
    */
   async #runMaintenanceUnder(owner, commandId, payload, requestId, userId) {
     const id = String(commandId ?? '');
@@ -611,7 +620,7 @@ export class CommandDispatcher {
     }
   }
 
-  /** One gameplay action inside a segment: authorized afresh, then run under the segment's owner. */
+  /** One gameplay action inside a segment: authorized afresh, then run while the segment holds the slot. */
   async #segmentAction(state, segment, commandId, payload) {
     const id = String(commandId ?? '');
     const definition = this.#definitions.get(id);
@@ -636,7 +645,7 @@ export class CommandDispatcher {
   /*  Request memory and failures                 */
   /* -------------------------------------------- */
 
-  /** Move settled results past their age or count bound into tombstones, and drop tombstones past theirs. */
+  /** Move finished results past their age or count limit into tombstones (ids kept as expired), and drop old ones. */
   #forget() {
     const now = this.#now();
     const { results, resultAgeMs, tombstones, tombstoneAgeMs } = this.#memory;
@@ -683,9 +692,9 @@ async function invokeCommand(definition, context) {
 
 /**
  * Add the resource keys a handler is about to write to its run, before it writes. A child command shares its
- * parent's keys through invokeWithin. The keys lock nothing, since world execution already keeps other commands
- * out, but they record what the command touches for CommandDispatcher.resourcesBusy. A malformed key or a settled
- * run returns false, and the handler refuses before writing.
+ * parent's keys through invokeWithin. The keys lock nothing, since holding the command slot already keeps other
+ * commands out, but they record what the command touches for CommandDispatcher.resourcesBusy. A malformed key or a
+ * finished run returns false, and the handler refuses before writing.
  * @param {object} context The handler's dispatch context.
  * @param {string[]} keys Every resource key the handler is about to write.
  * @returns {boolean} True when every key is held, now or by claim.

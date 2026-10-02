@@ -26,6 +26,7 @@ export function cellRange(rangeUnits, gridDistance, maxCells = 0) {
 
 /**
  * Convert the Foundry vision source center to a grid footprint. Round small off-grid offsets to the visible cell.
+ * Assumes a square grid whose squares start at canvas (0,0), as Foundry lays out a square grid.
  * @param {number} cx Centre x in pixels.
  * @param {number} cy Centre y in pixels.
  * @param {number} tw Width in squares.
@@ -68,7 +69,8 @@ const VISIBILITY_THRESHOLD = 1 / 3;
 const SAMPLES_PER_AXIS = 6;
 
 /**
- * Every cell within a range of a footprint, measured edge to edge with diagonals costing two.
+ * Every cell within a range of a footprint, measured edge to edge with diagonals costing two. Not the same as
+ * footprintCells in lib/core/geometry.mjs, which lists the squares a footprint covers.
  * @param {number} tc Footprint column.
  * @param {number} tr Footprint row.
  * @param {number} tw Footprint width in squares.
@@ -141,8 +143,8 @@ function polyArea(pts) {
 }
 
 /**
- * Choose the next edge for traceCellBoundary where several leave one corner. Reversals are skipped and the
- * sharpest turn wins, so two cells touching only at a corner don't split the outline.
+ * Choose the next edge for traceCellBoundary where several leave one corner. Reversals are skipped and the turn
+ * that hugs the current cell wins, so two cells touching only at a corner trace as separate loops.
  */
 function pickNext(inEdge, candidates, edges) {
   if (candidates.length === 1) return candidates[0];
@@ -166,8 +168,9 @@ function pickNext(inEdge, candidates, edges) {
 }
 
 /**
- * Trace the outline of a set of cells from their exposed edges. Only the largest loop is kept, so holes are filled,
- * because the sight shape in foundry/patches/vision.mjs is a single polygon.
+ * Trace the outline of a set of cells from their exposed edges. Only the largest loop is kept, because the sight
+ * shape in foundry/patches/vision.mjs is a single polygon: holes are filled, and any separate patch of cells,
+ * including one joined only at a corner, is dropped.
  * @param {Set<string>} cellSet Cell keys.
  * @param {number} g Grid size in pixels.
  * @returns {number[]} Outline, as alternating x and y.

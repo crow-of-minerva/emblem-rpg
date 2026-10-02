@@ -141,12 +141,11 @@ export function isTakeOnlyTarget(target = {}) {
 /* -------------------------------------------- */
 
 /**
- * Check a trade or a loot before any inventory is written, for trade and the trade view in
- * engine/economy/trade.mjs. Reach comes first, then the items, then room counted after the swap, so two full units
- * can still swap. In an encounter a trade spends the bonus action and movement, while looting a container only
- * commits the square. A flier reaching down to a unit on the ground lands (`grounds`), and is refused over an
- * obstacle.
- * @param {object} facts Trade facts.
+ * Check a trade or a loot before any inventory is written. Reach comes first, then the items, then room counted
+ * after the swap, so two full units can still swap. In an encounter a trade spends the bonus action and movement,
+ * while looting a container only commits the square. A flier reaching down to a unit on the ground lands
+ * (`grounds`), and is refused over an obstacle.
+ * @param {object} facts Both sides, the items chosen and where the two units stand.
  * @returns {{ok: boolean, code?: string, data?: object, mode?: string, spendsBonusAction?: boolean,
  *   commitsSquare?: boolean, grounds?: boolean}}
  */
@@ -193,11 +192,11 @@ export function planTrade(facts) {
 }
 
 /**
- * Check a theft before the skill roll, for steal and the trade view in engine/economy/trade.mjs.
+ * Check a theft before the skill roll.
  * Require Steal, a visible adjacent hostile, a valid movement plan and capacity for every item.
  * Free Exploration forbids theft. The combined DC uses one roll, and the attempt ends the turn even on failure.
  * A thief reaching down from the air lands (`grounds`), and is refused over an obstacle.
- * @param {object} facts Steal facts.
+ * @param {object} facts The thief, its target, the items chosen and where the two units stand.
  * @returns {{ok: boolean, code?: string, data?: object, dc?: number, endsTurn?: boolean, grounds?: boolean}}
  */
 export function planSteal(facts) {
@@ -226,9 +225,8 @@ export function planSteal(facts) {
 }
 
 /**
- * Whether the thief has room for everything it reached for, with at most one Armor. Used by planSteal, and by the
- * Steal window in ui/controls/interaction.mjs before it closes.
- * @param {object} thief The thief's side facts.
+ * Whether the thief has room for everything it reached for, with at most one Armor.
+ * @param {object} thief The thief's inventory counts and limits.
  * @param {object[]} items The Items reached for.
  * @returns {{ok: boolean, code?: string, data?: object}}
  */
@@ -294,10 +292,9 @@ function transferAmount(item, requested) {
 }
 
 /**
- * Plan a Convoy deposit for convoyDeposit in engine/economy/trade.mjs. A player needs one of their linked Convoys,
- * and in an encounter a unit with some turn left (unitTurnComplete in game/combat/phases.mjs), since only taking
- * from a Convoy is locked there. A Coinpurse arrives as gold, and a partial Resource transfer is capped at the
- * amount held.
+ * Plan a Convoy deposit. A player needs one of their linked Convoys, and in an encounter a unit with some turn left
+ * (unitTurnComplete in game/combat/phases.mjs), since only taking from a Convoy is locked there. A Coinpurse
+ * arrives as gold, and a partial Resource transfer is capped at the amount held.
  * @param {object} facts `item`, `turn`, `linkedConvoyUuids`, `convoyUuid`, `encounterActive`, `gm`, `amount`.
  * @returns {{ok: boolean, code?: string, data?: object, gold?: number, amount?: number|null}}
  */
@@ -319,8 +316,8 @@ export function planConvoyDeposit(facts = {}) {
 }
 
 /**
- * Plan a GM's move of a unit's item onto a Vendor's shelf, for vendorStock in engine/economy/trade.mjs. Any good a
- * container stocks is accepted except a Coinpurse, and a Resource may go in part.
+ * Plan a GM's move of a unit's item onto a Vendor's shelf. Any good a container stocks is accepted except a
+ * Coinpurse, and a Resource may go in part.
  * @param {object} facts `item`, `gm`, `amount`.
  * @returns {{ok: boolean, code?: string, data?: object, amount?: number|null}}
  */

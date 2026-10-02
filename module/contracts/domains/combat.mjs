@@ -7,6 +7,10 @@ import { boundedText, exactKeys, plainRecord } from '../protocol.mjs';
 /*  Persisted vocabulary                        */
 /* -------------------------------------------- */
 
+/**
+ * The world's hit-chance setting. Karmic rerolls in a side's favour after bad luck and against it after good luck.
+ * True RNG rolls one d20. Two Random Numbers averages two d20s, so middling results come up more often.
+ */
 export const HIT_CHANCE_MODELS = Object.freeze({
   KARMIC: 'karmic',
   TRUE_RANDOM: 'trueRng',
@@ -35,6 +39,10 @@ export const COMBAT_SIDES = Object.freeze({ ATTACKER: 'attacker', DEFENDER: 'def
 /** The largest floor difference an adjacent blow can cross and still be melee. */
 export const MELEE_ELEVATION_REACH = 1;
 
+/**
+ * What the attacking unit does after an exchange: keep exploring, attack again, choose whether to take an Extra
+ * Action, take it, canter, use its bonus action, keep moving, or end its turn.
+ */
 export const COMBAT_CONTINUATIONS = Object.freeze({
   EXPLORATION: 'exploration',
   MULTIATTACK: 'multiattack',
@@ -49,7 +57,10 @@ export const COMBAT_CONTINUATIONS = Object.freeze({
 /** How dangerous an incoming attack is, from a unit that cannot act at all up to one that would kill outright. */
 export const THREAT_TIERS = Object.freeze({ INERT: 'inert', MINOR: 'minor', SEVERE: 'severe', LETHAL: 'lethal' });
 
-/** Statuses that leave a unit no attack on its turn (Fear still lets it move), so its reach threatens nobody. */
+/**
+ * Statuses, in lowercase, that leave a unit no attack on its turn (Fear still lets it move), so its reach threatens
+ * nobody. No system status produces `stun` or `stasis`.
+ */
 export const INCAPACITATING_STATUSES = Object.freeze(['stunned', 'stun', 'stasis', 'fear', 'frozen']);
 
 /** Share of the target's current HP that an attack's expected damage on a hit must exceed to count as severe. */
@@ -70,7 +81,7 @@ export const GUARD_BOND_EFFECT_NAME = 'Guarded';
 export const GUARD_BOND_ROLES = Object.freeze({ GUARDER: 'guarder', GUARDEE: 'guardee' });
 
 /**
- * Guard-bond ending reasons shared by combat settlement and its presentation notices. A bond an ending encounter
+ * Guard-bond ending reasons shared by the combat rules and their notices. A bond an ending encounter
  * clears breaks without a notice, since the end banner already tells the table.
  */
 export const GUARD_BOND_BREAKS = Object.freeze({
@@ -141,12 +152,17 @@ export const OBJECTIVE_END_REASONS = Object.freeze({
   DECLARED_STOP: 'declared-stop'
 });
 
+/** When a delayed encounter end is checked again before it happens: straight away, or at a player or enemy phase. */
 export const OBJECTIVE_END_CHECKPOINTS = Object.freeze({
   IMMEDIATE: 'immediate',
   PLAYER: 'player-phase',
   ENEMY: 'enemy-phase'
 });
 
+/**
+ * What prompted an objective check: something changed on the map, the host client catching up after a reload, a
+ * unit's turn ending, or a phase ending.
+ */
 export const OBJECTIVE_CHECK_KINDS = Object.freeze({
   IMMEDIATE: 'immediate',
   RECONCILE: 'reconcile',
@@ -177,7 +193,7 @@ const EXCHANGE_INTENT_KEYS = Object.freeze([
   'previewFingerprint', 'weaponArtUuid', 'cinematic'
 ]);
 
-/** Validate and detach the public exchange intent. */
+/** Check an attack request and return a frozen copy, or null if it's malformed. */
 export function normalizeCombatExchangeIntent(payload = {}) {
   if (!plainRecord(payload) || !exactKeys(payload, EXCHANGE_INTENT_KEYS)) return null;
   const sourceTokenUuid = String(payload.sourceTokenUuid ?? '');
@@ -204,7 +220,7 @@ export function normalizeCombatExchangeIntent(payload = {}) {
   });
 }
 
-/** Validate the player's answer to an authoritative Extra Action offer. */
+/** Check the player's answer to the Extra Action offer the host made. */
 export function normalizeCombatContinuationIntent(payload = {}) {
   const sourceTokenUuid = String(payload.sourceTokenUuid ?? '');
   const exchangeRequestId = String(payload.exchangeRequestId ?? '');
@@ -213,14 +229,14 @@ export function normalizeCombatContinuationIntent(payload = {}) {
   return Object.freeze({ sourceTokenUuid, exchangeRequestId, decision });
 }
 
-/** Validate and detach the public encounter phase intent. */
+/** Check an encounter request naming a Scene and return a frozen copy, or null if it's malformed. */
 export function normalizeEncounterIntent(payload = {}) {
   const sceneUuid = String(payload?.sceneUuid ?? '');
   if (!sceneUuid.startsWith('Scene.') || sceneUuid.length > 512) return null;
   return Object.freeze({ sceneUuid });
 }
 
-/** Validate and detach a GM's declared encounter ending. */
+/** Check a GM's declared encounter ending and return a frozen copy, or null if it's malformed. */
 export function normalizeEncounterEndIntent(payload = {}) {
   const intent = normalizeEncounterIntent(payload);
   if (!intent) return null;
@@ -229,7 +245,7 @@ export function normalizeEncounterEndIntent(payload = {}) {
   return Object.freeze({ sceneUuid: intent.sceneUuid, outcome });
 }
 
-/** Validate and detach a boolean encounter switch. */
+/** Check an on/off encounter switch and return a frozen copy, or null if it's malformed. */
 export function normalizeEncounterToggleIntent(payload = {}) {
   const intent = normalizeEncounterIntent(payload);
   if (!intent) return null;
@@ -239,7 +255,7 @@ export function normalizeEncounterToggleIntent(payload = {}) {
 /** The highest round a GM can set a running encounter to. */
 export const ENCOUNTER_ROUND_MAX = 999;
 
-/** Validate and detach a GM's round correction, a whole number from 1 to ENCOUNTER_ROUND_MAX. */
+/** Check a GM's round correction, a whole number from 1 to ENCOUNTER_ROUND_MAX, and return a frozen copy or null. */
 export function normalizeEncounterRoundIntent(payload = {}) {
   const intent = normalizeEncounterIntent(payload);
   const round = Number(payload?.round);
@@ -247,7 +263,7 @@ export function normalizeEncounterRoundIntent(payload = {}) {
   return Object.freeze({ sceneUuid: intent.sceneUuid, round });
 }
 
-/** Validate and detach one authored objective card. */
+/** Check one authored objective card and return a frozen copy, or null if its type is unknown. */
 export function normalizeObjectiveCard(raw = {}) {
   const type = String(raw?.type ?? '');
   if (!OBJECTIVE_TYPES.includes(type)) return null;
@@ -263,7 +279,7 @@ export function normalizeObjectiveCard(raw = {}) {
   });
 }
 
-/** Validate and detach the GM's authored win and defeat conditions for one Scene. */
+/** Check the GM's win and defeat conditions for one Scene and return a frozen copy, or null if malformed. */
 export function normalizeObjectiveAuthoringIntent(payload = {}) {
   const sceneUuid = String(payload?.sceneUuid ?? '');
   if (!sceneUuid.startsWith('Scene.') || sceneUuid.length > 512) return null;
@@ -283,7 +299,7 @@ export function normalizeObjectiveAuthoringIntent(payload = {}) {
   });
 }
 
-/** Validate and detach an objective evaluation trigger raised by a lifecycle adapter. */
+/** Check an objective check request the system raised from a Foundry hook, and return a frozen copy or null. */
 export function normalizeObjectiveCheckIntent(payload = {}) {
   const sceneUuid = String(payload?.sceneUuid ?? '');
   if (!sceneUuid.startsWith('Scene.') || sceneUuid.length > 512) return null;
@@ -317,13 +333,19 @@ export const GUARD_BOND_REFUSALS = Object.freeze({
   SMALLER: 'effect.guard-smaller'
 });
 
-/** The code a Guard settlement returns when its bond record could not be written. */
+/** The code a Guard step returns when its bond record could not be written. */
 export const GUARD_BOND_RECORD_FAILED = 'effect.guard-record-failed';
 
 /* -------------------------------------------- */
 /*  Timing                                      */
 /* -------------------------------------------- */
 
+/**
+ * Pauses the host client takes during an attack exchange so the clients' animations keep up, in milliseconds:
+ * before the first blow (shorter against an object), after a weapon art, after pre-combat effects, between blows
+ * (longer when the other side strikes next, shorter against an object), after the last blow, before each XP award,
+ * and after the closing card.
+ */
 export const COMBAT_EXCHANGE_TIMING = Object.freeze({
   characterLeadIn: 1000,
   objectLeadIn: 250,
@@ -337,16 +359,19 @@ export const COMBAT_EXCHANGE_TIMING = Object.freeze({
   cinematicTail: 250
 });
 
-/** The movement action effects move Tokens with. Like a hop it costs nothing, but it's seen crossing the squares. */
+/** The movement action effects move Tokens with. Like a teleport it costs nothing, but it's seen crossing squares. */
 export const EFFECT_MOVE_ACTION = 'charge';
 
 /** How fast that crossing plays, in grid squares per second: twice Foundry's walking pace. */
 export const EFFECT_MOVE_ANIMATION = Object.freeze({ movementSpeed: 12 });
 
-/** How long the board must stay quiet before a delayed settlement runs, how often to check, and when to give up. */
+/**
+ * Defaults for api.board.awaitSettled: how long no command may run before it resolves, how often to check, and when
+ * to give up.
+ */
 export const SETTLE_BARRIER_TIMING = Object.freeze({ stableMs: 400, pollMs: 200, timeoutMs: 120000 });
 
-/** How often a queued encounter end is retried while the board is still busy, and when it gives up. */
+/** How often a queued encounter end is retried when its write or cleanup failed, and when it gives up. */
 export const OBJECTIVE_END_RETRY = Object.freeze({ maxAttempts: 6, baseMs: 250, maxMs: 5000 });
 
 /** Timings of the phase-opening presentation (banner, status ticks and camera pans), in milliseconds. */
@@ -396,7 +421,7 @@ export const BANNER_VARIANTS = Object.freeze({
 /** The widest cluster, in squares on either axis, that one phase-opening pan frames. */
 export const PHASE_CAMERA_GROUP_SPAN = 12;
 
-/** Build the serializable presentation transcript for one exchange beat. */
+/** Build the message every client plays for one moment of an attack exchange. */
 export function combatPresentationMessage(beat, data = {}) {
   if (!Object.values(COMBAT_PRESENTATION_BEATS).includes(beat)) {
     throw new TypeError(`Unknown combat presentation beat: ${beat}`);
@@ -404,14 +429,14 @@ export function combatPresentationMessage(beat, data = {}) {
   return Object.freeze({ kind: COMBAT_PRESENTATION_KIND, beat, ...structuredClone(data) });
 }
 
-/** Accept only bounded detached exchange transcripts at the presentation socket. */
+/** Check an attack exchange message received over the socket: a known moment, under the size cap. */
 export function isCombatPresentationMessage(value) {
   if (!plainRecord(value) || value.kind !== COMBAT_PRESENTATION_KIND) return false;
   if (!Object.values(COMBAT_PRESENTATION_BEATS).includes(value.beat)) return false;
   try { return JSON.stringify(value).length <= 200000; } catch { return false; }
 }
 
-/** Accept a planned presentation-only effect operation and detached Token UUID context. */
+/** Check a display-only effect step received over the socket, with the token details it plays on. */
 export function isEffectPresentationMessage(value) {
   if (!plainRecord(value) || value.kind !== EFFECT_OPERATION_PRESENTATION_KIND) return false;
   if (!plainRecord(value.operation) || value.operation.channel !== 'presentation') return false;
@@ -419,7 +444,7 @@ export function isEffectPresentationMessage(value) {
   try { return JSON.stringify(value).length <= 200000; } catch { return false; }
 }
 
-/** Serialize one full-screen encounter announcement for the presentation socket. */
+/** Build one full-screen encounter banner message. */
 export function bannerPresentationMessage(variant, text) {
   return Object.freeze({
     kind: BANNER_PRESENTATION_KIND,
@@ -428,7 +453,7 @@ export function bannerPresentationMessage(variant, text) {
   });
 }
 
-/** Accept only bounded detached banner announcements at the presentation socket. */
+/** Check a banner message received over the socket. */
 export function isBannerPresentationMessage(value) {
   if (!plainRecord(value) || value.kind !== BANNER_PRESENTATION_KIND) return false;
   if (!Object.values(BANNER_VARIANTS).includes(value.variant)) return false;
@@ -445,7 +470,7 @@ export function phaseCameraPresentationMessage({ tokenUuids = [], focus = false 
   });
 }
 
-/** Accept only a bounded camera beat at the presentation socket. */
+/** Check a camera pan message received over the socket. */
 export function isPhaseCameraPresentationMessage(value) {
   if (!plainRecord(value) || value.kind !== PHASE_CAMERA_PRESENTATION_KIND) return false;
   if (typeof value.focus !== 'boolean' || !Array.isArray(value.tokenUuids) || value.tokenUuids.length > 64) return false;
@@ -464,7 +489,7 @@ export function enemyPhaseCameraMessage({ beat, tokenUuid = '', duration = null 
   });
 }
 
-/** Accept only a bounded enemy-phase camera beat at the presentation socket. */
+/** Check an enemy-phase camera message received over the socket. */
 export function isEnemyPhaseCameraMessage(value) {
   if (!plainRecord(value) || value.kind !== ENEMY_PHASE_CAMERA_PRESENTATION_KIND) return false;
   if (!exactKeys(value, ENEMY_PHASE_CAMERA_KEYS)) return false;

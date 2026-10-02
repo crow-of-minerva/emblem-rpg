@@ -16,7 +16,7 @@ import { reportFoundryError , FoundryDiagnostics } from '../services/diagnostics
 const DEFEAT_PENDING_FLAG = 'defeatPending';
 const settlementOptions = () => ({ emblemHealthSettlement: true });
 
-/** Armor wear is the only field a health write touches on the worn Item, so its before-image needs nothing else. */
+/** Armor wear is the only field a health write touches on the worn Item, so only that field is saved for undo. */
 const ARMOR_WEAR_PATHS = Object.freeze(['system.uses']);
 
 
@@ -24,14 +24,11 @@ const ARMOR_WEAR_PATHS = Object.freeze(['system.uses']);
 /*  Actor health boundary                       */
 /* -------------------------------------------- */
 /**
- * Reads a unit's health and writes damage, healing and defeat for the combat and effect engines, by Actor and
- * Token UUID.
+ * Reads a unit's health and writes damage, healing and defeat, by Actor and Token UUID, for combat, effects and the
+ * damage and healing commands.
  *
- * Every write records its before-images on the `operation` its caller passes, and CommandDispatcher settles that
- * operation. The callers are the combat exchange (through FoundryCombatSettlementRepository), effect execution
- * (through FoundryEffectExecutionRepository) and the damage and healing commands in engine/combat/damage.mjs.
- * Those commands run for api.combat.applyDamage and applyHealing, and for the terrain, phase-tick, rest and
- * fall impacts in engine/terrain/effects.mjs. Without an operation, the writes go ahead unrecorded.
+ * Every write first saves the old values on the `operation` its caller passes (the command's undo record), and
+ * CommandDispatcher keeps or undoes them. Without an operation, the writes go ahead with no undo.
  */
 export class FoundryHealthRepository {
   constructor({ tokens, unitAudio = null, guardBonds = null }) {
@@ -41,7 +38,7 @@ export class FoundryHealthRepository {
   }
 
   /**
-   * The unit's resources, defenses and worn armor as plain rule input, with a fingerprint the commits use to spot
+   * The unit's resources, defenses and worn armor as plain rule input, with a fingerprint the writes use to spot
    * changes. null if the Token doesn't belong to the Actor, or the Actor is scenery.
    */
   async getSnapshot(actorUuid, tokenUuid) {
@@ -70,7 +67,7 @@ export class FoundryHealthRepository {
     return Object.freeze({ ...snapshot, fingerprint: fingerprint(snapshot) });
   }
 
-  /** Commit damage and armor wear after capturing the Actor, its armor and its Token into the operation. */
+  /** Save damage and armor wear, after saving the Actor, its armor and its Token on the operation for undo. */
   async commitDamage(snapshot, resolution, settlement = null) {
     const aggregate = await this.#aggregate(snapshot);
     if (aggregate.failure) return aggregate.failure;
@@ -110,6 +107,7 @@ export class FoundryHealthRepository {
       if (plan.armorCurrent !== null) {
         await armor.update({ 'system.uses.current': plan.armorCurrent }, settlementOptions());
       }
+      // The defeat flag goes on the Token, since the Token is what finishDefeat removes once the defeat is shown.
       if (plan.defeatPending && !snapshot.defeatPending) {
         await token.update({ [`flags.${SYSTEM_ID}.${DEFEAT_PENDING_FLAG}`]: true });
       }
@@ -141,7 +139,7 @@ export class FoundryHealthRepository {
     }
   }
 
-  /** Commit a clamped heal after proving that its resource snapshot is still current. */
+  /** Save a clamped heal, after checking the unit's health hasn't changed since it was read. */
   async commitHealing(snapshot, resolution, settlement = null) {
     const aggregate = await this.#aggregate(snapshot, false);
     if (aggregate.failure) return aggregate.failure;
@@ -202,9 +200,9 @@ export class FoundryHealthRepository {
 
   /**
    * Remove a Token that is still defeated once its defeat has been shown. The Guard bond effects on both partners
-   * and the Token itself are captured on the caller's operation in one call (FoundryGuardBondRepository.breakCaptures
-   * lists them), so a refused command restores the unit exactly as it stood and the bond break needs no capture of
-   * its own.
+   * and the Token itself are saved for undo on the caller's operation in one call
+   * (FoundryGuardBondRepository.breakCaptures lists them), so a refused command puts the unit back exactly as it
+   * stood and the bond break needs no undo save of its own.
    */
   async finishDefeat(actorUuid, tokenUuid, { operation = null } = {}) {
     const actor = await resolveActor(actorUuid);
@@ -240,7 +238,7 @@ export class FoundryHealthRepository {
   }
 
   /* ---------------------------------------- */
-  /*  Aggregate and capture                   */
+  /*  Re-read and undo                        */
   /* ---------------------------------------- */
 
   async #aggregate(snapshot, withArmor = true) {
@@ -256,8 +254,8 @@ export class FoundryHealthRepository {
   }
 
   /**
-   * Record the before-images of what this impact writes, in one capture: the Actor, the worn armor's uses when they
-   * change, and the Token when its defeat flag changes. Always returns ok. A failed capture throws.
+   * Save for undo, in one call, the old values of what this hit or heal writes: the Actor, the worn armor's uses when
+   * they change, and the Token when its defeat flag changes. Always returns ok. A failed save throws.
    */
   async #open(snapshot, aggregate, plan, settlement) {
     const documents = [aggregate.actor];
@@ -271,11 +269,11 @@ export class FoundryHealthRepository {
 }
 
 /* -------------------------------------------- */
-/*  Snapshot projection                         */
+/*  Health data                                 */
 /* -------------------------------------------- */
 /**
- * The health facts a blow on this unit resolves against, read off the Actor as it is prepared right now.
- * getSnapshot reads them outside any combat context, for the writer and its fingerprint. The exchange projection in
+ * The health values a blow on this unit is resolved against, read off the Actor as it is prepared right now.
+ * getSnapshot reads them outside any combat context, for the write and its fingerprint.
  * projections/combat-exchange.mjs reads them again under withFoundryCombatContext, so a maximum, protection or
  * immunity that holds only in the fight counts there.
  * @param {Actor} actor A Character or a Destructible.
@@ -356,7 +354,7 @@ function hasStatus(actor, statusId) {
 /* -------------------------------------------- */
 
 /**
- * Only a Character or a Destructible has health the system settles. Every other Actor is scenery, and so is a
+ * Only a Character or a Destructible has health the system tracks. Every other Actor is scenery, and so is a
  * Destructible whose Token is hidden, which nothing damages until it is revealed.
  */
 function supportedActor(actor, token = null) {
@@ -394,7 +392,7 @@ function failed(code, diagnostic = null) {
   return Object.freeze({ ...diagnosticData(diagnostic), ok: false, code });
 }
 
-/** The resource paths one impact writes: a Destructible carries neither shields nor Extra Lives. */
+/** The resource paths one hit or heal writes: a Destructible carries neither shields nor Extra Lives. */
 function healthResourceUpdates(actor, values) {
   if (actor.type === 'Character') {
     return {

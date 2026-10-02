@@ -8,10 +8,10 @@ import { RESULT_CODES, refuse } from '../contracts/results.mjs';
 /* -------------------------------------------- */
 
 /**
- * Queue the reconciliations Foundry hooks submit and run them through CommandDispatcher. Identical submissions
- * share one run, and work submitted during a run gets one follow-up run. The queue drains once startup admits
- * maintenance and execution is free, behind any waiting gameplay. A hook's submission never makes the command
- * that triggered it wait.
+ * Queue the clean-up jobs Foundry hooks submit (commands that bring derived data such as modifiers and door walls
+ * back in line) and run them through CommandDispatcher. Identical submissions share one run, and work submitted
+ * during a run gets one follow-up run. The queue runs once startup allows maintenance and the command slot is free,
+ * behind any waiting gameplay. A hook's submission never makes the command that triggered it wait.
  */
 export class MaintenanceScheduler {
   #dispatcher;
@@ -26,8 +26,8 @@ export class MaintenanceScheduler {
   /**
    * @param {object} ports
    * @param {object} ports.dispatcher The host's command dispatcher.
-   * @param {Function} ports.userId The host user's id, which reconciliations run as.
-   * @param {Function} ports.admits Whether the startup lifecycle admits a lane now.
+   * @param {Function} ports.userId The host user's id, which the jobs run as.
+   * @param {Function} ports.admits Whether the startup lifecycle allows a command lane now.
    */
   constructor({ dispatcher, userId, admits }) {
     requirePorts('MaintenanceScheduler', { dispatcher, userId, admits });
@@ -64,8 +64,8 @@ export class MaintenanceScheduler {
   }
 
   /**
-   * Run queued reconciliations while execution stays free. init/system.mjs calls this after every release of
-   * execution and during startup.
+   * Run queued jobs while the command slot stays free. init/system.mjs calls this every time the slot is released
+   * and during startup.
    */
   drain() {
     if (!this.#draining) {
@@ -85,8 +85,8 @@ export class MaintenanceScheduler {
   }
 
   /**
-   * Drain reconciliations through CommandDispatcher's segment-owned runner between driver actions.
-   * @param {Function} run Runs one command under the held execution and resolves with its result.
+   * While the Enemy AI (or another driver) holds the command slot, run queued jobs between its actions.
+   * @param {Function} run Runs one command inside the driver's slot and resolves with its result.
    * @returns {Promise<void>}
    */
   async drainInto(run) {
@@ -136,7 +136,7 @@ export class MaintenanceScheduler {
     return false;
   }
 
-  /** Whether the next queued reconciliation may start: execution is free and startup admits its lane. */
+  /** Whether the next queued job may start: the command slot is free and startup allows its lane. */
   #runnable() {
     if (!this.#queue.length || !this.#dispatcher.executionFree()) return false;
     return this.#admits(commandLane(this.#entries.get(this.#queue[0]).commandId));

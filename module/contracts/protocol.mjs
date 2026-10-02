@@ -8,10 +8,10 @@ import { RESULT_CODES } from './results.mjs';
 /** The system's package id, which is also the scope of its flags and settings. */
 export const SYSTEM_ID = 'emblem-rpg';
 
-/** The bounded roll-card visibility vocabulary carried by command requests. */
+/** Who can see a roll card: everyone, GMs only, GMs only with the roller kept blind, or only the roller. */
 export const ROLL_MESSAGE_MODES = Object.freeze(['public', 'gm', 'blind', 'self']);
 
-/** Translate Foundry's message and legacy roll modes at the client boundary. */
+/** Turn a Foundry message mode or an older roll mode name (gmroll, blindroll, selfroll) into one of these. */
 export function normalizeRollMessageMode(value) {
   const modes = { gmroll: 'gm', blindroll: 'blind', selfroll: 'self' };
   return ROLL_MESSAGE_MODES.includes(value) ? value : Object.hasOwn(modes, value) ? modes[value] : 'public';
@@ -34,7 +34,7 @@ export function nonNegativeNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-/** Whether every key on a record appears in the allowed set. */
+/** Whether every key on a record appears in the allowed set. It doesn't check that every allowed key is present. */
 export function exactKeys(value, allowed) {
   return Object.keys(value).every(key => allowed.includes(key));
 }
@@ -42,7 +42,7 @@ export function exactKeys(value, allowed) {
 /* -------------------------------------------- */
 /*  Authority contract                          */
 /* -------------------------------------------- */
-/** Foundry-independent caller authority used at application boundaries. */
+/** The caller's Foundry role, as a plain value the engine can check without Foundry. */
 export const AUTHORITY_LEVELS = Object.freeze({
   NONE: 'none',
   PLAYER: 'player',
@@ -53,14 +53,14 @@ export const AUTHORITY_LEVELS = Object.freeze({
 
 const SYSTEM_AUTHOR_LEVELS = new Set([AUTHORITY_LEVELS.ASSISTANT, AUTHORITY_LEVELS.GAMEMASTER]);
 
-/** Whether a bounded authority projection carries system-wide document authoring rights. */
+/** Whether the caller is a GM or assistant GM, who may edit any document. */
 export function canAuthorSystemDocuments(caller) {
   return SYSTEM_AUTHOR_LEVELS.has(caller?.level);
 }
 
 /**
  * Whether the world pause freezes a user: it freezes Players and Trusted Players, but not GMs or Assistants.
- * Command admission in init/system.mjs and the client input checks both use this rule.
+ * The host client's command checks and the client input checks both use this rule.
  */
 export function pauseFreezesUser({ paused = false, isGm = false } = {}) {
   return paused === true && isGm !== true;
@@ -70,11 +70,12 @@ export function pauseFreezesUser({ paused = false, isGm = false } = {}) {
 /*  Host authority and command outcomes         */
 /* -------------------------------------------- */
 
-/** Foundry's Gamemaster role number: the only role that may host command execution. */
+/** Foundry's Gamemaster role number: the only role whose client may run commands as host. */
 const GAMEMASTER_ROLE = 4;
 
 /**
- * Host states used by CommandGateway. Several GMs, or several live pages of the same GM, prevent command execution.
+ * Host states used by CommandGateway. With several GMs connected, or one GM with several tabs open, no client runs
+ * commands.
  */
 export const HOST_STATES = Object.freeze({
   READY: 'ready',
@@ -85,29 +86,29 @@ export const HOST_STATES = Object.freeze({
 
 /**
  * CommandGateway's reply and status deadlines, and how long a gameplay command waits in CommandDispatcher for
- * maintenance to yield. When the reply deadline passes, the caller stops waiting but the host work isn't cancelled.
- * The deadline leaves room for long exchanges and progression. A host known to have left settles as unknown at once.
+ * upkeep work to finish. When the reply deadline passes, the caller stops waiting but the host work isn't cancelled.
+ * The deadline leaves room for long exchanges and progression. If the host client is known to have left, the caller
+ * is told the outcome is unknown at once.
  */
 export const COMMAND_TIMING = Object.freeze({ responseMs: 60000, statusMs: 5000, maintenanceYieldMs: 3000 });
 
 /**
- * How releaseDisconnectedPlan (init/system.mjs) retries a disconnected player's plan release while execution is
- * busy. It waits on the pacing clock between a bounded number of attempts, so a running movement command can finish.
+ * Retry timing for releasing the movement lock of a player who disconnected mid-move, while another command is
+ * running, so a movement command already under way can finish first.
  */
 export const PLAN_DISCONNECT_RELEASE = Object.freeze({ retryMs: 3000, attempts: 10 });
 
 /**
- * How the startup sweeps in completeInterruptedTurns (init/system.mjs) retry while a ready-time reconciliation still
- * holds world execution. The sweeps release this host's own stale control lock and finish each interrupted turn.
- * The attempts are short because they run before gameplay is admitted, and no one is waiting on the
- * reconciliation they follow.
+ * Retry timing for start-up work on the host client (clearing a leftover movement lock, finishing turns cut off by
+ * a reload, migrating world data) while upkeep started at load is still running. The waits are short because
+ * gameplay hasn't started yet.
  */
 export const STARTUP_RELEASE_RETRY = Object.freeze({ retryMs: 250, attempts: 20 });
 
 /**
- * Whether a disconnected player's planning lock should be released. Only the exact lock they held when they left
- * is released, so a lock taken after a reconnect survives. The recovery snapshot separately checks the Actor plan's
- * controller and start time.
+ * Whether a disconnected player's movement lock should be released. Only the exact lock they held when they left
+ * is released, so a lock taken after a reconnect survives. The recovery step separately checks who started the
+ * actor's planned move and when.
  * @param {object} input The standing lock, the lock seen when the user left, and the user who left.
  * @returns {boolean}
  */
@@ -118,8 +119,8 @@ export function planReleaseDueOnDisconnect({ lock = null, held = null, userId = 
 }
 
 /**
- * HostPagePresence handshake, heartbeat and expiry intervals. Startup waits settleMs for other pages to answer
- * before recovery runs. A page that sends no heartbeat for heartbeatMs * silentBeats is taken to be gone.
+ * How often the GM's open tabs check in with each other. At start-up a tab waits settleMs for other tabs to answer
+ * before recovery runs. A tab that stays silent for heartbeatMs * silentBeats counts as closed.
  */
 export const HOST_PRESENCE_TIMING = Object.freeze({ heartbeatMs: 3000, silentBeats: 4, settleMs: 1500 });
 
@@ -133,7 +134,7 @@ export const REQUEST_STATES = Object.freeze({
 });
 
 /**
- * How long the host remembers requests. A settled result is kept so a repeated delivery returns it instead of
+ * How long the host remembers requests. A finished result is kept so a repeated delivery returns it instead of
  * running again. Once the result is evicted, its id stays as a tombstone that refuses a repeat outright.
  */
 export const COMMAND_REQUEST_MEMORY = Object.freeze({
@@ -143,7 +144,7 @@ export const COMMAND_REQUEST_MEMORY = Object.freeze({
   tombstoneAgeMs: 60 * 60 * 1000
 });
 
-/** The host page's startup order: recovery first, then ready-time maintenance, and only then gameplay. */
+/** The host client's start-up order: recovery first, then upkeep, and only then gameplay. */
 export const EXECUTION_LIFECYCLE = Object.freeze({
   STARTING: 'starting',
   RECOVERING: 'recovering',
@@ -152,7 +153,7 @@ export const EXECUTION_LIFECYCLE = Object.freeze({
 });
 
 /**
- * Bind a request id to exactly what it asks for, so the same id reused for another command or payload is refused.
+ * Tie a request id to exactly what it asks for, so the same id reused for another command or payload is refused.
  * @param {string} commandId The command id.
  * @param {object} payload   The serializable payload.
  * @returns {string} A short stable digest.
@@ -162,11 +163,11 @@ export function commandRequestDigest(commandId, payload) {
 }
 
 /**
- * Work out CommandGateway's host from connected roles and live host pages. Exactly one GM on one page may execute
- * commands. Assistant GMs never host, and several GMs or duplicate GM pages turn execution off.
+ * Work out which client hosts commands, from the connected users and the GM's open tabs. Exactly one GM with one tab
+ * open may run commands. Assistant GMs never host, and several GMs or several tabs of the GM turn commands off.
  * @param {Iterable<{id: string, role: number, active: boolean}>} users Every known user.
  * @param {string} localUserId This client's user id.
- * @param {{peerPages?: number}} [pages] How many other live pages of this client's own user are known.
+ * @param {{peerPages?: number}} [pages] How many other open tabs of this client's own user are known.
  * @returns {{state: string, hostUserId: string, hostUserIds: string[], localIsHost: boolean}}
  */
 export function resolveHostAuthority(users, localUserId = '', { peerPages = 0 } = {}) {
@@ -207,10 +208,10 @@ export function hostRefusalCode(host) {
 /* -------------------------------------------- */
 
 /**
- * Stop start-up when init/system.mjs leaves out a port an engine, socket or api owner needs, naming the owner and
- * each missing port. Without this a wiring mistake would run with the feature silently switched off.
+ * Throw at start-up when init/system.mjs builds a class without a service it needs, naming the class and each
+ * missing service. Without this a wiring mistake would run with the feature silently switched off.
  * @param {string} owner The class or factory being built.
- * @param {object} ports Each required port by name, as the owner received it.
+ * @param {object} ports Each required service by name, as the class received it.
  */
 export function requirePorts(owner, ports) {
   const missing = Object.keys(ports).filter(name => ports[name] === undefined || ports[name] === null);
@@ -220,12 +221,14 @@ export function requirePorts(owner, ports) {
 /* -------------------------------------------- */
 /*  Diagnostic vocabulary                       */
 /* -------------------------------------------- */
+/** How serious a logged error is. */
 export const DIAGNOSTIC_SEVERITIES = Object.freeze({
   DEBUG: 'debug',
   ERROR: 'error',
   WARNING: 'warning'
 });
 
+/** Which part of the system logged an error. */
 export const DIAGNOSTIC_SOURCES = Object.freeze({
   DISPATCHER: 'dispatcher',
   GATEWAY: 'gateway',
@@ -252,7 +255,7 @@ const MAX_MESSAGE_LENGTH = 512;
 /*  Diagnostic records                          */
 /* -------------------------------------------- */
 
-/** Build one frozen record of a failure the system refused or absorbed instead of surfacing. */
+/** Build a log record for an error the system caught and handled instead of throwing. */
 export function createDiagnostic({
   source,
   sourcePath = '',
@@ -299,7 +302,7 @@ export function isDiagnostic(value) {
 /*  Diagnostic transport                        */
 /* -------------------------------------------- */
 
-/** Copy diagnostic facts across a socket without carrying an Error prototype. */
+/** Copy a diagnostic record for sending over a socket, without its Error object. */
 export function diagnosticPayload(diagnostic) {
   if (!isDiagnostic(diagnostic)) return null;
   const { error, ...payload } = diagnostic;

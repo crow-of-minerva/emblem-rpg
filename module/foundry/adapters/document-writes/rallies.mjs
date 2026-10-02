@@ -16,12 +16,11 @@ const rallyOptions = () => ({ emblemEffectSettlement: true });
 const RALLY_RECORD_PATH = `flags.${SYSTEM_ID}.${RALLY_RECORD_FLAG}`;
 
 /**
- * Apply one Rally that planRallyEffect (game/support/rules.mjs) planned, under a reserved effect id captured into
- * the use's operation first. Its bonuses are stored in flags, not in changes.
- * FoundryItemActivationSettlement.applyRally (effect-execution.mjs) calls this.
+ * Apply one Rally that planRallyEffect (game/support/rules.mjs) planned, under a pre-picked effect id recorded for
+ * undo first. Its bonuses are stored in flags, not in changes.
  * @param {string} actorUuid The unit being rallied.
  * @param {object} intent The planned Rally.
- * @param {object|null} [operation] The item use's operation.
+ * @param {object|null} [operation] The item use's undo record.
  * @returns {Promise<boolean>} Whether the effect was created.
  */
 export async function applyRallyEffect(actorUuid, intent, operation = null) {
@@ -37,10 +36,10 @@ export async function applyRallyEffect(actorUuid, intent, operation = null) {
 /**
  * Count one more Rally on a unit in the caster's record of this map's Rallies (RALLY_RECORD_FLAG), read fresh so
  * several targets in one use each add their own. The record is a list, not a map keyed by uuid, because Foundry
- * would expand the dots in a uuid key. FoundryItemActivationSettlement.recordRally calls this.
+ * would expand the dots in a uuid key.
  * @param {string} casterUuid The caster's Actor.
  * @param {string} targetActorUuid The unit just Rallied.
- * @param {object|null} [operation] The item use's operation.
+ * @param {object|null} [operation] The item use's undo record.
  * @returns {Promise<boolean>} False when the caster is gone.
  */
 export async function recordRallyTarget(casterUuid, targetActorUuid, operation = null) {

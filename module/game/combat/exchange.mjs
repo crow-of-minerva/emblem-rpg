@@ -27,7 +27,8 @@ const CHANCE_MAX = 100;
 
 /**
  * Hit chance starts at 100, loses 5 for each point of the defender's Evasion and gains 5 for each point of the
- * attacker's Accuracy. Blessed adds 12.5.
+ * attacker's Accuracy. Blessed adds 12.5. This is a linear estimate of the real roll, a d20 plus a d4 when Blessed,
+ * which attackSuccessChance in game/rolls/checks.mjs works out exactly; the two differ slightly near 0% and 100%.
  */
 const HIT_CHANCE_BASE = 100;
 const HIT_CHANCE_PER_EVASION = 5;
@@ -42,7 +43,10 @@ const SPEED_LEAD_FOR_TWO_BLOWS = 8;
 const DOUBLE_OPENING_MIN_BLOWS = 4;
 const DOUBLE_OPENING_BLOWS = 2;
 
-/** Effectiveness scales every die and constant of the attack formula before mitigation is subtracted. */
+/**
+ * Effectiveness scales every die and constant of the attack formula before mitigation is subtracted: doubled
+ * against an effective target, or 1.35 when that target is Impervious.
+ */
 const EFFECTIVE_DAMAGE_MULTIPLIER = 2;
 const IMPERVIOUS_DAMAGE_MULTIPLIER = 1.35;
 const PLAIN_DAMAGE_MULTIPLIER = 1;
@@ -64,7 +68,7 @@ const MARKED_CRIT_BONUS = 10;
 
 /**
  * The order of attacks in an exchange, such as A1, D1, A2. A defender with First Strike goes first unless the
- * attacker has it too. Used by attack-preview.mjs, the combat projections and engine/combat/exchanges/blows.mjs.
+ * attacker has it too.
  */
 export function buildCombatSequence(attackerInput, defenderInput, defenderCanRespond = true) {
   const attacker = combatant(attackerInput);
@@ -75,7 +79,7 @@ export function buildCombatSequence(attackerInput, defenderInput, defenderCanRes
   return buildSequenceInternal(attacker, defender, defenderCanRespond);
 }
 
-/** How many attacks a side makes, from speed and weapon traits. Used by attack-preview.mjs and attack-targeting.mjs. */
+/** How many attacks a side makes, from speed and weapon traits. */
 export function combatAttackCount(attackerInput, defenderInput, defenderSpeedDelta = 0) {
   return attackCount(combatant(attackerInput), combatant(defenderInput), defenderSpeedDelta);
 }
@@ -91,11 +95,11 @@ export function speedAdvantageBand(difference) {
 }
 
 /**
- * Project what an ally's Mark on the defender is worth to this attacker.
- * foundry/adapters/projections/combat-context.mjs withMarkedBonus finds the Mark and stamps these four facts onto
- * the combat side, which calculateCombatSide and combatAttackCount then read.
+ * What an ally's Mark on the defender is worth to this attacker. withMarkedBonus in
+ * foundry/adapters/projections/combat-context.mjs finds the Mark and adds these four fields to the attacker's combat
+ * stats, which calculateCombatSide and combatAttackCount then read.
  * @param {boolean} applied Whether a Mark placed by an ally applies to this attacker.
- * @returns {Readonly<object>} The marked facts, all inert when no Mark applies.
+ * @returns {Readonly<object>} The four Mark fields, all zero or false when no Mark applies.
  */
 export function projectMarkedBonus(applied) {
   const marked = applied === true;
@@ -108,7 +112,7 @@ export function projectMarkedBonus(applied) {
 }
 
 /**
- * Merge a Weapon Art's traits into its weapon's for the combat-context projection, by the same rules as
+ * Merge a Weapon Art's traits into its weapon's for the attacker's combat stats, by the same rules as
  * applyWeaponArt in game/character/compilation.mjs. An Art only ever adds: its Breaker and Effectiveness flags join
  * the weapon's and never switch one off. Extra attacks are the exception, because either the weapon or the Art
  * disabling them turns them off for both.
@@ -135,8 +139,7 @@ export function combineWeaponArtTraits(weaponInput = {}, artInput = null) {
 }
 
 /**
- * One side's damage formula, hit and crit chances, stance damage and advantage against the other. Used by
- * attack-preview.mjs and by the combat projections that build the exchange snapshot.
+ * One side's damage formula, hit and crit chances, stance damage and advantage against the other.
  */
 export function calculateCombatSide(attackerInput, defenderInput, options = {}) {
   const attacker = combatant(attackerInput);
@@ -311,7 +314,7 @@ export function damageTypeRollFor(attackerInput, defenderInput, damageType) {
   return index < 0 ? undefined : (index + 0.5) / types.length;
 }
 
-/** Apply effectiveness to every dice count and constant before mitigation. */
+/** Apply effectiveness to every dice count and constant before mitigation. A negative reduction gives `1d8--2`. */
 function attackDamageFormula(formula, reduction, multiplier = PLAIN_DAMAGE_MULTIPLIER) {
   const scaled = scaleFormula(String(formula ?? '0'), multiplier);
   return Number(reduction) ? `${scaled}-${Number(reduction)}` : scaled;
@@ -332,6 +335,7 @@ function combatBreakDamage(attacker, defender, damageType) {
 /*  Hit and counter rules                       */
 /* -------------------------------------------- */
 
+/** The linear hit-chance estimate described at HIT_CHANCE_BASE. */
 function combatHitChance(attacker, defender) {
   return clamp(HIT_CHANCE_BASE - (defender.evasion * HIT_CHANCE_PER_EVASION)
     + (attacker.accuracy * HIT_CHANCE_PER_ACCURACY)
@@ -368,8 +372,8 @@ export function sideDown(side = {}) {
 }
 
 /**
- * Whether an explicit finite combat weapon still has a use after pending exchange spends. Callers may hand this
- * an unnormalized weapon, so it accepts the authored `uses.type` alongside the projected `uses.infinite`.
+ * Whether the weapon has a use left after the uses this exchange has already spent. It accepts the item's raw
+ * `uses.type` as well as the cleaned-up `uses.infinite`, so callers may pass either.
  */
 export function combatWeaponHasUses(weapon = {}, pendingUses = 0) {
   if (weapon.uses?.infinite === true || weapon.uses?.type === 'infinite') return true;
@@ -397,6 +401,7 @@ function buildSequenceInternal(attacker, defender, defenderCanRespond) {
   const sequence = [];
   let a = 0;
   let d = 0;
+  // With at least four attacks and more than the defender, the attacker opens with two before the defender answers.
   if (attackerCount > defenderCount && attackerCount >= DOUBLE_OPENING_MIN_BLOWS && defenderCount > 0) {
     while (a < DOUBLE_OPENING_BLOWS) sequence.push(`A${++a}`);
     while (a < attackerCount || d < defenderCount) {
@@ -451,7 +456,7 @@ function scaleFormula(formula, multiplier) {
 /**
  * One attack's net advantage: 1, 0 or -1. The defender's Dexterity counts against it rather than overriding it, so
  * truestrike, a Mark or a favourable weapon triangle can cancel it out. The defender spends the Dexterity point
- * either way, which engine/combat/exchanges/blows.mjs settles for each attack.
+ * either way, which engine/combat/exchanges/blows.mjs deducts for each attack.
  */
 function combatAdvantage(attacker, defender, distance) {
   const hasAdvantage = attacker.truestrike || defender.shine || attacker.markedAdvantage
@@ -465,18 +470,16 @@ function combatAdvantage(attacker, defender, distance) {
 const COMBATANTS = new WeakMap();
 
 /**
- * @typedef {object} CombatSide A combat side as the rules below read it: every field present, every number
- * finite, every trait a boolean, every trait list a Set except `damageTypes` (an array), and the weapon proficiency
- * in lowercase, so a weapon advantage lookup matches an authored 'Heavy' as well as 'heavy'. Only the exported
- * functions build one, from whatever snapshot their caller holds. Every helper inside the file trusts the shape and
- * never coerces again.
+ * @typedef {object} CombatSide One unit's combat stats after cleanup: every field present, every number finite,
+ * every trait a boolean, every trait list a Set except `damageTypes` (an array), and the weapon proficiency in
+ * lowercase, so a weapon advantage lookup matches an authored 'Heavy' as well as 'heavy'. The exported functions
+ * build one; the helpers in this file assume this shape.
  */
 
 /**
- * Normalize a combat side into a CombatSide, cached per input object for repeated preview calculations. Changing an
- * input after it's cached would leave stale values, so engine/combat/exchanges/ passes a new snapshot after each
- * attack.
- * @param {object} [value] A loose snapshot from a projection, a preview or the engine.
+ * Clean up one unit's combat stats into a CombatSide, cached per input object for repeated preview calculations. A
+ * cached input must not be changed afterwards, so engine/combat/exchanges/ passes a new object after each attack.
+ * @param {object} [value] Raw combat stats from the preview, the Enemy AI or the exchange.
  * @returns {CombatSide}
  */
 function combatant(value = {}) {

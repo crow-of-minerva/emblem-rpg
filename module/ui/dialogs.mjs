@@ -26,7 +26,7 @@ const Z_STEP = 10;
 /* -------------------------------------------- */
 const actionWindows = [];
 
-/** Return the topmost window holding board input, or `null`. */
+/** The topmost open action window (one that blocks the canvas and takes the keyboard), or `null`. */
 export function topActionWindow() {
   return actionWindows[actionWindows.length - 1] ?? null;
 }
@@ -52,20 +52,24 @@ function actionFor(event) {
 }
 
 /* -------------------------------------------- */
-/*  Board capture                               */
+/*  Blocking action windows                     */
 /* -------------------------------------------- */
 /**
- * Give an action window exclusive board input until it is released. An overlay blocks the board under the window,
- * keys are matched through Foundry's live keybindings, and only the topmost window of the stack takes them. The
- * only caller is captureForDialog.
+ * Block the canvas under an action window and send keys to it until it is released. An overlay covers the canvas,
+ * keys are matched through Foundry's live keybindings, and only the topmost open window takes them.
  * @param {object} options
  * @param {HTMLElement} options.root The window element to raise and focus.
  * @param {Application|null} [options.app] The application whose bringToFront keeps it at this stack position.
  * @param {Function|null} [options.onConfirm] Runs on Confirm. Returning `false` refuses it.
+ * @param {Function|null} [options.onCancel] Runs on Cancel, Escape, or a click on the overlay.
+ * @param {Function|null} [options.onRelease] Runs once when the window is released.
  * @param {'blackout'|'shaped'} [options.mode] What happens to other keys. 'shaped' lets modifier chords and
  *   named keys other than the arrows and Tab through, and 'blackout' swallows them all.
+ * @param {boolean} [options.overlay] Whether to cover the canvas with the overlay.
  * @param {boolean} [options.outsideClickCancels] Whether a click on the overlay cancels. Shop menus turn it off.
- * @returns {object} The capture handle.
+ * @param {string|null} [options.openSound] Sound ID played when the window opens.
+ * @param {string|null} [options.cancelSound] Sound ID played when it is released unresolved.
+ * @returns {object} The handle that confirms, cancels or releases the window.
  */
 function captureBoard({
   root,
@@ -143,7 +147,7 @@ function captureBoard({
 }
 
 /* -------------------------------------------- */
-/*  Capture helpers                             */
+/*  Blocking window helpers                     */
 /* -------------------------------------------- */
 function keyboardManager() {
   const liveManager = globalThis.game?.keyboard?.constructor;
@@ -232,7 +236,7 @@ function playInterfaceSound(soundId) {
 const CANCEL_ACTIONS = Object.freeze(['cancel', 'no', 'close', 'dismiss']);
 
 /* -------------------------------------------- */
-/*  Dialog capture                              */
+/*  Blocking DialogV2 windows                   */
 /* -------------------------------------------- */
 /** Find the button a dialog's confirm action should press. */
 function findConfirmButton(root, action = null, label = null) {
@@ -245,24 +249,23 @@ function findConfirmButton(root, action = null, label = null) {
 }
 
 /**
- * Hold board input for a rendered DialogV2 until it closes. Confirm presses its confirm button, and Cancel or
- * Escape closes it. A click on an action button that isn't one of `cancelActions` counts as resolving it, so
- * closing afterwards plays no cancel sound. Called from the DialogV2 render callback of openBlockingDialog, the
- * previews, the crossing offer, and the trade, vendor, promotion and downtime menus.
- * @param {DialogV2} dialog The dialog to capture for.
+ * Block the canvas and take the keyboard while this rendered DialogV2 is open. Confirm presses its confirm
+ * button, and Cancel or Escape closes it. A click on an action button that isn't one of `cancelActions` counts as
+ * resolving it, so closing afterwards plays no cancel sound. Call it from the DialogV2 render callback.
+ * @param {DialogV2} dialog The dialog to block for.
  * @param {object} [options]
  * @param {HTMLElement|null} [options.root] The element to raise, instead of the dialog's own.
  * @param {string|null} [options.confirmAction] The `data-action` of the button Confirm presses.
  * @param {string|null} [options.confirmLabel] That button's label, used when no button has the action.
  * @param {Function|null} [options.onConfirm] Runs on Confirm instead of pressing a button.
  * @param {Function|null} [options.onCancel] Runs when the dialog closes without being resolved.
- * @param {Function|null} [options.onRelease] Runs whenever the capture ends.
+ * @param {Function|null} [options.onRelease] Runs when the dialog is released, resolved or not.
  * @param {string[]} [options.cancelActions] Button actions that don't count as resolving the dialog.
  * @param {'blackout'|'shaped'} [options.mode] What happens to other keys (see captureBoard).
  * @param {boolean} [options.outsideClickCancels] Whether a click off the window closes it. Escape always does.
- * @param {string|null} [options.openSound] Sound ID played when the capture starts.
- * @param {string|null} [options.cancelSound] Sound ID played when it ends unresolved.
- * @returns {object} The capture handle.
+ * @param {string|null} [options.openSound] Sound ID played when the dialog opens.
+ * @param {string|null} [options.cancelSound] Sound ID played when it closes unresolved.
+ * @returns {object} The handle from captureBoard.
  */
 export function captureForDialog(dialog, {
   root = null,
@@ -316,21 +319,21 @@ export function captureForDialog(dialog, {
 /*  Blocking dialogs                            */
 /* -------------------------------------------- */
 /**
- * Open a small fixed-size prompt in the movement dialogs' style, holding board input through captureForDialog
- * while it is open. Used by the movement and targeting prompts, the previews, and the skill check and drop
- * dialogs below.
+ * Open a small fixed-size prompt in the movement dialogs' style. While it is open it blocks the canvas and takes
+ * the keyboard (captureForDialog).
  * @param {object} [options]
  * @param {number|string} [options.height] A fixed height, or 'auto' to fit the content.
  * @param {string} [options.content] The prompt's inner markup.
  * @param {object[]} [options.buttons] DialogV2 button descriptors.
  * @param {string|null} [options.dialogClass] An extra CSS class for the dialog.
- * @param {Function|null} [options.onOpen] Runs after render and capture, given the dialog and its capture handle.
+ * @param {Function|null} [options.onOpen] Runs after render, given the dialog and its handle from captureForDialog.
  * @param {Function|null} [options.onDismiss] Runs when the dialog closes unresolved: dismissed, or closed by a
  *   cancel button.
  * @param {string|null} [options.confirmAction] The button Confirm presses (the default button when left out), or
  *   null when nothing should confirm.
  * @param {'blackout'|'shaped'} [options.mode] What happens to other keys (see captureBoard).
- * @returns {Promise<*>} What the pressed button's callback returned.
+ * @returns {Promise<*>} What the pressed button's callback returned, or the button's action id when it returned
+ *   nothing; null when the dialog was closed without a button.
  */
 export function openBlockingDialog({
   title = 'Confirmation',
@@ -509,8 +512,8 @@ const DROP_OPTIONS_TEMPLATE = `systems/${SYSTEM_ID}/templates/dialogs/drop-item-
 
 /**
  * Ask runDropItemFlow's question: send the item to a Convoy, drop it on the ground, or discard it. The ground
- * option needs a token on the viewed Scene. Resolves to the choice, or null when dismissed. The dialog holds board
- * input above any action window already open.
+ * option needs a token on the viewed Scene. Resolves to the choice, or null when dismissed. The dialog blocks the
+ * canvas and opens above any action window already open.
  */
 async function openDropItemOptionsDialog({ itemName, convoys = [], placed = false }) {
   const content = await globalThis.foundry.applications.handlebars.renderTemplate(DROP_OPTIONS_TEMPLATE, {
@@ -551,7 +554,7 @@ async function openDropItemOptionsDialog({ itemName, convoys = [], placed = fals
  * The Drop Item flow shared by the character sheet, the trade window and the BG3 HUD's drop action. It asks where
  * the item goes (a Convoy, the ground or the bin), then sends the matching command. A ground drop puts loot on
  * the unit's square and, outside free exploration, commits the unit's move to that square, so it then calls the
- * caller's `resume` to read the movement plan again.
+ * caller's `resume` to reload the unit's movement.
  * @param {object} input `actor` (a live document) or `tokenUuid` to reach it, the `itemId`, and `resume`.
  * @returns {Promise<object|null>} The command result, or null when nothing was chosen.
  */
@@ -570,7 +573,8 @@ export async function runDropItemFlow({ actor = null, tokenUuid = '', itemId, re
 /**
  * Send the chosen drop through the host API. Without a placed Token, a discard names the Actor instead, and a
  * ground drop is refused with a notice.
- * @param {object} input The facade, the carrying unit, the Item, the choice, the placed Token's uuid, and `resume`.
+ * @param {object} input The system API, the unit carrying the item, the Item, the choice, the token's uuid, and
+ *   `resume`.
  * @returns {Promise<object|null>} The command result, or null when nothing was chosen or nothing can be done.
  */
 export async function settleDropChoice({ api, owner, item, choice, placed = '', resume = null }) {
@@ -590,7 +594,7 @@ export async function settleDropChoice({ api, owner, item, choice, placed = '', 
   return result;
 }
 
-/** The Token the unit stands on within the viewed scene, or '' when no square on the board could take a drop. */
+/** The uuid of the unit's token on the viewed scene, or '' when it has none there. */
 function placedTokenUuid(owner, token) {
   const board = globalThis.canvas?.scene ?? null;
   const onBoard = candidate => !!candidate && (!board || candidate.parent === board);

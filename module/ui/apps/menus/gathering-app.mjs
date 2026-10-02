@@ -22,13 +22,14 @@ const DESTINATION_LABELS = Object.freeze({
 /*  Gathering menu                              */
 /* -------------------------------------------- */
 /**
- * Show a gathering Node's stock and the units that can gather it. interactWithStation (ui/controls/interaction.mjs)
- * opens it with the api.downtime.inspectGathering view. On submit the window closes and one
- * api.downtime.gather command runs, which rolls, delivers the yield and posts the result.
+ * Show a gathering Node's stock and the units that can gather it, from the api.downtime.inspectGathering view. The
+ * button sends one api.downtime.gather command, which rolls, delivers the yield and posts the result. A refusal made
+ * on this client, such as a busy host or a paused table, leaves the window open with the picks; otherwise the window
+ * closes while the host runs the command.
  * @param {object} view The downtime query's gathering view.
  * @param {{refresh?: Function}} [handlers] Re-reads the view before the window is rebuilt.
- * @returns {Promise<boolean>} Always false in practice: the window closes before the gather command answers, and
- *   the caller ignores the value.
+ * @returns {Promise<boolean>} Resolves when the window closes, which is before the command answers, so the value
+ *   does not report the outcome.
  */
 export async function openGatheringMenu(view, { refresh = null } = {}) {
   if (menuShown(WINDOW_CLASS)) return false;
@@ -45,8 +46,8 @@ export async function openGatheringMenu(view, { refresh = null } = {}) {
 /*  View                                        */
 /* -------------------------------------------- */
 /**
- * Map the downtime gathering projection and local picks into the gathering template context. The view lists only
- * the entries a gather can draw, so a node listing none is exhausted.
+ * Build the gathering template's data from the inspect view and the player's picks. The view lists only the entries
+ * a gather can draw, so a node listing none is exhausted.
  */
 function prepareGatheringView(view, state) {
   const active = resolvePerformer(view, state.performerUuid);
@@ -108,7 +109,7 @@ function watchDestination(menu) {
   });
 }
 
-/** Close the window, then send the gather command with the chosen gatherer and destination. */
+/** Send the gather command with the chosen gatherer and destination. */
 async function beginGathering(menu) {
   const { view, state } = menu;
   const performer = resolvePerformer(view, state.performerUuid);

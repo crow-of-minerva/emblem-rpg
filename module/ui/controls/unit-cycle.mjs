@@ -48,10 +48,10 @@ export function cycleUnitSelection() {
 }
 
 /* -------------------------------------------- */
-/*  Board reading                               */
+/*  Map reading                                 */
 /* -------------------------------------------- */
 /**
- * Every Character token on the canvas, as the plain facts resolveUnitCycle reads. `visible` is this client's own
+ * Every Character token on the canvas, as the plain data resolveUnitCycle reads. `visible` is this client's own
  * view, so the cycle skips units this user can't see, and panning to them can't reveal a hidden unit.
  */
 function boardUnits() {
@@ -74,8 +74,8 @@ function unitHasTurnLeft(turn) {
 }
 
 /**
- * The unit the cycle starts from: the one this user is inspecting (the facade selection), or else the token this
- * client controls.
+ * The unit the cycle starts from: the one this user is inspecting (the system's own selection frame), or else the
+ * token this client controls.
  */
 function cycleStandsOn() {
   return String(facadeSelectedTokenId() ?? globalThis.canvas?.tokens?.controlled?.[0]?.id ?? '');

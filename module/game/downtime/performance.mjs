@@ -114,8 +114,8 @@ function songSignature(song) {
 /*  The songbook                                */
 /* -------------------------------------------- */
 /**
- * Parse the shipped `json/songs.json` for foundry/adapters/services/json-files.mjs. Each id gains the built-in
- * prefix, and a song with no name is skipped with a warning.
+ * Parse the shipped `json/songs.json`. Each id gains the built-in prefix, and a song with no name is skipped with a
+ * warning.
  */
 export function parseSongbook(raw) {
   const source = Array.isArray(raw) ? raw : (Array.isArray(raw?.songs) ? raw.songs : []);
@@ -143,8 +143,8 @@ export function parseSongbook(raw) {
 /*  Marks                                       */
 /* -------------------------------------------- */
 /**
- * The performance a unit already carries, read from its items' flags by the downtime roster projection:
- * `'Inspired'`, `'Uninspired'`, or empty when it may still perform and benefit. One performance per downtime.
+ * The performance a unit already carries, read from its items' flags: `'Inspired'`, `'Uninspired'`, or empty when it
+ * may still perform and benefit. One performance per downtime.
  * @param {Iterable<{name?: string, flags?: object}>} items The unit's items, or item-like records.
  */
 export function performanceMarkAmong(items = []) {
@@ -170,7 +170,7 @@ function gradeForMargin(margin) {
 }
 
 /**
- * Grade a performance for engine/downtime/resolvers.mjs from every performer's margin over the song's difficulty.
+ * Grade a performance from every performer's margin over the song's difficulty.
  * A solo keeps the lead's grade. A group keeps it, with larger increments, only while every accompaniment succeeded.
  * One failed accompaniment drops a failing or Faltering lead to a failure, and any better lead to Faltering.
  * @param {{leadMargin: number, accompanimentMargins?: number[]}} margins Each check's total minus the difficulty.
@@ -220,7 +220,7 @@ function drawStat(keys, rng) {
   return keys[Math.min(keys.length - 1, Math.max(0, index))];
 }
 
-/** Allocated bonuses as the passive and the settled card write them, e.g. `+2 Mgt, +1 Wit`, or empty for none. */
+/** Allocated bonuses as the passive and the result card write them, e.g. `+2 Mgt, +1 Wit`, or empty for none. */
 export function describeBonuses(allocated = {}) {
   return bonusEntries(allocated).map(entry => `${signed(entry.amount)} ${entry.label}`).join(', ');
 }
@@ -245,9 +245,9 @@ export function listenerSupportXpFor(grade) {
 /*  The performance passive                     */
 /* -------------------------------------------- */
 /**
- * Build the Inspired passive each audience unit receives, for playInstrument in engine/downtime/resolvers.mjs. It
- * holds one raw-stat modifier per allocated bonus. It is tagged as downtime content so the GM's Reset Downtime
- * removes it, and marked with the song and grade so performanceMarkAmong finds it.
+ * Build the Inspired passive each audience unit receives. It holds one raw-stat modifier per allocated bonus. It is
+ * tagged as downtime content so the GM's Reset Downtime removes it, and marked with the song and grade so
+ * performanceMarkAmong finds it.
  * @returns {{data: object, name: string, summary: string}} `data` is the Item's creation data.
  */
 export function buildPerformancePassive(song, grade, allocated = {}) {
@@ -290,13 +290,13 @@ function passiveData(song, grade, name, img, description, modifiers) {
 /*  The stage                                   */
 /* -------------------------------------------- */
 /**
- * Validate a performance for engine/downtime/commands.mjs before anything is rolled or written, only in free
- * exploration. The lead must be an unaffected Action-lane participant who knows the song. Accompaniments ignore
- * commitment: each must be a distinct, unaffected, standing roster unit other than the lead, exactly as many as the
- * song asks for. The audience is every unaffected roster unit still standing, performers included. The listeners are
- * every standing non-performer. A unit at 0 HP takes no part in downtime at all.
- * @param {object} snapshot The performance snapshot: `station`, `cursor`, `exploring`, `inReach`, `roster`
- *   (downtime units carrying `performanceMark` and `songIds`) and `library`.
+ * Validate a performance before anything is rolled or written, only in free exploration. The lead must be an
+ * unaffected unit free for an Action activity who knows the song. Accompaniments ignore commitment: each must be a
+ * distinct, unaffected, standing roster unit other than the lead, exactly as many as the song asks for. The audience
+ * is every unaffected roster unit still standing, performers included. The listeners are every standing
+ * non-performer. A unit at 0 HP takes no part in downtime at all.
+ * @param {object} snapshot `station`, the acting unit (`cursor`), `exploring`, `inReach`, `roster` (downtime units
+ *   carrying `performanceMark` and `songIds`) and `library`.
  * @param {object} intent A normalizePerformanceIntent result.
  * @returns {Readonly<object>} A refusal, or `{ok: true, code, data}` with the plan also under `plan`.
  */

@@ -39,11 +39,11 @@ import {
 /* -------------------------------------------- */
 
 /**
- * The attack command: validate the exchange, run the strikes, settle, then publish.
+ * The attack command: check the attack, run the blows, write the results, then show them.
  *
- * The whole command is one operation: the strikes, the settlement, the defeats its closing beat finishes, the XP
- * and the continuation. Every writer captures through `context.operation`. The dispatcher commits it once this
- * handler accepts, and restores it when the handler refuses or throws.
+ * The whole command is one operation: the blows, the closing writes, the defeats it finishes at the end, the XP
+ * and what the attacker does next. Every write saves undo data on `context.operation`; the host client keeps the
+ * writes if this handler accepts, and undoes them if it refuses or throws.
  */
 async function resolveExchange(context, services) {
   const intent = normalizeCombatExchangeIntent(context.payload);
@@ -68,7 +68,7 @@ async function resolveExchange(context, services) {
   }
 }
 
-/** The distance and engagement as the board stands, which a pre-combat trigger reads before any move it makes. */
+/** The distance and engagement as the map stands, which a pre-combat trigger reads before any move it makes. */
 function boardFacts(snapshot) {
   return {
     distance: snapshot.boardDistance ?? snapshot.distance,
@@ -76,7 +76,7 @@ function boardFacts(snapshot) {
   };
 }
 
-/** The mutable state one exchange carries from its opening capture to its last presentation beat. */
+/** The working state one attack carries from its opening to its last animation. */
 function createExchangeState(snapshot, intent, context) {
   return {
     intent,
@@ -110,8 +110,9 @@ function createExchangeState(snapshot, intent, context) {
 /* -------------------------------------------- */
 
 /**
- * Open the exchange after preview validation. Draw action modifiers, reproject, capture everything the exchange
- * always touches in one save, then ground the source and send pre-combat presentation and effects.
+ * Open the attack after the preview check: roll its chance modifiers, read the map again, save undo data for
+ * everything an attack always writes in one go, then land the attacker if attacking grounds it, and run the
+ * pre-combat animation and effects.
  */
 async function openExchange(services, exchange) {
   const { intent, context } = exchange;
@@ -131,6 +132,8 @@ async function openExchange(services, exchange) {
   await services.wait(objectDelay(snapshot)
     ? COMBAT_EXCHANGE_TIMING.objectLeadIn : COMBAT_EXCHANGE_TIMING.characterLeadIn);
   if (snapshot.source.weaponArt) {
+    // A Weapon Art costs its weapon this many uses once per attack. The Art's own uses are counted per blow in
+    // settleBlow (blows.mjs).
     addUse(exchange.useLedger, snapshot.source.weapon.uuid, snapshot.sourceWeaponArtCost);
     await presentSafely(services, weaponArtMessage(snapshot));
     await services.wait(COMBAT_EXCHANGE_TIMING.weaponArtFlourish);
@@ -149,7 +152,10 @@ async function openExchange(services, exchange) {
 /*  Commit                                      */
 /* -------------------------------------------- */
 
-/** Settle uses, proficiency, experience, continuation and post-combat triggers under the command's operation. */
+/**
+ * Write item uses, weapon proficiency and XP, switch an Adaptive weapon, save what the attacker does next, run the
+ * postCombat triggers, clean up and book karma, all under the command's operation.
+ */
 async function commitExchange(services, exchange) {
   const { intent, context } = exchange;
   const reads = drawnExchangeReads(
@@ -237,10 +243,11 @@ function exchangeOutcome(exchange, snapshot, finalSnapshot, movementResolution, 
 /* -------------------------------------------- */
 
 /**
- * Finish the defeats the sequence claimed, hold the exchange's events on its operation and send the closing
- * feedback. A presentation failure is reported in the accepted result and never turns the exchange into a refusal,
- * so the operation still commits and the events held on it are delivered. A defeat that fails here leaves its unit
- * at 0 HP with the defeat pending, and the next phase change of the encounter finishes it.
+ * Finish the defeats the blows claimed, hold the attack's events until the command commits, and send the closing
+ * feedback. A failure in this step (an animation, a Token removal or loot drop, or the deferred end of turn) is
+ * listed in the accepted result and never turns the attack into a refusal, so the writes still stand and the held
+ * events are delivered. A defeat that fails here leaves its unit at 0 HP with the defeat pending, and the next
+ * phase change of the encounter finishes it.
  */
 async function publishExchange(services, exchange) {
   const { outcome, context, transcript, effectHealth, operation } = exchange;
@@ -274,7 +281,7 @@ async function publishExchange(services, exchange) {
 
 /**
  * Close an opened cinematic and answer with the refusal the interruption calls for.
- * Nothing is undone here: CommandDispatcher restores the operation's before-images from this refusal.
+ * Nothing is undone here: CommandDispatcher undoes the command's writes when it sees this refusal.
  */
 async function failExchange(services, exchange, error) {
   if (exchange.cinematicStarted) {
@@ -331,7 +338,7 @@ export function createCombatCommandContribution({
 /*  Continuation choice                         */
 /* -------------------------------------------- */
 
-/** Apply the player's Extra Action response to the pending continuation saved by exchange settlement. */
+/** Apply the player's Extra Action answer to the pending continuation the attack saved. */
 async function resolvePendingContinuation(context, services) {
   const intent = normalizeCombatContinuationIntent(context.payload);
   if (!intent) return refuse(RESULT_CODES.COMBAT_CONTINUATION_UNAVAILABLE);

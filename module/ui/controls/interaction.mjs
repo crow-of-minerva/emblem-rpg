@@ -70,7 +70,7 @@ import {
 /* -------------------------------------------- */
 
 /*
- * The Interact, Trade and Steal presses, and the door and unit picks they draw on the board. Which pick is drawn,
+ * The Interact, Trade and Steal presses, and the door and unit picks they draw on the map. Which pick is drawn,
  * whether its click is still being answered and how many windows are open all live in
  * ui/controls/interaction-state.mjs. The second half of the file is unit inspection: the token tooltip shown while
  * the Show Token Tooltip key is held. Refused commands are shown through NotificationService, so a refused lock,
@@ -89,10 +89,10 @@ const notifications = new NotificationService({ diagnostics: new FoundryDiagnost
  * socialize pick on the party units beside it.
  * @param {object|null} plan The caller's inspected movement plan. Nothing happens without one.
  * @param {{attack?: Function, resume?: Function, suspend?: Function, release?: Function, inspect?: Function}}
- *   [handlers] `attack` starts attack targeting with a picked-up Armament. `suspend` takes the movement field down
+ *   [handlers] `attack` starts attack targeting with a picked-up Armament. `suspend` hides the movement grid
  *   while a pick is drawn, and `resume` redraws the plan afterwards. `release` closes the plan where the unit
  *   stands after a door is worked outside an encounter. `inspect` rereads the plan when the socialize pick
- *   reopens after a window closes with nothing spent. Neither caller passes it, so heldPlan stands in.
+ *   reopens after a window closes with nothing spent; it defaults to the pressed plan, marked as held (heldPlan).
  * @returns {Promise<boolean>} Whether the press was consumed.
  */
 export async function runInteract(plan, {
@@ -193,8 +193,8 @@ function cueRefusal() {
  * unit and Vendor beside it is marked, and the player clicks one.
  * @param {object|null} plan The caller's inspected movement plan. Nothing happens without one.
  * @param {{inspect?: Function, suspend?: Function, resume?: Function, release?: Function}} [handlers] `inspect`
- *   rereads the plan so the pick can reopen after a window closes unconfirmed. `suspend` takes the movement field
- *   down while the pick is drawn. `resume` redraws the plan once the pick is abandoned or the trade has settled.
+ *   rereads the plan so the pick can reopen after a window closes unconfirmed. `suspend` hides the movement grid
+ *   while the pick is drawn. `resume` redraws the plan once the pick is abandoned or the trade is done.
  *   `release` ends the turn where the unit stands after it leaves a shop it traded at during an encounter.
  * @returns {Promise<boolean>} Whether the press was consumed.
  */
@@ -207,9 +207,9 @@ export async function runTrade(plan, handlers = {}) {
  * in targeting.mjs calls this when the pressed hotbar cell holds the Steal ability.
  * @param {object|null} plan The caller's inspected movement plan. Nothing happens without one.
  * @param {{inspect?: Function, suspend?: Function, resume?: Function, activation?: object}} [handlers] `inspect`
- *   rereads the plan, `suspend` takes the movement field down while the pick is drawn and the host rolls, and
- *   `resume` redraws the plan once the attempt has settled. `activation` is the hotbar cell the press came from,
- *   staged as the unit's active item while the pick is drawn.
+ *   rereads the plan, `suspend` hides the movement grid while the pick is drawn and the host rolls, and
+ *   `resume` redraws the plan once the attempt is over. `activation` is the hotbar cell the press came from,
+ *   shown as the unit's active item while the pick is drawn.
  * @returns {Promise<boolean>} Whether the press was consumed.
  */
 export async function runSteal(plan, handlers = {}) {
@@ -220,14 +220,14 @@ function pickHandlers({ inspect = null, suspend = null, resume = null, release =
   return Object.freeze({ inspect, suspend, resume, release, activation });
 }
 
-/** Stage the pressed Ability as the unit's activation, so its hotbar cell reads as pending like any other. */
+/** Mark the pressed Ability as the unit's active item, so its hotbar cell shows as pending like any other. */
 async function markPickActivation(activation) {
   if (!activation || stagedPickActivation()) return;
   advanceInteractionPick(PICK_EVENTS.STAGE_ACTIVATION, { activation });
   await stageFoundryActiveItem(activation);
 }
 
-/** Drop that mark: the attempt is over, whether it was abandoned, refused, or settled. */
+/** Drop that mark: the attempt is over, whether it was abandoned, refused, or done. */
 async function clearPickActivation() {
   const staged = stagedPickActivation();
   if (!staged) return;
@@ -235,7 +235,7 @@ async function clearPickActivation() {
   await clearFoundryActiveItem(staged);
 }
 
-/** After a reopen, keep the staged activation only if the unit pick was actually drawn again. */
+/** After a reopen, keep that mark only if the unit pick was actually drawn again. */
 function settlePickActivation() {
   if (pickStateName() !== PICK_STATES.UNITS) void clearPickActivation();
 }
@@ -312,9 +312,10 @@ function drawPickGrid(board, unit, color) {
 }
 
 /**
- * Read both sides, open the window, settle what it confirms, and return to the pick when nothing was spent. The
- * unit pick's click lands here in every mode, and a socialize click is passed on to openSocialFor. Loose loot and
- * opened chests come here too, from interactWithContainer and attemptLock.
+ * Read both sides, open the window, send what it confirms, and return to the pick when nothing was spent. When
+ * the pick can't be drawn again, returnToPick hands the held plan back instead. The unit pick's click lands here
+ * in every mode, and a socialize click is passed on to openSocialFor. Loose loot and opened chests come here too,
+ * from interactWithContainer and attemptLock.
  */
 async function openTradeFor(sourceTokenUuid, targetTokenUuid, mode, handlers = {}) {
   if (mode === DOWNTIME_PICK_MODES.SOCIAL) return openSocialFor(sourceTokenUuid, targetTokenUuid, handlers);
@@ -413,8 +414,9 @@ async function isVendorToken(tokenUuid) {
 }
 
 /**
- * Open the Vendor shop from a trade pick. Return to the pick on a refusal or a visit that traded nothing. Leaving
- * after a trade ends the turn where the unit stands in an encounter. While exploring, it hands the plan back.
+ * Open the Vendor shop from a trade pick. Return to the pick (or hand the plan back when it can't be redrawn) on a
+ * refusal or a visit that traded nothing. Leaving after a trade ends the turn where the unit stands in an
+ * encounter. While exploring, it hands the plan back.
  */
 async function openShopFor(economy, sourceTokenUuid, targetTokenUuid, { restore, release, reopen }) {
   const inspect = () => economy.inspectShop({ buyerTokenUuid: sourceTokenUuid, vendorTokenUuid: targetTokenUuid });
@@ -467,9 +469,9 @@ async function takeUpArmament(sourceTokenUuid, armament, attack) {
 
 /**
  * Answer a socialize pick's click. Read the pair through api.downtime.inspectSocial, then either show its refusal
- * and return to the pick, or open the social menu. A menu closed with nothing settled returns to the pick. A
- * settled socialize or training hands the plan back with the selection sound, as a completed trade does.
- * @param {string} sourceTokenUuid The driving unit's Token.
+ * and return to the pick, or open the social menu. A menu closed with nothing done returns to the pick. A
+ * finished socialize or training hands the plan back with the selection sound, as a completed trade does.
+ * @param {string} sourceTokenUuid The acting unit's Token.
  * @param {string} targetTokenUuid The visited unit's Token.
  * @param {{resume?: Function, held?: boolean, reopen?: Function}} [handlers] The pick's plan hand-back, whether the
  *   pick holds a suspended plan, and its reopening.
@@ -541,7 +543,7 @@ function beginDoorPick(plan, unit, board, handlers) {
 
 /**
  * Take a token click for the interaction pick. The Token#_onClickLeft wrapper in foundry/patches/token-drag.mjs
- * asks this before attack targeting. While a pick is drawn, or its click is still settling, the click is
+ * asks this before attack targeting. While a pick is drawn, or its click is still being answered, the click is
  * consumed, so it can't also select the clicked unit.
  */
 export function onTokenClickInteraction(token) {
@@ -583,12 +585,12 @@ function clickUnitPick(pick, tokenUuid) {
   return true;
 }
 
-/** Whether this client is mid-interaction: a pick is drawn or settling, or an interaction window is open. */
+/** Whether this client is mid-interaction: a pick is drawn or answering its click, or any interaction window is up. */
 export function isTradeInteractionActive() {
   return interactionHoldsBoard();
 }
 
-/** Whether a door or unit pick owns the canvas: drawn and awaiting its click, or settling the click it took. */
+/** Whether a door or unit pick owns the canvas: drawn and awaiting its click, or still answering the click it took. */
 export function isInteractionPickActive() {
   return pickOwnsCanvas();
 }
@@ -623,7 +625,7 @@ export function refreshInteractionOverlays({ sceneUuid }, valid) {
   return true;
 }
 
-/** Take the pick down: an abandoned one hands the movement field back, a handoff to a window leaves it held. */
+/** Take the pick down: an abandoned one hands the movement plan back, a handoff to a window leaves it held. */
 function closePick({ restore = true } = {}) {
   const abandoned = activePick();
   if (!abandoned) return false;
@@ -719,9 +721,9 @@ const REPOSITION_SETTLE_MS = 10;
 /*  Canvas lifecycle                            */
 /* -------------------------------------------- */
 /**
- * Install the window-level listeners that end inspection when the browser won't report the tooltip key's release
- * (the window losing focus) or when Escape is pressed. Any mouse press hides the tooltip. init/hooks.mjs calls
- * this once, during setup.
+ * Install the window and document listeners that end inspection when the browser won't report the tooltip key's
+ * release (the window losing focus) or when Escape is pressed. Any mouse press hides the tooltip. init/hooks.mjs
+ * calls this once, during setup.
  */
 export function initializeInspectionControls() {
   const browserWindow = globalThis.window;
@@ -769,7 +771,7 @@ export function onHoverTokenInspection(token, hovered) {
   }
 }
 
-/** Follow a described Token that has moved, once its own transform has settled. */
+/** Follow a described Token that has moved, once its own transform has caught up. */
 export function onUpdateTokenInspection(tokenDocument) {
   if (!isTokenTooltipVisible() || inspectedToken()?.id !== tokenDocument.id) return;
   setTimeout(() => {
@@ -778,7 +780,7 @@ export function onUpdateTokenInspection(tokenDocument) {
   }, REPOSITION_SETTLE_MS);
 }
 
-/** Drop a tooltip placed in screen space once the board it describes has moved under it. */
+/** Drop a tooltip placed in screen space once the map it describes has moved under it. */
 export function onCanvasPanInspection() {
   if (isTokenTooltipVisible()) hideTokenTooltip();
 }

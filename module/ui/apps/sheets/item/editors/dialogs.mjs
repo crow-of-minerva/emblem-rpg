@@ -359,7 +359,7 @@ export function openModifierEditor(subject, index = null, kind = 'standard') {
  * @param {number|null} [index]           Which effect, or null to create one.
  * @param {object} [options]
  * @param {string} [options.effectsPath]  Where the item keeps its effects.
- * @returns {Promise<void|null>}
+ * @returns {Promise<*>}                  What the effect editor returns, or null when no entry could be created.
  */
 export async function openEffectEditor(subject, index = null, { effectsPath = DEFAULT_EFFECTS_PATH } = {}) {
   const itemSheet = itemSheetFor(subject, effectsPath);
@@ -432,6 +432,8 @@ async function openWeaponDmgConditionsDialog(itemSheet) {
         const r = validateCondition(tree, { place: `the ${type} condition`, surface: 'damageType' });
         errors.push(...r.errors);
         warnings.push(...r.warnings);
+        // Foundry merges a new object into an ObjectField on update rather than replacing it. That is safe here
+        // because the tree's root is always a group with the same keys, and its children array is replaced whole.
         update[`system.weapon.dmgTypes.${type}ConditionTree`] = tree;
         update[`system.weapon.dmgTypes.${type}Condition`] = '';
       }

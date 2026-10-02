@@ -22,13 +22,14 @@ const SPECIAL_FILTERS = Object.freeze([ALL_STATS, 'HP', 'Bld', 'Mgt', 'Agi', 'Tq
 /*  Cooking menu                                */
 /* -------------------------------------------- */
 /**
- * Show a Cooking Pot's chefs, recipes, diners and special ingredients. interactWithStation
- * (ui/controls/interaction.mjs) opens it with the api.downtime.inspectCooking view. On submit the window closes and
- * one api.downtime.cook command runs, which rolls the chef's check and gives every diner the meal.
+ * Show a Cooking Pot's chefs, recipes, diners and special ingredients, from the api.downtime.inspectCooking view.
+ * Begin Cooking sends one api.downtime.cook command, which rolls the chef's check and gives every diner the meal.
+ * A refusal made on this client, such as a busy host or a paused table, leaves the window open with the picks;
+ * otherwise the window closes while the host runs the command.
  * @param {object} view The downtime query's cooking view.
  * @param {{refresh?: Function}} [handlers] Re-reads the view before the window is rebuilt.
- * @returns {Promise<boolean>} Always false in practice: the window closes before the cook command answers, and the
- *   caller ignores the value.
+ * @returns {Promise<boolean>} Resolves when the window closes, which is before the command answers, so the value
+ *   does not report the outcome.
  */
 export async function openCookingMenu(view, { refresh = null } = {}) {
   if (menuShown(WINDOW_CLASS)) return false;
@@ -154,6 +155,10 @@ function cookDetail(recipe, chef, dinerCount, state, specialMargin) {
   });
 }
 
+/**
+ * Render the body, and write the chef and special ingredient it shows back into the picks, so a pick that became
+ * unavailable after a refresh is replaced or dropped.
+ */
 async function render(view, state) {
   const prepared = prepareCookingView(view, state);
   state.performerUuid = prepared.performers.find(entry => entry.selected)?.actorUuid ?? null;
@@ -208,7 +213,7 @@ function filterSpecials(menu, label) {
   void rerenderMenu(menu).then(() => menu.root.querySelector('.ck-special-scroll')?.scrollTo(0, 0));
 }
 
-/** Close the window, then send the cook command with the chef, recipe, special ingredient and diners. */
+/** Send the cook command with the chef, recipe, special ingredient and diners. */
 async function beginCooking(menu) {
   const { view, state } = menu;
   const prepared = prepareCookingView(view, state);

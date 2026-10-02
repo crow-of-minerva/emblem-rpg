@@ -12,12 +12,14 @@ export const TOKEN_ART_SLOTS = Object.freeze([
   Object.freeze({ key: 'flying', label: 'Flying' })
 ]);
 
+/** The conditions a token art entry can switch on: momentary events, and lasting states such as what is wielded. */
 export const TOKEN_CONDITIONS = Object.freeze([
   'On Evade', 'On Crit', 'On Attack', 'On Cast', 'Unarmed', 'Wielding: Blade', 'Wielding: Polearm',
   'Wielding: Heavy', 'Wielding: Brawling', 'Wielding: Covert', 'Wielding: Bow', 'Wielding: Magic',
   'Wielding: Specific Item', 'Using Ability'
 ]);
 
+/** The conditions that last while they hold. The rest are momentary events (evade, crit, attack, cast). */
 export const STEADY_TOKEN_CONDITIONS = Object.freeze([
   'Unarmed', 'Wielding: Blade', 'Wielding: Polearm', 'Wielding: Heavy', 'Wielding: Brawling',
   'Wielding: Covert', 'Wielding: Bow', 'Wielding: Magic', 'Wielding: Specific Item',
@@ -27,7 +29,8 @@ export const STEADY_TOKEN_CONDITIONS = Object.freeze([
 /**
  * The keys a Foundry movement write names whether or not their values changed: every movement field, with the
  * movement history and Regions it records and the document id. A consumer that reacts to which keys an update
- * carries reads a write limited to these as a move, never as a new texture, name or state.
+ * carries reads a write limited to these as a move, never as a new texture, name or state. The list is v14's
+ * TokenDocument.MOVEMENT_FIELDS plus `_id`, `_movementHistory` and `_regions`; recheck it after a Foundry upgrade.
  */
 export const TOKEN_MOVEMENT_WRITE_KEYS = Object.freeze([
   '_id', 'x', 'y', 'elevation', 'width', 'height', 'depth', 'shape', 'level', '_movementHistory', '_regions'
@@ -286,7 +289,7 @@ export function normalizeAudioFolderPath(raw) {
 const VOICE_PRESENTATION_KIND = 'voice';
 export const FOOTSTEP_PRESENTATION_KIND = 'step';
 
-/** Check the bounded voice or footstep payload sent by the active GM. */
+/** Check a voice or footstep message the GM's client sent. */
 export function isUnitPresentationMessage(value) {
   if (!plainRecord(value)) return false;
   if (value.kind === VOICE_PRESENTATION_KIND) {

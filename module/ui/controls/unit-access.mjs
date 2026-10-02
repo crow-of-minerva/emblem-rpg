@@ -20,8 +20,9 @@ import { localUserFrozenByPause, worldPaused } from '../../foundry/adapters/serv
 /*
  * Whether this client may select a unit or move the one it holds, answered from live table state. movement.mjs
  * hands these checks to foundry/patches/token-drag.mjs for its Token wrappers, and inspect-click.mjs uses them to
- * decide whether a click inspects or selects. The movement gesture rules live in game/movement/input-policy.mjs,
- * and this file gathers the facts they judge.
+ * decide whether a click inspects or selects. The movement gesture rules live in game/movement/input-policy.mjs;
+ * this file reads the table state they need. These checks only shape this client's controls: the host checks
+ * ownership and the lock again when a command arrives.
  */
 
 /** The table-wide control lock, or null when nobody holds one. */
@@ -30,17 +31,17 @@ export function currentLock() {
   return lock?.holderId && lock.tokenUuid ? lock : null;
 }
 
-/** Whether a command holds world execution, which freezes gameplay input on every client. */
+/** Whether the host is running a command right now, which freezes gameplay input on every client. */
 export function processingActive() {
   return game.emblemRpg.api.protocol.execution()?.owner != null;
 }
 
-/** The driven hold an encounter is running, or null. */
+/** The hold the Enemy AI (or another module) takes while it plays its units, or null. */
 export function currentDrivenHold() {
   return game.emblemRpg.api.encounters.driven.current() ?? null;
 }
 
-/** Whether an encounter currently drives the board itself. */
+/** Whether a module such as Enemy AI is playing its units right now. */
 export function drivenHoldActive() {
   return Boolean(currentDrivenHold());
 }
@@ -53,9 +54,9 @@ export function tokenPickAwaitingClick() {
 /**
  * Whether this client may control the token now. The Token wrappers in foundry/patches/token-drag.mjs ask this
  * before control, clicks and HUD binds. While the control lock is held, only its holder may control, and only the
- * locked token. `restore` asks whether that holder may take back the unit it is moving. Otherwise processing, a
- * driven hold or a pause refuses everyone. Then `acquire` (a plan about to start), the unit already being moved,
- * or a GM while no lock is held may control.
+ * locked token. `restore` asks whether that holder may take back the unit it is moving. Otherwise nobody may while
+ * the host runs a command, a module is playing its units, or the game is paused for this user. Then `acquire` (a plan
+ * about to start), the unit already being moved, or a GM while no lock is held may control.
  */
 export function tokenControlAllowed(token, { restore = false, acquire = false } = {}) {
   const lock = currentLock();
@@ -84,7 +85,7 @@ export function ownsUnit(token) {
 /* -------------------------------------------- */
 
 /**
- * Gather the facts resolveMovementInputPermission judges one movement gesture on.
+ * Collect the table state resolveMovementInputPermission needs to judge one movement gesture.
  * @param {object} token The placed Token the gesture names.
  * @param {string} kind A value of MOVEMENT_INPUT_KINDS.
  * @param {object} [plan] The active plan for that Token, looked up when the caller has not already.
@@ -116,7 +117,7 @@ export function movementInputPermission(token, kind, plan = movementPlanForToken
   });
 }
 
-/** Whether a marquee drag may select on the canvas while a plan or a command holds the board. */
+/** Whether a marquee drag may select on the canvas while a move is being planned or the host runs a command. */
 export function canvasMarqueePermission() {
   return resolveMovementInputPermission({
     kind: MOVEMENT_INPUT_KINDS.MARQUEE_SELECT,

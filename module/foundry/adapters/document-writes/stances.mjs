@@ -12,6 +12,7 @@ import {
 } from '../services/host.mjs';
 import { FoundryDiagnostics } from '../services/diagnostics.mjs';
 
+/** Marks these writes as the system's own, so the Stance hook in foundry/hooks/actors.mjs skips them. */
 const settlementOptions = () => ({ emblemHealthSettlement: true });
 
 /** The Actor fields a stance break that grounds a flier writes: its Grounded status and the mark saying why. */
@@ -23,8 +24,7 @@ const LANDING_PATHS = Object.freeze(['system.statuses.grounded', GROUNDED_BY_STA
 /* -------------------------------------------- */
 /**
  * Reads a Character's stance state and writes the Stance Break changes that resolveStanceBreak
- * (game/combat/damage.mjs) plans. Used by StanceBreakService (engine/combat/damage.mjs), the combat exchange's
- * settlement and effect execution.
+ * (game/combat/damage.mjs) plans, for StanceBreakService (engine/combat/damage.mjs).
  */
 export class FoundryStanceRepository {
   /**
@@ -40,12 +40,12 @@ export class FoundryStanceRepository {
    * Apply a stance transition if the actor still matches the snapshot it was planned from. If not, returns
    * `stale: true` so the caller reads again and replans.
    *
-   * Before the first write, everything the transition touches is recorded on the caller's operation: the effects
+   * Before the first write, everything the transition touches is recorded in the caller's undo record: the effects
    * removed, the Stance Break created, and for a flier the break grounds, its Grounded status and the flag saying a
    * stance break grounded it. A refused command then restores the old effects and flight state together.
    * @param {object} snapshot The getSnapshot result the transition was planned from.
    * @param {object} transition The plan from resolveStanceBreak (game/combat/damage.mjs).
-   * @param {{operation?: object|null}} [context] The dispatcher operation, when one is running.
+   * @param {{operation?: object|null}} [context] The running command's undo record, if any.
    */
   async commit(snapshot, transition, { operation = null } = {}) {
     const actor = await resolveActor(snapshot?.actorUuid);
@@ -75,7 +75,7 @@ export class FoundryStanceRepository {
 /* -------------------------------------------- */
 
 /**
- * Record the whole transition on the operation, then delete and create the effects it names and land the flier the
+ * Record the whole transition for undo, then delete and create the effects it names and land the flier the
  * break grounds, the same way the flight action lands a unit. Throws if Foundry refuses any step.
  */
 async function writeStanceEffects(operation, actor, deleteIds, creates, landing = null) {
@@ -99,7 +99,7 @@ async function writeStanceEffects(operation, actor, deleteIds, creates, landing 
 }
 
 /* -------------------------------------------- */
-/*  Snapshot projection                         */
+/*  Stance state                                */
 /* -------------------------------------------- */
 function projectActor(actor) {
   const breakEffectIds = [];
@@ -161,7 +161,7 @@ function removesOnStanceBreak(effect) {
 /* -------------------------------------------- */
 
 /**
- * The Token the break is presented on, read from documents so a Scene the host isn't viewing still gets it: a
+ * The Token the break is shown on, read from documents so a Scene the host client isn't viewing still gets it: a
  * synthetic Actor's own Token, otherwise the linked Token on a Scene with a started encounter, then the one on the
  * active Scene, then any.
  */

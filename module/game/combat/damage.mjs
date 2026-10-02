@@ -13,7 +13,7 @@ const PHYSICAL_TYPES = new Set(PHYSICAL_DAMAGE_TYPES);
 const MAGICAL_TYPES = new Set(MAGICAL_DAMAGE_TYPES);
 const PLAYER_UNIT_TYPES = new Set(OWNED_UNIT_FACTIONS);
 
-/** A defeat that stood after its re-check: only this fires onKill and onDeath and counts the unit as slain. */
+/** A defeat no heal or Extra Life undid: only this fires onKill and onDeath and counts the unit as slain. */
 export function isConfirmedKill(defeatStatus) {
   return defeatStatus === DEFEAT_STATUSES.CLAIMED;
 }
@@ -34,7 +34,7 @@ const SPARED_HP_FLOOR = 1;
 /** Last Stand leaves a unit on this much HP when a hit would otherwise defeat it. */
 const LAST_STAND_HP_FLOOR = 1;
 
-/** A crit multiplier is never below 1, so a crit never lowers damage. An unreadable one falls back to 2. */
+/** A crit multiplier is never below 1, so a crit never lowers damage. A value that isn't a number counts as 2. */
 const MIN_CRITICAL_MULTIPLIER = 1;
 
 /** A scaled multiplier is rounded to millionths, so floating-point error can't push a rounded-up total up a point. */
@@ -60,8 +60,7 @@ const DEFAULT_STANCE_REGENERATION = 3;
 /* -------------------------------------------- */
 /**
  * The lowest HP resolveDamage can leave. Only an explicit `canKillPlayer === false` spares a Lord or Retainer at
- * 1 HP. An omitted value keeps the floor at 0, so callers must pass the value they mean. The phase-opening ticks
- * (game/effects/statuses.mjs) and terrain hazards (game/terrain/effects.mjs) use it too.
+ * 1 HP. An omitted value keeps the floor at 0, so callers must pass the value they mean.
  */
 export function hpFloor(actorType, canKillPlayer) {
   const spared = canKillPlayer === false && PLAYER_UNIT_TYPES.has(String(actorType ?? ''));
@@ -72,9 +71,9 @@ export function hpFloor(actorType, canKillPlayer) {
 /*  Damage resolution                          */
 /* -------------------------------------------- */
 /**
- * The HP, stance and shield damage one hit deals, from the target's health snapshot. Called by
- * engine/combat/damage.mjs, effect execution (engine/effects/execution.mjs) and resolveCombatBlow in exchange.mjs.
- * The totals go to FoundryHealthRepository.commitDamage.
+ * The HP, stance and shield damage one hit deals, from the struck unit's current HP, stance, shield and defences.
+ * FoundryHealthRepository.commitDamage saves the totals. Order: crit, immunity, mitigation, rounding, Last Stand,
+ * shield, HP floor. A shield that absorbs the whole hit also cancels its stance damage.
  */
 export function resolveDamage(input) {
   const policy = input?.policy;
@@ -188,9 +187,8 @@ export function criticalMultiplierAgainst(multiplier, target = {}) {
 /**
  * Stance damage after the target's break reduction. A protected target takes at most 1, and half a point when
  * exactly 1 gets through. A vulnerable one takes the incoming value doubled before the reduction. resolveDamage
- * applies it to an ability's stance damage, and combatBreakDamage in exchange.mjs to a weapon's Brk. Neither calls
- * it for an immune target. resolveDamage clamps both values at zero first, while the exchange passes its sides' Brk
- * and break reduction as they are.
+ * applies it to an ability's stance damage, and combatBreakDamage in exchange.mjs to a weapon's Brk. Inputs may be
+ * negative; the result is never below 0.
  * @param {{incoming: number, reduction: number, protectedAgainst: boolean, vulnerableTo: boolean}} input
  * @returns {number}
  */
@@ -219,7 +217,7 @@ export function resolveArmorWear({ damage, damageType, armor }) {
 /* -------------------------------------------- */
 /**
  * The HP and stance a heal restores, capped at each maximum. A target with `healingBlocked` gets no HP back.
- * Called by engine/combat/damage.mjs and effect execution. The totals go to FoundryHealthRepository.commitHealing.
+ * FoundryHealthRepository.commitHealing saves the totals.
  */
 export function resolveHealing(input) {
   const hpBefore = whole(input?.target?.hp);
@@ -262,17 +260,16 @@ function stringSet(value) {
 }
 
 /* -------------------------------------------- */
-/*  Stance-break settlement                     */
+/*  Stance break                                */
 /* -------------------------------------------- */
 /**
  * What the unit's stance means for its Stance Break effect: apply it at 0 stance, clear it above 0, or repair it,
- * with the effects to delete and whether a new break grounds a flier. Called by StanceBreakService
- * (engine/combat/damage.mjs), exchange settlement and effect execution. The stance writer
- * (document-writes/stances.mjs) applies the changes in one capture.
+ * with the effects to delete and whether a new break grounds a flier. foundry/adapters/document-writes/stances.mjs
+ * saves the result.
  *
  * A freshly applied break grounds a flier in the air unless it levitates. A repaired or lingering break grounds
  * nobody.
- * @param {object} snapshot The stance snapshot, with its `airborne` and `levitating` facts.
+ * @param {object} snapshot The unit's HP, stance, break effect ids, and whether it is airborne or levitating.
  * @returns {object}
  */
 export function resolveStanceBreak(snapshot) {
@@ -303,10 +300,9 @@ export function resolveStanceBreak(snapshot) {
 /*  Stance recovery                             */
 /* -------------------------------------------- */
 /**
- * The stance a resting unit gets back (restoreRestingStance in engine/combat/encounters/commands.mjs). The board
- * projection also reports it as `stanceRegen`. A stance-broken unit comes back to full. Stance-broken means an empty
- * pool, because resolveStanceBreak applies the break at exactly zero and clears it above zero. Any other unit
- * recovers its regeneration, up to its max.
+ * The stance a resting unit gets back (restoreRestingStance in engine/combat/encounters/commands.mjs).
+ * foundry/adapters/projections/board.mjs also reports it as `stanceRegen`. A unit at 0 stance, which is when its
+ * stance is broken, comes back to full. Any other unit recovers its regeneration, up to its max.
  * @param {{value:number, max:number, regen?:number}} resource
  * @returns {number}
  */

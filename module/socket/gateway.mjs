@@ -12,28 +12,27 @@ import {
 import { checkPayload } from './firewall.mjs';
 import { createCommandEnvelope, isCommandEnvelope, isCommandStatusRequest, isSegmentStopRequest } from './protocol.mjs';
 import { SocketRateLimiter } from './rate-limit.mjs';
-/** A reply that settles a deadline race without being mistaken for a real result. */
+/** What a timed-out wait returns, so it can't be mistaken for a real reply. */
 const EXPIRED = Symbol('expired');
 
-/** Replies meaning the page this client addressed may no longer be the host, so its cached session is dropped. */
+/** Replies meaning the tab this client sent to may no longer be the host, so its saved session id is dropped. */
 const FORGETS_HOST_SESSION = new Set([RESULT_CODES.SOCKET_HOST_SESSION_STALE, RESULT_CODES.SOCKET_MULTIPLE_HOSTS]);
 
 /* -------------------------------------------- */
 /*  Command gateway                             */
 /* -------------------------------------------- */
 /**
- * Route public API commands to CommandDispatcher on the host.
- * Each request carries an id and the host page session. A lost reply settles as unknown. The host may already
- * have written state, so the gateway neither cancels nor retries the command.
+ * Send public API commands to CommandDispatcher on the host client.
+ * Each request carries an id and the host tab's session id. A lost reply comes back as an unknown outcome: the host
+ * may already have run the command, so the gateway neither cancels nor retries it.
  */
 export class CommandGateway {
   #pending = new Map();
   #sessions = new Map();
 
   /**
-   * init/system.mjs supplies every port but the rate limiter and the timing table: `lifecycle` and `execution`
-   * feed status replies, `operatorIdentifier` feeds the payload firewall, and `authorityObserver` has
-   * HostPagePresence recheck the host before waiting requests are settled.
+   * Built in init/system.mjs. `lifecycle` and `execution` fill status replies, `operatorIdentifier` names Foundry's
+   * update-operator marker for the payload check, and `authorityObserver` re-checks which GM tab is the host.
    */
   constructor({ dispatcher, transport, identity, diagnostics, operatorIdentifier, lifecycle, execution,
     authorityObserver, rateLimiter = new SocketRateLimiter(), timing = COMMAND_TIMING }) {
@@ -68,7 +67,7 @@ export class CommandGateway {
 
   /**
    * Send a public API command to the host and return its result, refusal or unknown outcome.
-   * Host-local calls go directly to CommandDispatcher and skip only the wire-size limit.
+   * On the host client the call goes straight to CommandDispatcher, without the size, rate or session checks.
    */
   async execute(commandId, payload = {}) {
     let requestId = '';
@@ -120,8 +119,8 @@ export class CommandGateway {
   }
 
   /**
-   * Ask CommandDispatcher to stop its execution segment at the driver's next safe point. Only a GM or Assistant
-   * may ask. The request isn't a command, so it skips command admission and never takes or releases execution.
+   * Ask the host to stop a running series of actions, such as an Enemy AI turn, before its next action. Only a GM
+   * or Assistant may ask. This isn't a command, so it neither waits for the running one nor takes its place.
    * A lost reply returns unknown and is not retried.
    * @returns {Promise<object>} `command.segment-stop-requested`, a refusal, or an unknown outcome.
    */
@@ -147,7 +146,7 @@ export class CommandGateway {
   }
 
   /**
-   * Handle Foundry user connection changes. Forget the cached page session and settle a departing host's pending
+   * Handle Foundry user connection changes. Forget the saved host session id, and end a departing host's waiting
    * requests as unknown.
    */
   onUserActivity(userId, active) {
@@ -159,7 +158,7 @@ export class CommandGateway {
     }
   }
 
-  /** Refresh HostPagePresence authority before settling requests whose host is no longer eligible. */
+  /** When the host may have changed, re-check which GM tab is the host and end requests sent to an old one. */
   onAuthorityChanged() {
     try {
       this.authorityObserver();
@@ -199,8 +198,8 @@ export class CommandGateway {
   }
 
   /**
-   * Read and cache the host page session through the status endpoint.
-   * Propagate a duplicate-page refusal instead of misreporting the host as unreachable.
+   * Get the host tab's session id through a status request, and remember it.
+   * If the host GM has two tabs open, return that refusal instead of reporting the host as unreachable.
    * @returns {Promise<{session: string, refused: object|null}>}
    */
   async #sessionOf(hostUserId) {
@@ -215,7 +214,7 @@ export class CommandGateway {
     return { session, refused: null };
   }
 
-  /** Send one envelope and wait at most the response deadline. A lost reply settles as an unknown outcome. */
+  /** Send one envelope and wait at most the response deadline. A lost reply becomes an unknown outcome. */
   #send(hostUserId, envelope) {
     return new Promise(resolve => {
       const pending = { requestId: envelope.id, commandId: envelope.commandId, hostUserId, settled: false, timer: null };
@@ -239,6 +238,7 @@ export class CommandGateway {
     });
   }
 
+  /** Run `work` with a deadline. A timeout and an error both return EXPIRED, and neither is recorded. */
   async #bounded(work, milliseconds) {
     let timer;
     const expired = new Promise(resolve => { timer = setTimeout(() => resolve(EXPIRED), milliseconds); });
@@ -276,6 +276,10 @@ export class CommandGateway {
   /*  Host                                        */
   /* -------------------------------------------- */
 
+  /**
+   * On the host client: check and run a command another client sent. `userId` comes from the Foundry server, so it
+   * can't be forged. Each command's own permission check runs in CommandDispatcher. `hostSession` is optional.
+   */
   async #receive(envelope, userId) {
     if (!isCommandEnvelope(envelope)) return refuse(RESULT_CODES.COMMAND_FAILED);
     const host = this.identity.host();
@@ -306,9 +310,8 @@ export class CommandGateway {
   }
 
   /**
-   * Handle a segment-stop request from socketlib, or from requestSegmentStop on the host itself. Check that this
-   * page is the host and the sender is a GM or Assistant, then mark the segment in CommandDispatcher. The request
-   * never takes or releases execution.
+   * On the host client: let a GM or Assistant stop a running series of actions, such as an Enemy AI turn. Reached
+   * through socketlib, or directly from requestSegmentStop on the host.
    */
   #stopSegment(request, userId) {
     if (!isSegmentStopRequest(request)) return refuse(RESULT_CODES.SOCKET_PAYLOAD_REFUSED);
@@ -353,7 +356,7 @@ export class CommandGateway {
   }
 }
 
-/** A refusal when the world has no single eligible host page, or null when it has one. */
+/** A refusal when the world has no single eligible host tab, or null when it has one. */
 function hostRefusal(host) {
   const code = hostRefusalCode(host);
   return code ? refuse(code) : null;

@@ -119,7 +119,7 @@ export class ActorControlPanel extends ActorControlApplication {
     scrollable: ['.acp-token-pane', '.acp-faction-pane', '.acp-audio-pane']
   } };
 
-  /** Open one Actor Control Panel per Character after the document-authority check. */
+  /** Open this Character's control panel (one per Character) if the user may edit it. */
   static openFor(actor) {
     if (actor?.documentName !== 'Actor' || actor.type !== 'Character') return null;
     if (!canFoundryUserAuthorDocument(game.user, actor)) return null;
@@ -135,11 +135,7 @@ export class ActorControlPanel extends ActorControlApplication {
     return panel;
   }
 
-  /**
-   * Render the panel, then raise it once its frame exists: ApplicationV2#bringToFront reads that element, which a
-   * render still in flight has not created yet. A failed render drops the registration in activePanels, so the next
-   * click through CharacterSheet.openControlPanel opens a fresh panel instead of raising a window that never came up.
-   */
+  /** Render and bring to front. If the render fails, forget the panel so the next click opens a new one. */
   async _renderAndRaise(key) {
     try {
       await this.render({ force: true });
@@ -157,6 +153,8 @@ export class ActorControlPanel extends ActorControlApplication {
     this._activeTabId = DEFAULT_TAB_ID;
     this._openEntries = new Map();
     this._entryDrag = null;
+    // Saves this panel has in flight. While above zero, refreshFromActor ignores updates, so the
+    // panel does not re-render from its own save.
     this._localWrites = 0;
     this._refreshTimer = null;
     this._artBust = 0;
@@ -179,7 +177,10 @@ export class ActorControlPanel extends ActorControlApplication {
     return super.close(options);
   }
 
-  /** Coalesce an update authored outside this panel into one fresh render, re-fetching art when asked. */
+  /**
+   * Re-render once, after a short delay, for an update made outside this panel. Updates that arrive while the panel
+   * is saving are ignored. `bustArt` makes the images reload.
+   */
   refreshFromActor({ bustArt = false } = {}) {
     if (bustArt) this._artBust = Date.now();
     if (this._localWrites > 0 || !this.rendered) return;
@@ -327,7 +328,7 @@ export class ActorControlPanel extends ActorControlApplication {
   /* -------------------------------------------- */
   /*  Form submission                             */
   /* -------------------------------------------- */
-  /** Persist ordinary authoring edits from the panel: staff, or a Trusted Player who owns the unit. */
+  /** Save the panel's form edits. Allowed for the GM, or a Trusted Player who owns the unit. */
   static async submit(_event, _form, formData) {
     if (!this.actor || !canFoundryUserAuthorDocument(game.user, this.actor)) return;
     const data = formData.object;
@@ -408,6 +409,7 @@ export class ActorControlPanel extends ActorControlApplication {
 
   /**
    * Gather the prototype-token half of a submission: linkage, sight, the visual effects and, for a GM, ownership.
+   * @param {object} data            The submitted form data.
    * @param {object} update          The Actor update being built, extended in place.
    * @param {string|null} submittedType The faction role submitted, when one was.
    * @returns {object} The sight changes and token effects, which are also pushed to placed Tokens.
@@ -437,6 +439,8 @@ export class ActorControlPanel extends ActorControlApplication {
         else Object.assign(update, forcedDeletion('prototypeToken.flags.tokenmagic.filters'));
       }
     }
+    // Only the GM may change ownership. The Owners boxes are also shown to a Trusted owner, but their
+    // changes are ignored here.
     const ownership = game.user.isGM ? ownershipChanges(this.actor, data) : {};
     if (Object.keys(ownership).length) update.ownership = ownership;
     return { sightUpdate, tokenFx };
@@ -445,6 +449,7 @@ export class ActorControlPanel extends ActorControlApplication {
   /**
    * Gather the Class art tabs, their slot scales and offsets, and their entries' item, ability and spell references
    * out of a submission.
+   * @param {object} data     The submitted form data.
    * @param {object} update   The Actor update being built, extended in place.
    */
   _collectArtTabUpdates(data, update) {
@@ -545,7 +550,7 @@ export class ActorControlPanel extends ActorControlApplication {
     return picker.browse();
   }
 
-  /** Toggle the current voice folder in the separate GM-owned store: approve it, or revoke the standing approval. */
+  /** GM only: approve this voice folder, or remove its approval. */
   static async approveVoicePath(event) {
     event.preventDefault();
     const input = this.element?.querySelector('[name="voicePath"]');
@@ -740,7 +745,7 @@ export class ActorControlPanel extends ActorControlApplication {
   /* -------------------------------------------- */
   /*  Nested token slots                          */
   /* -------------------------------------------- */
-  /** Open the class art slot through the staff-only Studio adapter. */
+  /** Open Token Studio on this class art slot. */
   static async editTabTokenSlot(event, target) {
     event.preventDefault();
     if (this.actor.isToken || !canFoundryUserAuthorDocument(game.user, this.actor)) return;
@@ -758,7 +763,7 @@ export class ActorControlPanel extends ActorControlApplication {
     await this._saveActor({ 'system.art.tabs': tabs }, { render: true });
   }
 
-  /** Open the conditional art slot through the staff-only Studio adapter. */
+  /** Open Token Studio on this conditional art slot. */
   static async editConditionalSlot(event, target) {
     event.preventDefault();
     if (this.actor.isToken || !canFoundryUserAuthorDocument(game.user, this.actor)) return;
@@ -1000,6 +1005,8 @@ export class ActorControlPanel extends ActorControlApplication {
     };
     animSelect?.addEventListener('change', showAnimMode);
     showAnimMode();
+    // Live preview while a control moves: at most every 90 ms, write the effects to this actor's placed
+    // tokens. These are saved Token Magic flags, so every client sees the preview.
     root.addEventListener('input', () => {
       if (this._fxPreviewTimer) return;
       this._fxPreviewTimer = setTimeout(() => {
@@ -1027,6 +1034,8 @@ export class ActorControlPanel extends ActorControlApplication {
       updateSwatch(textInput.value);
       textInput.addEventListener('input', () => updateSwatch(textInput.value));
     }
+    // The hidden native color picker copies its value into the text field and fires change there,
+    // which submits the form on every input event.
     nativeInput?.addEventListener('input', () => {
       if (!textInput) return;
       textInput.value = nativeInput.value;
@@ -1201,8 +1210,8 @@ export function refreshActorControlPanel(actor, changes) {
 }
 
 /**
- * Re-fetch the art the open panel for one Actor shows, after a file was overwritten in place. Reached through
- * api.presentation.tokenArt.refresh and refreshAuthoringPanel (api/facade.mjs). Returns whether a panel was open.
+ * Reload the images the open panel for one Actor shows, after a file was overwritten in place. Returns whether a
+ * panel was open.
  */
 export function refreshActorControlPanelArt(actorUuid) {
   const panel = activePanels.get(String(actorUuid ?? ''));

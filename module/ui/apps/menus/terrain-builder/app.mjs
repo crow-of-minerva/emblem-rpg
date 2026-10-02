@@ -137,33 +137,31 @@ const CROSSING_STEPS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0]
 /** Display label per direction. */
 const CROSSING_LABELS = { up: 'Up', down: 'Down', left: 'Left', right: 'Right' };
 
-/** The icon each arm of the transition compass is drawn with. */
+/** The icon for each direction button on the transition compass. */
 const DPAD_ICONS = { up: 'fa-caret-up', down: 'fa-caret-down', left: 'fa-caret-left', right: 'fa-caret-right' };
 
 const crossingSkillOptions = (selected) =>
   CROSSING_SKILL_TYPES.map(o => ({ value: o.value, label: o.label, selected: o.value === selected }));
 
+/** Read a crossing DC multiplier field. A blank field reads as 0; only a missing control gets the default. */
 const _readDCMult = (root, field) => {
   const raw = Number(root.querySelector(`[name="${field}"]`)?.value);
   return Number.isFinite(raw) ? Math.max(0, raw) : CROSSING_DC_MULT_DEFAULT;
 };
 
 /* -------------------------------------------- */
-/*  Selection Agreement                         */
+/*  Shared Values Across a Selection            */
 /* -------------------------------------------- */
 
-/** A comparable signature for a square's spawn arrays, used to tell whether a selection agrees. */
+/** Spawn list as text, to check whether the selected squares share one list. */
 const _spawnSig = (list) => JSON.stringify((list ?? []).map(sanitizeTerrainSpawn));
 
 /** The same, for a square's exceptions. */
 const _exceptionSig = (list) => JSON.stringify((list ?? []).map(sanitizeException));
 
 /**
- * The reader `projectSelectionFieldValues` in `form-fields.mjs` asks for: one stored path across the selection,
- * offering a value only where every selected square already agrees on it.
- *
- * A field is authored per square, so a disagreeing selection opens at the field's default rather than at one
- * square's value, and an empty selection opens at the default too.
+ * Read one saved field across the selected squares: their shared value, or the default if they differ or nothing is
+ * selected.
  * @param {string[]} sel    The selected cell keys.
  * @param {object} grid     The Scene terrain grid.
  * @returns {function(string, *): *}
@@ -184,9 +182,13 @@ let _instance = null;
 /* -------------------------------------------- */
 
 /**
- * Build the per-cell entries TerrainAuthoringService.replaceCells writes when the selection is saved. A spanned
- * visual effect is stored only at the rectangle's top-left anchor. Spanned audio and light are written to every
- * selected square under one shared key. Other squares that used the same teleport tag are detached first.
+ * Build the per-square entries TerrainAuthoringService.replaceCells writes when the selection is saved.
+ *
+ * Each selected square is replaced whole from the form, keeping only its zone and elevation. A field the selection
+ * disagreed on opened at its default, so it is saved as that default on every square. A spanned visual effect is
+ * stored only on the rectangle's top-left square. Spanned audio and light are written to every selected square under
+ * one shared key. Other squares using the same teleport tag lose their teleport first; the old partner of a selected
+ * pad with a different tag is left as a pad with no exit.
  * @param {string[]} sel   The selected cell keys.
  * @param {object} data    The per-square form, already read.
  * @returns {object} The cell entries, keyed by cell.
@@ -195,12 +197,13 @@ function _selectionSquares(sel, data) {
   const grid = getTerrainGrid(canvas.scene);
   const setUpdate = {};
 
-  // A spanning effect is stored at the rectangle's top-left anchor with its size in cells.
+  // A spanning effect is stored on the rectangle's top-left square with its size in cells.
   const rect = _rectInfo(sel);
   const spanActive = !!data.effect && data.effectSpan && !!rect?.isRect && sel.length > 1;
 
   // Each square gets its own audio key, or a spanned selection shares one. syncTerrainPlaceables turns the keys into
-  // AmbientSound documents after the save, one per key at the centre of its squares.
+  // AmbientSound documents after the save, one per key at the centre of its squares, so an unspanned selection gets
+  // one sound per square.
   const audioActive = !!data.soundFile;
   const audioSpan = audioActive && data.audioSpan && sel.length > 1;
   let sharedAudioKey = null;
@@ -209,7 +212,7 @@ function _selectionSquares(sel, data) {
     sharedAudioKey = keys.size === 1 ? [...keys][0] : foundry.utils.randomID();
   }
 
-  // Lights are keyed the same way and become AmbientLight documents.
+  // Lights are keyed the same way and become AmbientLight documents, one per key.
   const lightActive = (data.light.dim > 0 || data.light.bright > 0);
   const lightSpan = lightActive && data.lightSpan && sel.length > 1;
   let sharedLightKey = null;
@@ -220,7 +223,7 @@ function _selectionSquares(sel, data) {
 
   const isTeleport = data.transition === 'teleport';
 
-  // Detach any other squares using this teleport tag before writing the selected pair.
+  // Take the teleport off any other squares using this tag before writing the selected pair.
   if (isTeleport) {
     for (const [k, d] of Object.entries(grid)) {
       if (d?.transition !== 'teleport' || d.teleportLetter !== data.teleportLetter || sel.includes(k)) continue;
@@ -367,7 +370,7 @@ async function _singleSquareOverview(key, grid) {
 }
 
 /**
- * Read how a selection may be entered and left onto the per-square form.
+ * Fill in the selection's transition fields: directional, crossing or teleport.
  * @param {object} fields   The per-square form being filled, extended in place.
  * @param {string[]} sel    The selected cell keys.
  * @param {object} grid     The Scene terrain grid.
@@ -388,7 +391,7 @@ function _readSelectionTransitions(fields, sel, grid) {
   fields.isCrossing = fields.transition === 'crossing';
   fields.hasTransition = !!fields.transition && !fields.isCrossing;
 
-  // An arm starts on only when every selected square has it. A mixed arm starts off.
+  // A direction starts lit only if every selected square has it.
   fields.transitionDirs = CROSSING_DIRECTIONS.map(dir => {
     const vals = new Set(sel.map(k => !!normalizeTransitionDirs(grid[k])?.[dir]));
     return {
@@ -400,8 +403,8 @@ function _readSelectionTransitions(fields, sel, grid) {
   });
   fields.transitionAllDirs = fields.transitionDirs.every(d => d.on);
 
-  // A crossing arm can be authored only where the elevation changes. An arm whose squares don't share one authored
-  // skill defaults to Finesse when more of them drop than climb, and to Athletics otherwise.
+  // A crossing direction can be set only where the height changes. If the squares disagree on its skill, it defaults
+  // to Finesse when more of them step down, otherwise Athletics.
   fields.crossingDirs = CROSSING_DIRECTIONS.map(dir => {
     const [dx, dy] = CROSSING_STEPS[dir];
     let enabled = false;
@@ -435,12 +438,8 @@ function _readSelectionTransitions(fields, sel, grid) {
 }
 
 /**
- * Read what a selection shares onto the per-square form, beyond the stored values `projectSelectionFieldValues`
- * already read from the field table: the two span toggles, the row lists and the options and flags the template
- * switches its conditional blocks on.
- *
- * A span or a row list needs a whole-selection comparison rather than one stored path, and the option lists come
- * from Foundry's own lighting choices, so neither belongs in the pure field table.
+ * Fill in the selection's fields that aren't a single saved value: the two span toggles, the row lists, and the
+ * option lists and flags the template shows or hides its blocks with.
  * @param {object} fields   The per-square form being filled, extended in place.
  * @param {string[]} sel    The selected cell keys.
  * @param {object} grid     The Scene terrain grid.
@@ -455,7 +454,7 @@ function _readSelectionContents(fields, sel, grid) {
   const exceptionSigs = new Set(sel.map(k => _exceptionSig(grid[k]?.exceptions)));
   fields.exceptions = (count > 0 && exceptionSigs.size === 1) ? JSON.parse([...exceptionSigs][0]) : [];
 
-  // A span is shared when every selected square already carries the same placeable key.
+  // A span is shared when every selected square already has the same sound or light key.
   fields.audioSpan = count > 1 && sel.every(k => grid[k]?.audioKey && grid[k].audioKey === grid[sel[0]]?.audioKey);
   fields.lightSpan = count > 1 && sel.every(k => grid[k]?.lightKey && grid[k].lightKey === grid[sel[0]]?.lightKey);
 
@@ -468,6 +467,7 @@ function _readSelectionContents(fields, sel, grid) {
   fields.showTpMov = fields.isTeleport && fields.isMovementCost;
 }
 
+/** The selection's bounding rectangle, whether the selection fills it, and its top-left square's key. */
 function _rectInfo(sel) {
   if (!sel.length) return null;
   let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
@@ -501,15 +501,7 @@ const TRAY_META = {
   adv: { label: 'Advanced Settings', icon: 'fa-sliders', flag: 'isTrayAdv' }
 };
 
-/**
- * The builder's view state, as tables of key to the flag the template switches its panes on.
- *
- * `_mode` picks which of the three modes shows, and `#onSetMode` is its only writer. It tells the canvas which
- * tools to offer through `setTerrainBuilderMode` in overlay.mjs, and decides which controls `_onRender` wires and
- * which sections the template renders. Terrain mode has an open Selection tray, `_activeTray`, set by `#onSetTray`
- * and `#onOverviewJump` and applied by `_applyTray` without a re-render so unsaved fields survive. Wall mode has
- * `_wallSnap`, which `setWallSnapMode` passes to the canvas.
- */
+/** The builder's modes and wall snap modes, each key mapped to the flag the template shows its sections with. */
 const BUILDER_MODES = Object.freeze({ terrain: 'isTerrain', walls: 'isWalls', settings: 'isSettings' });
 const WALL_SNAP_MODES = Object.freeze({ grid: 'isGridSnap', free: 'isFreeSnap', polygon: 'isPolySnap' });
 
@@ -542,7 +534,7 @@ const WALL_PRESETS = Object.freeze({
     threshold: { sight: 2, light: 2, attenuation: true } }
 });
 
-/** The builder's first wall: blocks movement and sight, and lets light and sound through to the terrain's own. */
+/** The restrictions the builder starts with: walls block movement and sight, but not light or sound. */
 const DEFAULT_WALL_RESTRICTIONS = Object.freeze({
   move: 'NORMAL', sight: 'NORMAL', light: 'NONE', sound: 'NONE',
   threshold: Object.freeze({ sight: 2, light: 2, sound: 2, attenuation: false })
@@ -581,9 +573,7 @@ const LOCK_TOOLTIPS = Object.freeze({
 });
 
 /**
- * What "New from Selection" creates. The builder has no form for naming or colouring a zone up front, so a new zone
- * is created plain, in the outline colour `nextZoneColor` picks to stand apart from the scene's other zones, and the
- * zone row's own Name, Outline and Elev fields edit it afterwards through `#onUpdateZone`.
+ * A new zone starts as "Zone" at level 0 in an unused colour; the zone row edits it afterwards.
  * @type {Readonly<{level: number, name: string}>}
  */
 const NEW_ZONE = Object.freeze({ level: 0, name: 'Zone' });
@@ -617,7 +607,7 @@ function colorationOptions(selected) {
 /**
  * Whether the current scene can carry terrain at all.
  *
- * Everything here is authored per grid square, so a hex or gridless map has nothing to paint onto.
+ * Everything here is set per grid square, so a hex or gridless map has nothing to paint onto.
  * @returns {boolean}
  */
 function _isSquareScene() {
@@ -629,8 +619,7 @@ function _isSquareScene() {
 /* -------------------------------------------- */
 
 /**
- * A spreadsheet-style column tag from a zero-based index, so teleport pairs run A, B, then AA rather than running
- * out at twenty-six.
+ * A spreadsheet-style column tag from a zero-based index: A to Z, then AA, AB and so on.
  * @param {number} n              Zero-based index.
  * @returns {string}
  */
@@ -747,7 +736,8 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   static _closePromise = null;
 
   /**
-   * Which of the three modes is showing (a key of `BUILDER_MODES`).
+   * Which of the three modes is showing (a key of `BUILDER_MODES`). Only `#onSetMode` changes it, and it also tells
+   * the canvas overlay which tools to offer.
    * @type {string}
    */
   _mode = 'terrain';
@@ -761,7 +751,7 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   _wallRestrictions = foundry.utils.deepClone(DEFAULT_WALL_RESTRICTIONS);
 
   /**
-   * How wall drawing snaps (a key of `WALL_SNAP_MODES`).
+   * How wall drawing snaps (a key of `WALL_SNAP_MODES`). `setWallSnapMode` passes it to the canvas.
    * @type {string}
    */
   _wallSnap = 'grid';
@@ -775,12 +765,13 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /**
    * The open data tray. One is always open: Overview by default, with Stats shown instead on a bare square.
+   * `_applyTray` shows it without a re-render, so unsaved fields survive a tray switch.
    * @type {string}
    */
   _activeTray = 'overview';
 
   /**
-   * Whether the selected square carries authored data, which is what the Overview tray reads.
+   * Whether the selected square has saved terrain data, which is what the Overview tray shows.
    * @type {boolean}
    */
   _hasOverview = false;
@@ -891,18 +882,15 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
     return app;
   }
 
-  /**
-   * Close from the scene controls, marked so the close handler doesn't switch the control back underneath the one
-   * being selected.
-   */
+  /** Close when the GM switches away from the Terrain Builder scene control. Same as closeForCanvasChange. */
   static closeFromControl() {
     void TerrainBuilder.closeForCanvasChange();
   }
 
   /**
-   * Close the builder without switching the scene control back. scene-controls.mjs calls it when the control is
-   * switched away (through closeFromControl), before the canvas is torn down, and on canvasReady for a builder that
-   * survived a Scene change. Calls made while a close is running share it.
+   * Close the builder without switching the scene control back to tokens. Used when the GM picks another scene
+   * control, before the canvas is torn down, and on canvasReady for a builder that survived a Scene change. Calls made
+   * while a close is running share it.
    */
   static closeForCanvasChange() {
     if (TerrainBuilder._closePromise) return TerrainBuilder._closePromise;
@@ -922,9 +910,9 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   /**
    * Build the template context from the selected cells.
    *
-   * The per-square controls come from the field table in `form-fields.mjs`, which offers a value only where the
-   * selection agrees on it and otherwise the field's default. What a single stored path can't answer (the effect
-   * span and its anchor, the transition arms, the row lists) is read around it.
+   * The per-square controls come from the field table in `form-fields.mjs`: the selection's shared value, or the
+   * field's default where the squares differ. The effect span, transition directions and row lists are read
+   * separately.
    * @returns {Promise<object>}
    */
   async _prepareContext() {
@@ -933,7 +921,7 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
     const grid = getTerrainGrid(canvas.scene);
     const zones = getZones(canvas.scene);
 
-    // A spanned effect is stored once at its rectangle's anchor, so its fields are read from there.
+    // A spanned effect is stored once on its rectangle's top-left square, so its fields are read from there.
     const rect = _rectInfo(sel);
     const anchor = rect ? grid[rect.anchorKey] : null;
     const fields = {};
@@ -1055,6 +1043,7 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   /*  Scene Settings                              */
   /* -------------------------------------------- */
 
+  /** Wire the settings-mode controls. Each Scene setting saves as soon as its control changes. */
   _wireSettingsControls() {
     const root = this.element;
     const cb = root.querySelector('[name="showGrid"]');
@@ -1199,7 +1188,7 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   /**
-   * Delete a wall the user clicked in wall mode.
+   * Delete a wall the GM right-clicked in wall mode.
    * @param {string} wallId                 Wall to delete.
    * @returns {Promise<void>}
    */
@@ -1235,10 +1224,8 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   /* -------------------------------------------- */
 
   /**
-   * Read every tray control into the per-square form that `_selectionSquares`, the presets and the clipboard use.
-   *
-   * The DOM half is this method: one lookup per entry of the field table in `form-fields.mjs`. The shape, the
-   * defaults and the normalisation (the stored two-letter teleport tag included) belong to `readTerrainFormValues`.
+   * Read every tray control into the per-square form that Save, presets and Copy use. `readTerrainFormValues` turns
+   * the raw values into the saved shape.
    * @returns {object}
    */
   _readPerSquareForm() {
@@ -1270,7 +1257,7 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   /**
-   * The authored Zone Crossing overrides, one entry per direction the form allows editing.
+   * The Zone Crossing settings, one entry per direction the form allows editing.
    * @returns {object}
    */
   _readCrossingRows() {
@@ -1298,6 +1285,10 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
+  /**
+   * Show and hide the transition, teleport and respawn fields as their selects change, and wire the transition
+   * compass and slider readouts. The show/hide rules must match the template's initial `display:none` conditions.
+   */
   _wireTerrainControls() {
     const root = this.element;
     const transSel = root.querySelector('[name="transition"]');
@@ -1364,15 +1355,15 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   /**
    * The tray actually shown, which is the open one unless it is an Overview the square has no data to fill.
    *
-   * The fallback is not written back to `_activeTray`, so Overview stays home: stepping onto a bare square shows Stats
-   * and stepping back onto an authored one returns to Overview, while an explicit tray pick still sticks.
+   * The fallback is not saved to `_activeTray`: stepping onto a bare square shows Stats, stepping back onto a square
+   * with data returns to Overview, and a tray the GM picks still sticks.
    * @returns {string} Tray key.
    */
   _resolvedTray() {
     return (this._activeTray === 'overview' && !this._hasOverview) ? 'stats' : this._activeTray;
   }
 
-  /** Toggle tray visibility and title without rerendering the form, preserving unsaved fields across modes. */
+  /** Show the open tray and its title without re-rendering, so unsaved fields survive a tray switch. */
   _applyTray() {
     const root = this.element;
     if (!root) return;
@@ -1395,9 +1386,8 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   /**
    * Run one terrain authoring call and report a failure instead of letting it escape into Foundry's action handler.
    *
-   * TerrainAuthoringService (engine/authoring.mjs) writes the Scene directly on this GM's client, outside the
-   * command path, so a failed write arrives here as a thrown error (`terrain.persistence-failed` for a cell update).
-   * It is logged and the user is warned. Nothing is retried, and the form is left as the user typed it.
+   * Writes go straight from the GM's client to the Scene, so a failed write shows up here as an error. It is logged
+   * and the GM is warned. Nothing is retried, and the form keeps what the GM typed.
    * @param {string} action                 The handler reporting the failure.
    * @param {function(): Promise<*>} work   The authoring call.
    * @param {string} failure                What the user is told when it fails.
@@ -1415,8 +1405,8 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   /**
-   * The tail every terrain and zone action shares: refresh the zone outlines, tell the user what happened and
-   * re-read the Scene. A failed call skips all three, so unsaved tray fields survive it.
+   * Run a terrain or zone change, then refresh the zone outlines, tell the GM what happened and re-render from the
+   * Scene. A failed call skips all three, so unsaved tray fields survive it.
    * @param {string} action                 The handler reporting the failure.
    * @param {function(): Promise<*>} work   The authoring call.
    * @param {string} notice                 What the user is told when it completes.
@@ -1430,8 +1420,8 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   /**
-   * Save the form to the selected squares through TerrainAuthoringService.replaceCells. A teleport pair must be
-   * exactly two squares with a tag, and zone-owned fields are kept.
+   * Save the form to the selected squares through TerrainAuthoringService.replaceCells. Every field except zone and
+   * elevation is replaced from the form. A teleport pair must be exactly two squares with a tag.
    */
   static async #onSaveSelection(event) {
     event.preventDefault();
@@ -1455,7 +1445,7 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
       `Saved Terrain to ${sel.length} square${sel.length === 1 ? '' : 's'}.`);
   }
 
-  /** Strip every selected square back to nothing. */
+  /** Strip every selected square back to nothing, zone membership and elevation included. */
   static async #onClearSelection(event) {
     event.preventDefault();
     if (!game.user.isGM) { notify.warn('GM only.'); return; }
@@ -1466,7 +1456,7 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   /**
-   * Revert a square a spell has painted over, back to the terrain it was authored with.
+   * Revert a square a spell has painted over, back to its original terrain.
    *
    * Spell-placed terrain is stored as an edit over the original rather than replacing it, so this is a revert rather
    * than a clear.
@@ -1485,11 +1475,10 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
   /* -------------------------------------------- */
 
   /**
-   * Apply preset values across all trays, then refresh conditional fields and slider labels before Save.
-   *
-   * `projectPresetToFormValues` decides what each control should show, from the same field table `_readPerSquareForm`
-   * reads, so a preset saved from this form comes back unchanged. The row lists, the transition compass and the
-   * change events the conditional blocks listen for are applied here, where the DOM is.
+   * Write a preset or copied tile into the tray controls, without saving. `projectPresetToFormValues` works out each
+   * control's value from the same field table the form is read with, so a preset saved from this form loads back
+   * unchanged. Only the three selects that show or hide other fields get a `change` event; the Overview tray keeps
+   * its old values until the next render.
    * @param {object} preset         Preset parameters, or a copied tile.
    */
   _applyPresetToForm(preset) {
@@ -1722,7 +1711,7 @@ export class TerrainBuilder extends HandlebarsApplicationMixin(ApplicationV2) {
     this._applyTray();
   }
 
-  /** Flip an Overview flag chip, which owns no field of its own and drives its tray's checkbox. */
+  /** Toggle an Overview flag chip by flipping its tray's checkbox, which is what Save reads. */
   static #onOverviewToggle(event, target) {
     event.preventDefault();
     const cb = this.element?.querySelector(`.terrain-tray-pane [name="${target.dataset.ovField}"]`);

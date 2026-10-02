@@ -30,13 +30,13 @@ export async function runActiveTriggers(services, self, target, snapshot, trigge
 }
 
 /**
- * Run the landed-blow trigger family and return the defeat status the blow ends with.
- * The striker's hit triggers run first, then the struck unit's On Struck. A unit the blow defeated is only pending
- * then, so either side's steps still reach it and a heal can save it.
- * A claimed defeat is then re-checked. A confirmed kill fires the victim's On Death and the striker's On Kill, each
- * sparing the corpse, and On Kill's restored slots go to `restores`. A saved unit fires nothing more.
- * Every condition in the family reads the struck unit as the blow left it: struckAfterBlow overlays the HP and
- * stance that settleLandedBlow in blows.mjs wrote, so "puts the target into Stance Break" reads `targetStn <= 0`.
+ * Run the effects a landed blow sets off and return the defeat status the blow ends with.
+ * The striker's on-hit effects run first, then the struck unit's On Struck. A unit the blow dropped is not yet
+ * defeated, so either side's effects still reach it and a heal can save it.
+ * The defeat is then checked again. If it holds, the dead unit's On Death and the striker's On Kill run, neither
+ * targeting the body, and turn slots On Kill gives back go to `restores`. A saved unit sets off nothing more.
+ * Effect conditions see the struck unit's HP and stance as the blow left them (struckAfterBlow), so "puts the
+ * target into Stance Break" reads `targetStn <= 0`.
  */
 export async function runHitTriggers(services, acting, defending, snapshot, blow, effectHealth, restores = null) {
   const struck = struckAfterBlow(defending, blow);
@@ -61,13 +61,12 @@ export async function runHitTriggers(services, acting, defending, snapshot, blow
 }
 
 /**
- * Copy the struck combat side with condition facts that carry the blow's written `hpAfter` and `stanceAfter`.
- * effectRequest reads these facts as the striker's `target` and as the struck unit's own `self`. The side's uuids,
- * effects and heal echoes stay as they were, and the frozen snapshot facts are not touched. A unit the blow leaves
- * standing at zero stance reads as stance broken, the same line resolveStanceBreak in game/combat/damage.mjs draws.
- * @param {object} side The struck side from the pre-blow exchange snapshot.
+ * Copy the struck unit so effect conditions see its HP and stance as the blow left them, both as the striker's
+ * `target` and as its own `self`. A unit left standing at 0 stance also reads as Stance Broken, as
+ * resolveStanceBreak in game/combat/damage.mjs decides.
+ * @param {object} side The struck unit as read before the blow.
  * @param {object} blow The landed blow record.
- * @returns {object} The side itself when there are no facts or no committed numbers to overlay.
+ * @returns {object} The side itself when there is nothing to change.
  */
 function struckAfterBlow(side, blow) {
   const facts = side.conditionSelf;
@@ -102,10 +101,9 @@ export async function runMissTriggers(services, acting, defending, snapshot, che
 }
 
 /**
- * The EffectExecutionService request for one group of an exchange's trigger entries. It hands over the snapshot's
- * combat context beside the runtime, not inside it, so a damage or heal step reads each combatant's protections,
- * immunities and maximums the way that snapshot read them for the blows, while the runtime that presentation beats
- * carry to every client holds none of it.
+ * The EffectExecutionService request for one item's trigger entries in an attack. The combat numbers (protections,
+ * immunities, maximums) go beside the runtime, not inside it: damage and heal steps use them as the attack read
+ * them, and the runtime, which is sent to every client with the animations, stays free of them.
  */
 function effectRequest(entries, self, target, snapshot, triggers, context = {}, activatedItem = null) {
   const selfActor = self.conditionSelf ?? self;
@@ -133,6 +131,10 @@ function effectRequest(entries, self, target, snapshot, triggers, context = {}, 
   };
 }
 
+/**
+ * Run `entries` one item at a time. After each item, any unit its steps killed gets its On Death run, which can
+ * kill again and recurse. `deathClaims` holds the units whose On Death has started, so it never runs twice.
+ */
 async function runGroupedEffects(
   services, entries, self, target, snapshot, triggers, context, effectHealth, deathClaims = new Set()
 ) {
@@ -153,7 +155,7 @@ async function runGroupedEffects(
   return results;
 }
 
-/** Fire On Death for each unit an effect step killed, once a re-check confirms the kill. The run spares the corpse. */
+/** Run On Death for each unit an effect step killed, once a second check confirms the kill. It skips the body. */
 async function runEffectDeathTriggers(
   services, consequences, self, target, snapshot, context, effectHealth, deathClaims
 ) {
@@ -174,8 +176,8 @@ async function runEffectDeathTriggers(
 }
 
 /**
- * Re-read every claimed defeat so an Extra Life or survival consumed mid-trigger is honoured.
- * A recheck that releases a claim writes the victim's Token, so it captures through the exchange's operation.
+ * Check each claimed defeat again, so a heal or Extra Life that landed during the effects is honoured.
+ * Releasing a claim writes the unit's Token, so that write saves undo data on the attack's operation.
  */
 export async function revalidateEffectDefeats(services, consequences, startIndex, operation = null) {
   for (let index = Math.max(0, startIndex); index < consequences.length; index += 1) {
@@ -216,7 +218,7 @@ export function collectRestores(results, restores) {
   for (const result of results ?? []) collect(result?.outcomes ?? []);
 }
 
-/** The units the exchange's blows and effects killed, after each defeat's re-check. postCombat effects spare them. */
+/** The units the attack's blows and effects killed, after each defeat's second check. postCombat effects skip them. */
 export function exchangeSlain(transcript, effectHealth) {
   return [...new Set([...transcript, ...effectHealth]
     .filter(record => isConfirmedKill(record.defeatStatus))
@@ -274,12 +276,12 @@ function collectEffectHealth(outcomes, target) {
 }
 
 /* -------------------------------------------- */
-/*  Stance settlement                           */
+/*  Stance Break                                */
 /* -------------------------------------------- */
 
 /**
  * Apply or clear Stance Break after a strike, from a fresh read of the unit (resolveStanceBreak), and retry when the
- * write finds the unit changed. Its effect writes capture into the exchange's own operation.
+ * write finds the unit changed. Its effect writes save undo data on the attack's operation.
  */
 export async function settleCombatStance(stances, actorUuid, operation = null) {
   for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
@@ -328,8 +330,8 @@ export async function presentCombatImpact(services, records, stanceBreak, messag
 }
 
 /**
- * Publish the exchange's Stance Break events, and play the break animation for any applied break that
- * presentCombatImpact didn't already show.
+ * Publish the attack's Stance Break events straight away (they are not held until the command commits), and play
+ * the break animation for any applied break that presentCombatImpact didn't already show.
  */
 export async function publishStanceBreaks(services, records, context) {
   for (const result of records) {
@@ -357,9 +359,10 @@ export async function publishStanceBreaks(services, records, context) {
 /* -------------------------------------------- */
 
 /**
- * Finish every defeat the exchange's blows and effect steps claimed through the shared defeat pipeline.
- * Use the opening snapshot's faction in defeat events because the removed Token can no longer supply it. The loot
- * drop and the Token removal belong to the exchange's own operation, and so does the defeat event it publishes.
+ * Finish every defeat the attack's blows and effect steps claimed through the shared defeat pipeline.
+ * The defeat event takes its faction from the attack's opening read, since the Token is gone by then; a unit that
+ * is neither the attacker nor the target gets the target's faction. The loot drop, the Token removal and the
+ * defeat event are all part of the attack's command, so the event waits for it to commit.
  */
 export async function settleDefeatPresentations(services, transcript, initial, context) {
   const defeats = new Map();
@@ -394,8 +397,8 @@ export async function settleDefeatPresentations(services, transcript, initial, c
 }
 
 /**
- * Award both sides' level XP from the settlement snapshot. A slain side earns nothing, and an attack on a
- * Destructible earns no XP.
+ * Award both sides' level XP from the map as it stands after the blows. A slain side earns nothing, and an attack
+ * on a Destructible earns no XP.
  */
 export async function settleCombatExperience(progression, snapshot, defeat, defenderCouldCounterAtStart) {
   if (snapshot.target.destructible === true) {
@@ -461,7 +464,7 @@ export function eventsAfterCommit(events, outcome, transcript, effectHealth = []
   events.publish(EVENT_IDS.COMBAT_EXCHANGE_COMMITTED, outcome, { operation });
 }
 
-/** Apply the end of turn the exchange staged on the source Actor once its last presentation beat has passed. */
+/** Apply the end of turn the attack saved as pending on the attacker, once its last animation has played. */
 export async function settleDeferredEndTurn(services, outcome, operation = null) {
   if (outcome.continuation.kind !== COMBAT_CONTINUATIONS.END_TURN || outcome.sourceDefeated) return true;
   const snapshot = await services.combatState.getContinuationSnapshot(outcome.sourceTokenUuid);

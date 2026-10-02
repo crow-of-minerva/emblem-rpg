@@ -15,8 +15,8 @@ export const OBJECT_FIXTURE_TYPES = Object.freeze([
 ]);
 
 /**
- * Subtypes whose features aren't built yet: they have nothing to author on the Object sheet and no board
- * interaction. `objectSubtypeBracketed` in `game/objects/rules.mjs` is the check.
+ * Subtypes whose features aren't built yet: they have nothing to author on the Object sheet and can't be used on
+ * the map. `objectSubtypeBracketed` in `game/objects/rules.mjs` checks for them.
  */
 export const BRACKETED_OBJECT_TYPES = Object.freeze(['Altar']);
 
@@ -57,16 +57,16 @@ export const ARMAMENT_FLAGS = Object.freeze({
 });
 
 /**
- * Wall flag shared by the door writer and vision projection. It identifies the owning Door so its walls do not
- * hide its own face.
+ * Wall flag the door code writes and the vision code reads. It names the owning Door so its walls do not hide its
+ * own face.
  */
 export const DOOR_WALL_FLAG = 'doorWall';
 
 export const DROP_ACTIONS = Object.freeze({ GROUND: 'ground', DISCARD: 'discard' });
 
 /**
- * What a ground drop settlement reports (foundry/adapters/document-writes/objects.mjs): settled, stale (nothing
- * written) or reverted (undone after a failed write). No writer produces `blocked` or `recovery-required`.
+ * What a ground drop save reports (foundry/adapters/document-writes/objects.mjs): settled, stale (nothing written)
+ * or reverted (undone after a failed write). `blocked` and `recovery-required` are unused.
  */
 export const DROP_SETTLEMENT_OUTCOMES = Object.freeze({
   SETTLED: 'settled',
@@ -87,7 +87,7 @@ const DROP_INTENT_KEYS = ['sourceTokenUuid', 'itemId', 'action'];
 const UNPLACED_DROP_INTENT_KEYS = ['sourceActorUuid', 'itemId', 'action'];
 const DOCUMENT_ID = /^[A-Za-z0-9]{8,32}$/;
 
-/** Bound one lock-opening request. Anything outside the three named fields is refused. */
+/** Check one lock-opening request. Anything outside the three named fields is refused. */
 export function normalizeLockOpenIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, LOCK_INTENT_KEYS)) return null;
   const sourceTokenUuid = String(payload.sourceTokenUuid ?? '');
@@ -99,7 +99,7 @@ export function normalizeLockOpenIntent(payload) {
   return Object.freeze({ sourceTokenUuid, lockTokenUuid, method });
 }
 
-/** Bound one take-up request. The Armament is named by its placed Token, never by its base Actor. */
+/** Check one take-up request. The Armament is named by its placed Token, never by its base Actor. */
 export function normalizeArmamentWieldIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, ARMAMENT_WIELD_KEYS)) return null;
   const sourceTokenUuid = String(payload.sourceTokenUuid ?? '');
@@ -109,7 +109,7 @@ export function normalizeArmamentWieldIntent(payload) {
   return Object.freeze({ sourceTokenUuid, armamentTokenUuid });
 }
 
-/** Bound one release request. `restore` says whether the displaced weapon comes back into hand. */
+/** Check one release request. `restore` says whether the displaced weapon comes back into hand. */
 export function normalizeArmamentReleaseIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, ARMAMENT_RELEASE_KEYS)) return null;
   const sourceTokenUuid = String(payload.sourceTokenUuid ?? '');
@@ -119,7 +119,7 @@ export function normalizeArmamentReleaseIntent(payload) {
 }
 
 /**
- * Bound one drop request: the unit's placed Token, the carried Item, and whether it lands or is destroyed. A unit
+ * Check one drop request: the unit's placed Token, the carried Item, and whether it lands or is destroyed. A unit
  * standing on no Scene is named by its Actor instead, and can only destroy what it carries.
  */
 export function normalizeItemDropIntent(payload) {
@@ -143,8 +143,8 @@ export function normalizeItemDropIntent(payload) {
 /*  Timing                                      */
 /* -------------------------------------------- */
 /**
- * Lock-picking timings: the wait for the dice, and the pause after a failed pick. The engine waits on its own clock,
- * not on Dice So Nice.
+ * Lock-picking timings: the wait for the dice, and the pause after a failed pick. The host waits a fixed time, not
+ * for Dice So Nice.
  */
 export const LOCK_ATTEMPT_TIMING = Object.freeze({ diceSettleHold: 2600, failureHold: 1200 });
 
@@ -164,7 +164,7 @@ export const OBJECT_PRESENTATION_EVENTS = Object.freeze({
   DESTROYED: 'destroyed'
 });
 
-/** Build one bounded object feedback message the active GM broadcasts after a settlement. */
+/** Build one object result message the GM's client sends to every client once a change is saved. */
 export function objectPresentationMessage(event, data = {}) {
   if (!Object.values(OBJECT_PRESENTATION_EVENTS).includes(event)) {
     throw new TypeError(`Unknown object presentation event: ${event}`);
@@ -172,7 +172,7 @@ export function objectPresentationMessage(event, data = {}) {
   return Object.freeze({ kind: OBJECT_PRESENTATION_KIND, event, ...structuredClone(data) });
 }
 
-/** Accept only bounded object feedback at the presentation socket. */
+/** Check an object message received over the socket. */
 export function isObjectPresentationMessage(value) {
   if (!plainRecord(value) || value.kind !== OBJECT_PRESENTATION_KIND) return false;
   if (!Object.values(OBJECT_PRESENTATION_EVENTS).includes(value.event)) return false;

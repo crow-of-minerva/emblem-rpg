@@ -154,9 +154,9 @@ async function repairActorReferences(actor, sceneId, tokenIds) {
 /* -------------------------------------------- */
 
 /**
- * Turn the board events that can decide a map (a defeat, a removed token, a finished turn) into objective checks,
- * on the command host only. `executeInternal` is MaintenanceScheduler.submit (init/system.mjs), which merges
- * identical submissions into one run.
+ * Turn the events that can decide a map (a defeat, a removed token, a finished turn) into objective checks, on the
+ * host client only. `executeInternal` queues a system maintenance command (MaintenanceScheduler.submit in
+ * engine/maintenance.mjs), which merges identical submissions into one run.
  */
 export function createEncounterLifecycle({
   executeInternal, deferring = () => false, encounterRunning = () => false, events = null, notify = null,
@@ -225,9 +225,13 @@ export function createEncounterLifecycle({
       }).catch((diagnosticError) => { reportFoundryError(import.meta.url, diagnosticError, 'createEncounterLifecycle'); });
     },
 
-    /** Queue a new end request, resolved once the command that wrote it has released the map. */
+    /**
+     * Queue an end request written to the encounter, resolved once the command that wrote it has released the map.
+     * Clearing the flag also lands here, because Foundry's diff carries the deletion marker as the value.
+     */
     onEncounterFlagsChanged(combat, changed) {
       const pending = changed?.flags?.[SYSTEM_ID]?.[OBJECTIVE_FLAGS.END_PENDING];
+      // A write with `commit` but no `requestId` is the command finishing the request, not a new one.
       if (!pending || (typeof pending === 'object' && 'commit' in pending && !('requestId' in pending))) return;
       dispatch.pendingEnd(combat);
     },
@@ -268,12 +272,12 @@ export function createEncounterLifecycle({
 }
 
 /**
- * Hold the submissions that arrive while startup keeps maintenance back or a running command covers the map, and
- * replay them on flush, after checking that the encounter and unit still match. A turn completed before the host is
- * ready is submitted with autoAdvance off, so it can't advance the phase. An end request queued while the map was
- * busy is finished here with RESOLVE_OBJECTIVE_END once the map is free.
+ * Queue checks that arrive during startup or while a command is busy on that map, and run them once the map is free,
+ * if the encounter and unit still match. A turn completed before the host is ready is submitted with autoAdvance
+ * off, so it can't advance the phase. An end request queued while the map was busy is finished here with
+ * RESOLVE_OBJECTIVE_END once the map is free.
  *
- * Held work replays in the order the rules need, not the order the hooks fired. A map's objective checks run before
+ * Queued checks run in the order the rules need, not the order the hooks fired. A map's objective checks run before
  * its turn completion, so a defeat during the turn is counted before the phase change decides whether the
  * encounter is already over.
  */
@@ -344,13 +348,13 @@ function createEncounterDispatch({ executeInternal, deferring, encounterRunning,
   });
 }
 
-/** Replay rank: objective checks, and anything unlisted, before turn completions. Ties keep their arrival order. */
+/** Run order for queued checks: objective checks, and anything unlisted, before turn completions. */
 const RETAINED_DISPATCH_ORDER = Object.freeze({
   [INTERNAL_COMMAND_IDS.ENCOUNTERS.CHECK_OBJECTIVES]: 0,
   [INTERNAL_COMMAND_IDS.ENCOUNTERS.COMPLETE_TURN]: 1
 });
 
-/** The retained entry to dispatch next: the lowest rank, and among equals the one submitted first. */
+/** The queued check to run next: the earliest in run order, and among equals the one submitted first. */
 function nextRetained(pending) {
   const rank = entry => RETAINED_DISPATCH_ORDER[entry.commandId] ?? 0;
   let chosen = null;
@@ -388,7 +392,7 @@ export function phaseMusicEncounterFlagsChanged(changed) {
     || `-=${OBJECTIVE_FLAGS.COMBAT_MUSIC}` in flags);
 }
 
-/** Encounter lifecycle work runs only on the world's command host. */
+/** Encounter lifecycle work runs only on the host client. */
 function activeGm() {
   return isCurrentCoordinator();
 }
@@ -415,9 +419,9 @@ function sceneOfToken(tokenUuid) {
 /* -------------------------------------------- */
 
 /**
- * Rebuild the vision of an actor's tokens when its sight bonus has changed, one tick later. An item or effect isn't
- * applied to the actor yet when its hook fires. The token document is reset, not just re-prepared, because Foundry
- * rebuilds the basic-sight detection mode only from source data.
+ * Rebuild the vision of an actor's tokens when its sight bonus has changed, one tick after the hook. The token
+ * document is reset, not just re-prepared, because Foundry rebuilds the basic-sight detection mode only from source
+ * data.
  * @param {object} scheduling The lifecycle's `defer` and its record of each token's last bonus.
  */
 function refreshSightBonus(actor, { defer, lastBonus }) {
@@ -439,7 +443,7 @@ function refreshSightBonus(actor, { defer, lastBonus }) {
   });
 }
 
-/** Rebuild sight for an actor whose Blinded status changed, one tick later so the effect has applied. */
+/** Rebuild sight for an actor whose Blinded status changed, one tick after the hook. */
 function refreshBlindedSight(effect, { defer }) {
   if (!touchesBlinded(effect)) return;
   const actor = effect.parent;
@@ -452,9 +456,9 @@ function refreshBlindedSight(effect, { defer }) {
 }
 
 /**
- * Vision hook handlers (runtime.vision in init/hooks.mjs): the fog reveal, door sight reconciliation, and rebuilds when
- * an actor's sight bonus, movement plan or Blinded status changes. Door work goes to MaintenanceScheduler as
- * RECONCILE_DOORS, on the command host only.
+ * Vision hook handlers (runtime.vision in init/hooks.mjs): the fog reveal, door sight checks, and rebuilds when an
+ * actor's sight bonus, movement plan or Blinded status changes. Door work goes to MaintenanceScheduler as
+ * RECONCILE_DOORS, on the host client only.
  */
 export function createVisionLifecycle({ executeInternal } = {}) {
   const lastBonus = new WeakMap();
@@ -464,8 +468,8 @@ export function createVisionLifecycle({ executeInternal } = {}) {
   let doorEveryScene = false;
 
   /**
-   * Queue a Scene, or every Scene, for a door sight reconciliation. A lock change or a placement runs at once. A
-   * moved door waits DOOR_RECONCILE_DELAY_MS, so a drag reconciles once.
+   * Queue a Scene, or every Scene, for a door sight check. A lock change or a placement runs at once. A moved door
+   * waits DOOR_RECONCILE_DELAY_MS, so a drag is checked once.
    */
   function scheduleDoorSight({ sceneUuid = '', everyScene = false, delay = 0 } = {}) {
     if (typeof executeInternal !== 'function' || !isCurrentCoordinator()) return;

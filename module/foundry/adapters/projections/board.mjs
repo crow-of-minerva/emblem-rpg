@@ -1,4 +1,11 @@
 /** @layer foundry/adapters/projections */
+/*
+ * Readers that list every token on a Scene, from saved token positions, as plain frozen data for the rules:
+ * projectAuraBoard (each unit and the auras it gives off, for the host client's aura recalculation and the BG3 HUD),
+ * projectTerrainBoard, projectTargetingBoard (item and interaction picks) and projectUnitBoard (read by the Enemy
+ * AI). The functions at the end answer what a unit would get on a square it is considering: terrain bonuses,
+ * hazards, height and auras.
+ */
 import {
   AURA_ATTRIBUTE_PATHS,
   auraEmissionSignature,
@@ -63,14 +70,14 @@ const CHARACTER_TYPE = 'Character';
 const MAX_TOKEN_DIMENSION = 3;
 
 /* -------------------------------------------- */
-/*  Placed unit projection                      */
+/*  Placed units                                */
 /* -------------------------------------------- */
 /**
- * The aura board for one Scene, from saved token positions, for FoundryActorRepository.getAuraBoardSnapshot, which
- * aura reconciliation settles from. World Characters that aren't placed but still carry aura values are included so
- * reconciliation clears them, but not ones placed on another Scene, whose values belong to that placement.
- * @param {Scene} [scene] Scene to read. It defaults to the displayed Scene, though every caller names one.
- * @returns {{units: readonly object[]}|null} Frozen board snapshot, or null when there is no Scene.
+ * Every unit on one Scene and the auras it gives off, from saved token positions, for the host client's aura
+ * recalculation. World Characters that aren't placed but still carry aura values are included so they get cleared,
+ * but not ones placed on another Scene, whose values belong to that placement.
+ * @param {Scene} [scene] Scene to read. Defaults to the Scene on screen.
+ * @returns {{units: readonly object[]}|null} Frozen list of units, or null when there is no Scene.
  */
 export function projectAuraBoard(scene = globalThis.canvas?.scene) {
   if (!scene?.tokens) return null;
@@ -92,11 +99,9 @@ export function projectAuraBoard(scene = globalThis.canvas?.scene) {
 /**
  * The aura contributions one placed unit receives, the same as collecting them from projectAuraBoard.
  *
- * external/bg3-hud/document-projection.mjs reads this for the HUD's aura explanation, which is redrawn on every step
- * the shown unit takes, so it does less work than the full board. It leaves out unplaced Characters, which never
- * contribute. It also builds a unit's condition facts only when collectAuraContributions reads them (for the
- * receiver and for a conditional emitter within reach), where the full board builds them for every unit once any
- * aura is conditional.
+ * A cheaper version for the BG3 HUD's aura explanation, which is redrawn on every step the shown unit takes. It
+ * skips unplaced Characters, which never give off auras, and builds a unit's condition values only when a
+ * conditional aura needs them.
  * @param {TokenDocument} tokenDocument The receiving unit's Token.
  * @returns {readonly object[]} Frozen contributions.
  */
@@ -106,8 +111,8 @@ export function projectAuraContributionsFor(tokenDocument) {
 }
 
 /**
- * The placed half of projectAuraBoard, with facts built on first read. Only a caller that collects contributions
- * in the same synchronous call may use it, so the facts it builds late match the ones the full board builds at once.
+ * The placed units of projectAuraBoard, with each unit's condition values built when first read. Use the result in
+ * the same synchronous call, before any Actor changes.
  */
 function projectLiveAuraBoard(scene) {
   if (!scene?.tokens) return null;
@@ -123,8 +128,8 @@ function projectLiveAuraBoard(scene) {
 }
 
 /**
- * A summary of the auras one Actor emits. The board hooks (foundry/hooks/board.mjs) compare it before and after an
- * Item change and skip aura reconciliation when it is the same.
+ * A summary of the auras one Actor gives off. The hooks in foundry/hooks/board.mjs compare it before and after an
+ * Item change and skip the aura recalculation when it is the same.
  * @returns {string}
  */
 export function projectAuraEmissionSignature(actor) {
@@ -132,8 +137,8 @@ export function projectAuraEmissionSignature(actor) {
 }
 
 /**
- * Whose equipment one Actor's aura conditions read: its own, its target's, or both. The board hooks use it to skip
- * reconciliation after an equip change no aura on the Scene can see.
+ * Whose equipment one Actor's aura conditions read: its own, its target's, or both. The hooks in
+ * foundry/hooks/board.mjs use it to skip the aura recalculation after an equip change no aura on the Scene can see.
  * @param {Actor} actor A unit standing on the Scene.
  * @returns {Readonly<{self: boolean, target: boolean}>}
  */
@@ -142,9 +147,9 @@ export function projectAuraGearReads(actor) {
 }
 
 /* -------------------------------------------- */
-/*  Unit projection                             */
+/*  Units                                       */
 /* -------------------------------------------- */
-/** One Token as the aura board reads it. A hidden fixture emits nothing until it is revealed. */
+/** One Token as projectAuraBoard reads it. A hidden fixture gives off nothing until it is revealed. */
 function projectPlacedUnit(tokenDocument, gridSize, elevations) {
   const actor = tokenDocument.actor ?? null;
   const actorUuid = String(actor?.uuid ?? '');
@@ -169,14 +174,15 @@ function projectPlacedUnit(tokenDocument, gridSize, elevations) {
 }
 
 /**
- * Whether a world Actor stands on a Scene other than the one being settled. The values it carries belong to that
- * placement, so settling this Scene must not clear them as if the unit had left the board.
+ * Whether a world Actor stands on a Scene other than this one. The values it carries belong to that placement, so
+ * recalculating this Scene must not clear them as if the unit had left the map.
  */
 function placedElsewhere(actor, scene) {
   return collectionValues(actor?.getDependentTokens?.({ linked: true, concreteOnly: true }))
     .some(token => token?.parent && String(token.parent.uuid ?? '') !== String(scene?.uuid ?? ''));
 }
 
+/** World Characters placed on no Scene that still carry aura values, so the recalculation clears them. */
 function projectDetachedUnits(placedActorUuids, scene) {
   const detached = [];
   for (const actor of collectionValues(globalThis.game?.actors)) {
@@ -203,6 +209,7 @@ function projectDetachedUnits(placedActorUuids, scene) {
   return detached;
 }
 
+/** The aura values saved on an Actor, by aura attribute path. */
 function projectAuraFields(actor) {
   const source = actor?._source?.system ?? actor?.system ?? {};
   const fields = {};
@@ -214,15 +221,14 @@ function projectAuraFields(actor) {
 }
 
 /* -------------------------------------------- */
-/*  Terrain board projection                    */
+/*  Terrain board                               */
 /* -------------------------------------------- */
 /**
- * The terrain board for one Scene: each placed Character's footprint, terrain profile and current terrain values,
+ * Terrain data for one Scene: each placed Character's footprint, terrain profile and current terrain values,
  * and the squares a unit can't land on. Unplaced world Characters that still carry terrain values are included so
- * they get cleared, but not ones placed on another Scene. Read by FoundryActorRepository.getTerrainBoardSnapshot
- * and FoundryTerrainRepository.getSpawnBoard.
+ * they get cleared, but not ones placed on another Scene.
  * @param {Scene} scene Scene to read.
- * @returns {object|null} Frozen board snapshot, or null when there is no Scene.
+ * @returns {object|null} Frozen result, or null when there is no Scene.
  */
 export function projectTerrainBoard(scene) {
   if (!scene?.tokens) return null;
@@ -281,7 +287,7 @@ export function projectTerrainBoard(scene) {
   return Object.freeze({ ...board, fingerprint: terrainBoardFingerprint(board) });
 }
 
-/** Summarize the terrain board so a plan built against a stale one is refused rather than committed. */
+/** Summarize the terrain data so a plan built against an outdated copy is refused rather than saved. */
 function terrainBoardFingerprint(board) {
   return JSON.stringify([
     board?.grid ?? {},
@@ -344,8 +350,12 @@ function projectTerrainProfile(actor, tokenDocument) {
 }
 
 /* -------------------------------------------- */
-/*  Emission projection                         */
+/*  Aura modifiers                              */
 /* -------------------------------------------- */
+/**
+ * Every aura modifier on a unit's Items whose aura is enabled with a range, read from the Items' saved data. Each
+ * modifier's `quantity` and `conditionTree` still point into that saved data, so readers must not change them.
+ */
 function projectAuraEmissions(actor) {
   const emissions = [];
   for (const item of collectionValues(actor?.items)) {
@@ -376,6 +386,7 @@ function projectAuraEmissions(actor) {
   return Object.freeze(emissions);
 }
 
+/** A copy of an Item, with its prepared system data, for a conditional aura's conditions to read. */
 function projectEmissionItem(item) {
   return Object.freeze({
     id: String(item.id ?? ''),
@@ -387,8 +398,9 @@ function projectEmissionItem(item) {
 }
 
 /* -------------------------------------------- */
-/*  Condition context                           */
+/*  Condition values                            */
 /* -------------------------------------------- */
+/** A unit without its Actor, with its condition values when any aura on the Scene is conditional. */
 function detachUnit(unit, conditional) {
   const { document, ...projected } = unit;
   return Object.freeze({ ...projected, facts: conditional ? projectUnitFacts(document) : null });
@@ -408,6 +420,7 @@ function detachUnitLazily(unit, conditional) {
   return Object.freeze(projected);
 }
 
+/** A deep copy of an Item's prepared system data. */
 function detachedSystem(system) {
   if (!system) return null;
   return structuredClone(system.toObject?.(false) ?? system);
@@ -423,8 +436,9 @@ function projectSprite(tokenDocument, actor) {
 }
 
 /**
- * A token's footprint in grid cells from its saved position (`_source`), for every board in this file. The live
- * document can still show the departure square while a move animates.
+ * A token's footprint in grid cells from its saved position (`_source`). Foundry copies each animation frame into
+ * the live document, so during a move it holds a square on the way. Dividing pixels by the grid size by hand is safe
+ * because hooks/scene.mjs keeps every Scene at padding 0 on a square or gridless grid.
  */
 function projectFootprint(tokenDocument, gridSize) {
   const source = tokenDocument._source ?? tokenDocument;
@@ -447,15 +461,15 @@ function tokenDimension(value, unit) {
 }
 
 /* -------------------------------------------- */
-/*  Targeting board projection                  */
+/*  Targeting board                             */
 /* -------------------------------------------- */
 
 /**
  * Every token on a Scene with its cells, faction and target kind, from saved positions, so the targeting rules can
- * accept, redirect or refuse a pick. Read by the item projections (items.mjs) and the interaction controls. A hidden
- * fixture (fixtureHidden in game/objects/rules.mjs) is left off, so no pick, area or interaction finds it.
- * @param {Scene} [scene] Scene to read. It defaults to the displayed Scene, though every caller names one.
- * @returns {{units: readonly object[]}|null} Frozen board snapshot, or null when there is no Scene.
+ * accept, redirect or refuse a pick. A hidden fixture (fixtureHidden in game/objects/rules.mjs) is left off, so no
+ * pick, area or interaction finds it.
+ * @param {Scene} [scene] Scene to read. Defaults to the Scene on screen.
+ * @returns {{units: readonly object[]}|null} Frozen result, or null when there is no Scene.
  */
 export function projectTargetingBoard(scene = globalThis.canvas?.scene) {
   if (!scene?.tokens) return null;
@@ -511,13 +525,13 @@ function projectTargetableUnit(tokenDocument, gridSize, elevations, parties) {
 }
 
 /* -------------------------------------------- */
-/*  Movement position projection                */
+/*  Movement position                           */
 /* -------------------------------------------- */
 /**
- * Project the settled world position of a completed Foundry movement operation.
+ * Where a finished Foundry token movement ended, in scene pixels.
  * @param {object} tokenDocument Foundry Token document that moved.
  * @param {object} [movement] Foundry movement operation reported with the update.
- * @returns {{x: number, y: number}|null} Settled world position, or `null` when neither source is readable.
+ * @returns {{x: number, y: number}|null} Final position, or `null` when neither source is readable.
  */
 export function projectFoundryMovementPosition(tokenDocument, movement = null) {
   const destination = movement?.destination ?? null;
@@ -528,7 +542,7 @@ export function projectFoundryMovementPosition(tokenDocument, movement = null) {
 
 /**
  * Which kind of input moved a token (a drag, the keyboard, the system or a restore), read from Foundry's update
- * options, for the movement writer and ui/controls/movement.mjs.
+ * options.
  * @param {object} tokenDocument Foundry Token document being updated.
  * @param {object} [options] Foundry update options.
  * @returns {string} One of MOVEMENT_INPUT_KINDS.
@@ -552,12 +566,12 @@ export function projectFoundryMovementInput(tokenDocument, options = {}) {
 /* -------------------------------------------- */
 
 /**
- * Every token on a Scene as a planner reads it, in grid cells: units with their stats, statuses, turn state and
+ * Every token on a Scene as the Enemy AI reads it, in grid cells: units with their stats, statuses, turn state and
  * pending phase damage, and objects. The Enemy AI reads it as game.emblemRpg.api.encounters.getBoard. A hidden
  * fixture is left off, except a hidden Destructible, which still blocks movement and stays on with `hidden` set.
  * Each unit's `occupiesLanding` is resolveMovementOccupancy's, false for anything movement passes straight through.
  * @param {string} [sceneUuid] Scene to read, defaulting to the displayed one.
- * @returns {Readonly<object>|null} Frozen board, or null when the Scene can't be found.
+ * @returns {Readonly<object>|null} Frozen result, or null when the Scene can't be found.
  */
 export function projectUnitBoard(sceneUuid = '') {
   const scene = resolveViewedScene(sceneUuid);
@@ -610,6 +624,8 @@ function projectMeasuredUnit(tokenDocument, gridSize) {
     factionRole: String(system.faction?.role ?? 'Neutral'),
     factionGroup: String(factionGroup(system.faction?.role) ?? ''),
     hidden: tokenDocument.hidden === true,
+    // Whether the token shows on the calling client's canvas, so it depends on that client's vision. True when the
+    // Scene isn't drawn there.
     visible: tokenDocument.object?.visible !== false,
     x: footprint.x,
     y: footprint.y,
@@ -782,7 +798,7 @@ export function projectAuraFieldsAt({ tokenUuid = '', standing = null } = {}) {
 }
 
 /**
- * The aura values a unit would receive on each of several squares, from one read of the board. Read by
+ * The aura values a unit would receive on each of several squares, from one read of the Scene's auras. Read by
  * game.emblemRpg.api.terrain.auraFieldsAtMany.
  * @param {{tokenUuid?: string, standings?: readonly {x: number, y: number}[]}} [intent]
  * @returns {Readonly<Record<string, Readonly<Record<string, number>>>>|null} Fields by `x,y` cell key.
@@ -803,7 +819,7 @@ export function projectAuraFieldsAtMany({ tokenUuid = '', standings = [] } = {})
   return Object.freeze(fieldsByCell);
 }
 
-/** The live aura board of a unit's Scene, with the unit's token uuid and the Scene's elevations for moving it. */
+/** projectLiveAuraBoard for a unit's Scene, with the unit's token uuid and the Scene's elevations for moving it. */
 function measuredAuraBoard(tokenUuid) {
   const token = resolveSync(String(tokenUuid ?? ''), 'Token');
   const scene = token?.parent ?? null;
@@ -813,7 +829,7 @@ function measuredAuraBoard(tokenUuid) {
   return { board, receiver: String(token.uuid ?? ''), elevations: readTerrainElevations(scene) };
 }
 
-/** Every aura attribute summed for one receiver on a board. */
+/** Every aura attribute summed for one receiver. */
 function auraFieldsOn(board, receiver) {
   const fields = {};
   for (const path of AURA_ATTRIBUTE_PATHS) fields[path] = 0;
@@ -823,7 +839,7 @@ function auraFieldsOn(board, receiver) {
   return Object.freeze(fields);
 }
 
-/** Move one unit of an aura board to another square, with that square's elevation, without touching the Scene. */
+/** Move one unit in `board` to another square, with that square's elevation, without touching the Scene. */
 function relocateAuraBoard(board, tokenUuid, standing, elevations) {
   return Object.freeze({
     ...board,

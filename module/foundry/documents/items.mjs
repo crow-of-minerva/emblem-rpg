@@ -27,7 +27,7 @@ const ITEM_TYPE_DEFAULTS = Object.freeze({
 
 const ITEM_DOCUMENT_OUTCOMES = REFINEMENT_OUTCOME_CODES;
 
-/** The stored fields an Item write is settled against: uses, the refinement tier that raises them, and wield state. */
+/** The saved fields checked on every Item write: uses, the refinement data that raises them, and wield state. */
 const STORED_STATE_FIELDS = Object.freeze(['uses', 'craftingData', 'isWielded', 'isEquipped', 'isWorn']);
 
 /** Raise emblemRpg.itemDocumentOutcome, which init/hooks.mjs turns into a notification. */
@@ -44,7 +44,7 @@ function publishDocumentOutcome(outcome) {
  * through admitNativeWrite (services/authority.mjs).
  */
 export class EmblemItem extends Item {
-  /** Staff and a Trusted owner delete natively. A Player's delete is refused before Foundry sends it. */
+  /** A GM, Assistant GM or Trusted owner may delete directly. A player's delete is refused before Foundry sends it. */
   async _preDelete(options, user) {
     if (!admitNativeWrite(user, this, 'delete')) return false;
     return super._preDelete(options, user);
@@ -53,6 +53,7 @@ export class EmblemItem extends Item {
   prepareBaseData() {
     super.prepareBaseData();
     if (this.type === 'Class' || this.type === 'Resource') return;
+    // v14's deepClone returns a DataModel unchanged, so `source` is this.system itself. prepareItemBaseData copies it.
     const source = foundry.utils.deepClone(this.system);
     if (!source.itemType) source.itemType = ITEM_TYPE_DEFAULTS[this.type] ?? '';
     Object.assign(this.system, prepareItemBaseData(this.type, source));
@@ -89,8 +90,8 @@ export class EmblemItem extends Item {
 
   /**
    * Refuse a refined name or forging XP on a world or compendium item. On a carried Equipment copy, bring the name
-   * suffix and forging XP into agreement. Then fill in the item type, apply the values that type fixes, and settle
-   * stored uses and wield state.
+   * suffix and forging XP into agreement. Then fill in the item type, apply the values that type fixes, and correct
+   * the saved uses and wield state.
    */
   async _preCreate(data, options, user) {
     if (!admitNativeWrite(user, this, 'create')) return false;

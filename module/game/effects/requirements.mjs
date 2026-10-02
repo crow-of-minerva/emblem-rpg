@@ -38,9 +38,8 @@ export function isMagicItem(item) {
 /* -------------------------------------------- */
 
 /**
- * Check the requirements that read only the caster, and Silence against a magic item. Used by
- * validateActivationRequirements (game/items/activation.mjs), equipment requirements (game/character/inventory.mjs)
- * and the attack-targeting projection. A bare authored path reads the caster, as the `caster` root does.
+ * Check the requirements that read only the caster, and Silence against a magic item. A bare authored path reads
+ * the caster, as the `caster` root does.
  * @param {object} input
  * @returns {{ok: boolean, failedIds: string[], failedNames: string[], evaluationErrors: object[], silenced: boolean}}
  */
@@ -57,9 +56,8 @@ export function checkCaster(input = {}) {
 }
 
 /**
- * Check the requirements that read a target, once for each target. Used by validateActivationRequirements and the
- * attack-targeting projection. A bare authored path still reads the caster, and the target is read through the
- * `target` root.
+ * Check the requirements that read a target, once for each target. A bare authored path, `self` and `caster` read
+ * the caster; `target` and `actor` both read the target. With no targets, none of these requirements is checked.
  * @param {object} input
  * @returns {{ok: boolean, failingTargets: {targetId: string|null, name: string, failedIds: string[]}[],
  *   evaluationErrors: object[]}}

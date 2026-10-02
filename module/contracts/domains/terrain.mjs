@@ -10,6 +10,7 @@ export const TERRAIN_GRID_FLAG = 'terrainGrid';
 export const TERRAIN_ZONES_FLAG = 'terrainZones';
 export const TERRAIN_EDIT_RECORDS_FLAG = 'terrainEffectEdits';
 
+/** What a terrain square holds when nothing is authored: normal movement cost, no stat modifiers, not blocked. */
 export const TERRAIN_CELL_DEFAULTS = Object.freeze({
   movementCost: 1,
   evasionMod: 0,
@@ -68,9 +69,8 @@ export const TELEPORT_COSTS = Object.freeze({
 });
 
 /**
- * What a teleport hop's settlement reports (foundry/adapters/document-writes/movement-settlements.mjs): settled,
- * stale (nothing written) or reverted (undone after a failed write). No writer produces `blocked` or
- * `recovery-required`.
+ * What a teleport pad save reports (foundry/adapters/document-writes/movement-settlements.mjs): settled, stale
+ * (nothing written) or reverted (undone after a failed write). `blocked` and `recovery-required` are unused.
  */
 export const TELEPORT_SETTLEMENT_OUTCOMES = Object.freeze({
   SETTLED: 'settled',
@@ -81,6 +81,7 @@ export const TELEPORT_SETTLEMENT_OUTCOMES = Object.freeze({
 });
 
 export const TILE_EFFECT_TYPES = Object.freeze(['healing', ...DAMAGE_TYPES]);
+/** How a terrain exception picks the units it exempts: by unit type, faction group, name or Actor id. */
 export const EXCEPTION_SELECTORS = Object.freeze([
   Object.freeze({ value: 'unitType', label: 'Unit Type' }),
   Object.freeze({ value: 'faction', label: 'Faction Type' }),
@@ -94,6 +95,7 @@ export const EXCEPTION_FACTIONS = Object.freeze(Object.keys(FACTION_GROUPS).map(
 export const TERRAIN_UNIT_TYPES = Object.freeze([
   'infantry', 'armored', 'cavalry', 'flying', 'dragon', 'beast', 'monster', 'undead'
 ]);
+/** The behavior a spawn square gives the units it places, for Enemy AI to read: none, pursue, roam or seize. */
 export const SPAWN_BEHAVIORS = Object.freeze([
   Object.freeze({ value: '', label: 'None' }),
   Object.freeze({ value: 'pursue', label: 'Pursuant' }),
@@ -103,11 +105,13 @@ export const SPAWN_BEHAVIORS = Object.freeze([
 export const SPAWN_BEHAVIOR_VALUES = Object.freeze(SPAWN_BEHAVIORS.map(entry => entry.value));
 export const SPAWN_BEHAVIOR_FACTIONS = Object.freeze([...FACTION_GROUPS.enemy, ...FACTION_GROUPS.neutral]);
 
+/** The Actor flags holding the terrain stat modifiers where a unit stands, by stat key. */
 export const TERRAIN_STAT_FLAGS = Object.freeze({
   eva: 'terrainEvasionMod',
   def: 'terrainDefMod',
   res: 'terrainResMod'
 });
+/** The same flags, keyed by the terrain square's field that feeds each one. */
 export const TERRAIN_STAT_FIELDS = Object.freeze({
   evasionMod: TERRAIN_STAT_FLAGS.eva,
   defMod: TERRAIN_STAT_FLAGS.def,
@@ -121,7 +125,7 @@ export const TERRAIN_SPAWN_STAGES = Object.freeze({
   COMPLETED: 'completed'
 });
 
-/** The codes a terrain persistence sweep may return, which a caller must tell apart. */
+/** The codes a terrain save may return, which a caller must tell apart. */
 export const TERRAIN_PERSISTENCE_CODES = Object.freeze({
   MISSING_SCENE: 'missing-scene',
   NO_OP: 'no-op',
@@ -132,12 +136,12 @@ export const TERRAIN_PERSISTENCE_CODES = Object.freeze({
 
 export const MAX_SPAWN_DISPLACEMENT = 10;
 
-/** Encode grid coordinates as the row-column Scene flag key used by terrain writers and projections. */
+/** Encode grid coordinates as the row-column Scene flag key the terrain code uses. */
 export function terrainKey(x, y) {
   return `${y}-${x}`;
 }
 
-/** Decode a terrain cell key into canvas grid coordinates. */
+/** Decode a terrain square key into grid coordinates. */
 export function parseTerrainKey(key) {
   const text = String(key);
   const dash = text.indexOf('-');
@@ -148,14 +152,14 @@ export function parseTerrainKey(key) {
 /*  Timing                                      */
 /* -------------------------------------------- */
 /**
- * Crossing timings: the wait for the dice, and the pause after a failed climb. The engine waits on its own clock,
- * not on Dice So Nice.
+ * Crossing timings: the wait for the dice, and the pause after a failed climb. The host waits a fixed time, not for
+ * Dice So Nice.
  */
 export const CROSSING_ATTEMPT_TIMING = Object.freeze({ diceSettleHold: 2600, failedAscentHold: 1200 });
 
 /**
- * How long a driven walk may wait for the Token it moved. Only SETTLE_MAX_MS is read: the wait is worked out from the
- * walk's animation speed and capped at it (movement.mjs and effect-execution.mjs in foundry/adapters/document-writes).
+ * How long the host waits for a token it moved to finish walking. The wait comes from the walk's animation speed,
+ * capped at SETTLE_MAX_MS; the other keys are unused.
  */
 export const DRIVEN_WALK_TIMING = Object.freeze({
   POLL_MS: 50,
@@ -183,7 +187,7 @@ export function terrainSpawnPresentationMessage(data) {
   });
 }
 
-/** Check a bounded spawn-arrival message before it crosses the presentation socket. */
+/** Check a spawn-arrival message received over the socket. */
 export function isTerrainSpawnPresentationMessage(value) {
   if (!plainRecord(value) || !exactKeys(value, TERRAIN_SPAWN_MESSAGE_KEYS)) return false;
   if (value.kind !== TERRAIN_SPAWN_PRESENTATION_KIND) return false;

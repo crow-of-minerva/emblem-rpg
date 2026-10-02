@@ -14,35 +14,35 @@ import { HOST_PRESENCE_KINDS, createHostPresenceMessage, isHostPresenceMessage }
 /* -------------------------------------------- */
 
 /**
- * The host user's other open pages, by session id, with the heartbeats each has missed. HostPagePresence fills
- * and expires it, and resolveHostAuthority counts it (HOST_PAGE_PEERS in foundry/adapters/services/host.mjs).
+ * The host GM's other open browser tabs, by session id, with the heartbeats each has missed, so two tabs never both
+ * run commands. HostPagePresence fills it, and resolveHostAuthority names no host while it isn't empty.
  */
 export class HostPageSessions {
   #missed = new Map();
 
-  /** How many other live pages are known. */
+  /** How many other open tabs are known. */
   get size() {
     return this.#missed.size;
   }
 
-  /** Whether a page's session is known. */
+  /** Whether a tab's session id is known. */
   has(session) {
     return this.#missed.has(session);
   }
 
-  /** Mark a page live after hearing from it, with no missed heartbeats. */
+  /** Mark a tab as open after hearing from it, with no missed heartbeats. */
   heard(session) {
     this.#missed.set(session, 0);
   }
 
-  /** Forget one page. Returns whether it was known. */
+  /** Forget one tab. Returns whether it was known. */
   forget(session) {
     return this.#missed.delete(session);
   }
 
   /**
-   * Count one heartbeat interval against every known page and forget each that has now stayed silent for `limit`.
-   * @param {number} limit Silent intervals after which a page is taken to be gone.
+   * Count one heartbeat interval against every known tab and forget each that has now stayed silent for `limit`.
+   * @param {number} limit Silent intervals after which a tab is taken to be closed.
    * @returns {string[]} The sessions forgotten.
    */
   elapse(limit) {
@@ -55,7 +55,7 @@ export class HostPageSessions {
     return gone;
   }
 
-  /** Forget every page. */
+  /** Forget every tab. */
   clear() {
     this.#missed.clear();
   }
@@ -66,9 +66,9 @@ export class HostPageSessions {
 /* -------------------------------------------- */
 
 /**
- * Detect duplicate host tabs for CommandGateway authority checks.
+ * Detect when the host GM has more than one tab open, which CommandGateway's host check refuses.
  * Foundry counts users, but socketlib sends a user's requests to all of their tabs.
- * Authenticate presence messages against that user and expire silent tabs on the injected clock.
+ * Only presence messages from this same user are accepted, and a tab that stops sending heartbeats is forgotten.
  * An unknown heartbeat triggers a new handshake, since it may come from a tab that has already closed.
  */
 export class HostPagePresence {
@@ -80,15 +80,15 @@ export class HostPagePresence {
   #duplicated = false;
 
   /**
-   * @param {object} ports
-   * @param {object} ports.transport Sends one presence message to every other client (`sendHostPresence`).
-   * @param {object} ports.identity This page's session, user and resolved host view.
-   * @param {HostPageSessions} ports.sessions The page record host eligibility counts.
-   * @param {Function} ports.wait The pacing clock heartbeats, expiry and the startup listen are timed on.
-   * @param {Function} ports.onDuplicateChange Told `{duplicated}` each time another live page starts or stops
+   * @param {object} options
+   * @param {object} options.transport Sends one presence message to every other client (`sendHostPresence`).
+   * @param {object} options.identity This tab's session id, its user, and who the host is.
+   * @param {HostPageSessions} options.sessions The list of this user's other tabs that the host check counts.
+   * @param {Function} options.wait Timer for heartbeats, expiry and the startup wait; keeps time in a background tab.
+   * @param {Function} options.onDuplicateChange Told `{duplicated}` each time another open tab starts or stops
    *   blocking this one.
-   * @param {object} ports.diagnostics Where a failed send or heartbeat is recorded.
-   * @param {object} [ports.timing] {@link HOST_PRESENCE_TIMING}.
+   * @param {object} options.diagnostics Where a failed send or heartbeat is recorded.
+   * @param {object} [options.timing] {@link HOST_PRESENCE_TIMING}.
    */
   constructor({ transport, identity, sessions, wait, onDuplicateChange, diagnostics, timing = HOST_PRESENCE_TIMING }) {
     requirePorts('HostPagePresence', { transport, identity, sessions, wait, onDuplicateChange, diagnostics });
@@ -105,7 +105,7 @@ export class HostPagePresence {
   /*  Public API                                  */
   /* -------------------------------------------- */
 
-  /** Start the heartbeat loop, once. The page announces itself as soon as it becomes a host candidate. */
+  /** Start the heartbeat loop, once. The tab announces itself as soon as its user could be the host. */
   start() {
     if (this.#beating || this.#disposed) return;
     this.#beating = true;
@@ -114,8 +114,9 @@ export class HostPagePresence {
   }
 
   /**
-   * Update presence after user or role changes. Announce a new host candidate and clear
-   * HostPageSessions when this user is no longer the sole connected GM.
+   * Update presence after user or role changes. Announce this tab when its user could be the host, and clear
+   * HostPageSessions when this user is no longer the sole connected GM. Until other tabs answer the hello, this tab
+   * counts as the only one: startup waits for them (`settle()`), but later two tabs can both act as host for a moment.
    */
   sync() {
     if (this.#disposed) return;
@@ -131,7 +132,7 @@ export class HostPagePresence {
     this.#notify();
   }
 
-  /** Wait for the startup presence handshake before CommandGateway admits host work. */
+  /** At startup, wait for other tabs to answer this tab's hello before it starts running commands. */
   settle() {
     this.sync();
     return this.#settling ?? Promise.resolve();
@@ -140,8 +141,8 @@ export class HostPagePresence {
   /**
    * Take one presence message from the socket.
    * @param {object} message The presence message.
-   * @param {string} senderId The socketlib-authenticated sender.
-   * @returns {boolean} Whether it came from another live page of this page's user and changed what this page knows.
+   * @param {string} senderId The sender's user id, as set by the Foundry server.
+   * @returns {boolean} Whether it came from another open tab of this user and changed what this tab knows.
    */
   receive(message, senderId) {
     if (this.#disposed || !isHostPresenceMessage(message)) return false;
@@ -155,8 +156,8 @@ export class HostPagePresence {
   }
 
   /**
-   * Send goodbye and stop heartbeats on pagehide. Retain HostPageSessions so the closing tab
-   * cannot become eligible to execute commands again.
+   * Send goodbye and stop heartbeats on pagehide. The list of other tabs is kept, so a closing tab that knew of
+   * others can't become host again; a tab that was alone stays eligible. Afterwards it ignores presence messages.
    */
   dispose() {
     if (this.#disposed) return;
@@ -168,7 +169,7 @@ export class HostPagePresence {
   /*  Messages                                    */
   /* -------------------------------------------- */
 
-  /** Apply one message from another page of this user. Returns whether it changed what this page knows. */
+  /** Apply one message from another tab of this user. Returns whether it changed what this tab knows. */
   #take({ kind, session, to }) {
     switch (kind) {
       case HOST_PRESENCE_KINDS.GOODBYE:
@@ -206,7 +207,7 @@ export class HostPagePresence {
   /*  Heartbeats                                  */
   /* -------------------------------------------- */
 
-  /** Send and expire HostPageSessions heartbeats on the injected pacing clock, one interval at a time. */
+  /** Every heartbeat interval, send a heartbeat and forget tabs that have gone silent. */
   async #beat() {
     while (!this.#disposed) {
       try {
@@ -237,13 +238,13 @@ export class HostPagePresence {
   /*  Private helpers                             */
   /* -------------------------------------------- */
 
-  /** Whether the connected users alone make this page's user the host, however many pages that user has open. */
+  /** Whether the connected users alone make this tab's user the host, however many tabs that user has open. */
   #candidate() {
     const host = this.identity.host();
     return host.localIsHost || host.state === HOST_STATES.DUPLICATE_PAGES;
   }
 
-  /** Report a change in whether another live page blocks this one, once per change. */
+  /** Report a change in whether another open tab blocks this one, once per change. */
   #notify() {
     const duplicated = this.identity.host().state === HOST_STATES.DUPLICATE_PAGES;
     if (duplicated === this.#duplicated) return;

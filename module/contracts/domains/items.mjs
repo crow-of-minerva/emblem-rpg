@@ -27,6 +27,7 @@ export const EQUIPMENT_EFFECT_KINDS = Object.freeze({
   MOUNT: 'mount'
 });
 
+/** Fixed 16-character ActiveEffect ids for the wield and armor effects, so each unit's copy can be found again. */
 export const EQUIPMENT_EFFECT_IDS = Object.freeze({
   WIELD: 'emblemWieldMark1',
   ARMOR: 'emblemArmorMark1'
@@ -58,7 +59,7 @@ export const ITEM_ACTIVATION_SUPPORT = Object.freeze({
   maxCell: 4096
 });
 
-/** Ability names whose destination is selected on the board before item activation. */
+/** Ability names whose destination is picked on the map before the item is used. */
 export const FORCED_MOVEMENT_ABILITIES = Object.freeze({
   SHOVE: 'Shove',
   RETRIEVE: 'Retrieve'
@@ -77,7 +78,7 @@ export const EXPLORATION_ACTIVATION_SUBTYPES = Object.freeze({
   Ability: Object.freeze(['Mount'])
 });
 
-/** Ability that item activation runs without a board lock, cinematic, XP award or turn end. */
+/** The Ability whose use leaves the unit's movement open, with no cinematic, XP award or turn end. */
 export const UNLOCKED_ACTIVATION_ITEM_NAME = 'Dash';
 
 /**
@@ -97,7 +98,7 @@ const ACTIVATION_INTENT_KEYS = new Set([
   'sourceTokenUuid', 'itemUuid', 'targetTokenUuids', 'aim', 'params', 'placement', 'cinematic'
 ]);
 
-/** Validate and detach the public item-activation intent without admitting mechanical claims. */
+/** Check an item-use request and return a frozen copy, or null. It carries ids and squares, never results. */
 export function normalizeItemActivationIntent(payload = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
   if (Object.keys(payload).some(key => !ACTIVATION_INTENT_KEYS.has(key))) return null;
@@ -159,7 +160,7 @@ export const REFINEMENT_OUTCOME_CODES = Object.freeze({
 /* -------------------------------------------- */
 /*  Timing                                      */
 /* -------------------------------------------- */
-/** Item activation and saving-throw timings. The engine waits on its own clock, not on Dice So Nice. */
+/** Item activation and saving-throw timings. The host waits a fixed time, not for Dice So Nice. */
 export const ITEM_ACTIVATION_TIMING = Object.freeze({
   diceSettleHold: 2600,
   castLeadIn: 700,
@@ -182,7 +183,7 @@ export const ITEM_ACTIVATION_PRESENTATION_BEATS = Object.freeze({
   END: 'end'
 });
 
-/** Build the serializable presentation transcript for one activation beat. */
+/** Build the message every client plays for one moment of an item use. */
 export function itemActivationPresentationMessage(beat, data = {}) {
   if (!Object.values(ITEM_ACTIVATION_PRESENTATION_BEATS).includes(beat)) {
     throw new TypeError(`Unknown item activation presentation beat: ${beat}`);
@@ -190,7 +191,7 @@ export function itemActivationPresentationMessage(beat, data = {}) {
   return Object.freeze({ kind: ITEM_ACTIVATION_PRESENTATION_KIND, beat, ...structuredClone(data) });
 }
 
-/** Accept only bounded detached activation transcripts at the presentation socket. */
+/** Check an item-use message received over the socket. */
 export function isItemActivationPresentationMessage(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   if (value.kind !== ITEM_ACTIVATION_PRESENTATION_KIND) return false;
@@ -207,7 +208,7 @@ const MAX_INVENTORY_REFUSAL_DATA_LENGTH = 4000;
 /**
  * Build the notice one refused inventory change sends to the user who made it.
  * @param {string} reasonCode The refusal's reason code.
- * @param {object} [data] The detached names its text reads, such as the unit and the Item.
+ * @param {object} [data] The names its text reads, such as the unit and the Item.
  * @returns {Readonly<{kind: string, reasonCode: string, data: object}>}
  */
 export function inventoryRefusalPresentationMessage(reasonCode, data = {}) {
@@ -217,7 +218,7 @@ export function inventoryRefusalPresentationMessage(reasonCode, data = {}) {
   });
 }
 
-/** Accept only a bounded refusal notice at the presentation socket. */
+/** Check a refusal notice received over the socket. */
 export function isInventoryRefusalPresentationMessage(value) {
   if (!plainRecord(value) || value.kind !== INVENTORY_REFUSAL_PRESENTATION_KIND) return false;
   if (!exactKeys(value, INVENTORY_REFUSAL_KEYS) || !boundedText(value.reasonCode, 128)) return false;
@@ -232,7 +233,7 @@ const INVENTORY_CAPACITY_KEYS = Object.freeze(['kind', 'actorName', 'convoyName'
 const CAPACITY_NOTICE_NAME_LIMIT = 32;
 
 /**
- * Build the notice the capacity reconciliation sends the unit's owners after moving their surplus equipment.
+ * Build the notice the equipment-slot check sends the unit's owners after moving their surplus equipment.
  * @param {{actorName?: string, convoyName?: string, itemNames?: string[]}} moved What left and where it went.
  * @returns {Readonly<{kind: string, actorName: string, convoyName: string, itemNames: ReadonlyArray<string>}>}
  */
@@ -246,7 +247,7 @@ export function inventoryCapacityNoticeMessage({ actorName = '', convoyName = ''
   });
 }
 
-/** Accept only a bounded capacity notice at the presentation socket. */
+/** Check a capacity notice received over the socket. */
 export function isInventoryCapacityNoticeMessage(value) {
   if (!plainRecord(value) || value.kind !== INVENTORY_CAPACITY_NOTICE_KIND) return false;
   if (!exactKeys(value, INVENTORY_CAPACITY_KEYS)) return false;

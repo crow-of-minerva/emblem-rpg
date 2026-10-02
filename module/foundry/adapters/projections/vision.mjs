@@ -9,14 +9,12 @@ import { sceneExplorationActive } from './encounters.mjs';
 import { resolveSync, tokenFootprintCells } from '../services/host.mjs';
 
 /* -------------------------------------------- */
-/*  Sight facts                                 */
+/*  Sight                                       */
 /* -------------------------------------------- */
 
 /**
  * Whether a unit can see the near face of a Door, tested against the Wall documents of their Scene, so it works on
- * a Scene no client is viewing. Returns false when it can't be tested, such as a Door on another Scene. Called by
- * the lock projection in document-writes/objects.mjs and, through projectDoorVisibilityByUuid, by the interaction
- * controls.
+ * a Scene no client is viewing. Returns false when it can't be tested, such as a Door on another Scene.
  * @param {TokenDocument} sourceToken The acting unit.
  * @param {TokenDocument} doorToken The Door.
  * @returns {boolean}
@@ -51,13 +49,14 @@ function sceneSightWalls(scene, doorToken) {
   return segments;
 }
 
-/** projectDoorVisibility by Token uuids, for ui/controls/interaction.mjs, which holds board data, not documents. */
+/** projectDoorVisibility by token uuids, for ui/controls/interaction.mjs, which holds uuids, not documents. */
 export function projectDoorVisibilityByUuid(sourceTokenUuid, doorTokenUuid) {
   return projectDoorVisibility(resolveSync(sourceTokenUuid, 'Token'), resolveSync(doorTokenUuid, 'Token'));
 }
 
 /**
- * One unit's faction and party, which the party sight pool in foundry/patches/vision.mjs compares.
+ * One unit's faction and party, used by foundry/patches/vision.mjs to decide which tokens share vision with the
+ * player's party.
  * @returns {{actorType: string, partyId: string|null}}
  */
 export function projectPartySightFacts(actor) {
@@ -69,8 +68,8 @@ export function projectPartySightFacts(actor) {
 }
 
 /**
- * Whether the local user is a GM, their party, and the faction and party of each token they have selected, for
- * the party sight pool in foundry/patches/vision.mjs.
+ * Whether the local user is a GM, their party, and the faction and party of each token they have selected, used by
+ * foundry/patches/vision.mjs to decide which tokens share vision with the player's party.
  * @returns {{isGM: boolean, userPartyId: string|null, controlled: object[]}}
  */
 export function projectSightPoolContext() {
@@ -96,8 +95,8 @@ export function projectSightBonusSquares(actor) {
 }
 
 /**
- * The facts that decide where a unit's vision is measured from. While it plans a move, vision stays at the movement
- * anchor so a previewed step can't reveal new ground, but during exploration moves are committed at once and vision
+ * What decides where a unit's vision is measured from. While it plans a move, vision stays where the move started
+ * (`anchor`) so a previewed step can't reveal new ground, but during exploration moves are committed at once and vision
  * follows the token. committedSightAnchor (game/vision/sight.mjs) makes that choice for foundry/patches/vision.mjs.
  * @returns {{planning: boolean, exploring: boolean, anchor: {x: number, y: number}}}
  */
@@ -114,9 +113,9 @@ export function projectSightAnchorFacts(tokenDocument) {
 }
 
 /**
- * Plain-value vision inputs for one token: its anchor facts, blindness, light, footprint and vision source data.
- * foundry/patches/vision.mjs compares them with the last set it saw and skips re-initializing the token's vision
- * source when nothing changed.
+ * Plain-value vision inputs for one token: whether it is planning a move or exploring, blindness, light, footprint
+ * and vision source data. foundry/patches/vision.mjs compares them with the last set it saw and skips
+ * re-initializing the token's vision source when nothing changed.
  * @param {Token} token The Token placeable.
  * @param {{deleted?: boolean, sourceId?: number|null, invalidation?: number}} [context]
  * @returns {Readonly<object>}
@@ -145,6 +144,7 @@ export function projectSightReinitializationFacts(token, { deleted = false, sour
   });
 }
 
+/** Flatten a record to plain values for change detection. An object value becomes its id or its string form. */
 function primitiveRecord(record) {
   const out = {};
   for (const [key, value] of Object.entries(record ?? {})) {

@@ -1,4 +1,10 @@
 /** @layer foundry/adapters/projections */
+/*
+ * Shared helpers for reading units in combat. withFoundryCombatContext sets both Actors up for one exchange and
+ * re-prepares them. The rest turn Actors, Items and Tokens into frozen plain data for the rules in game/: the values
+ * authored conditions read, a unit's combat stats and weapon, a borrowed Armament, flanking, terrain height and
+ * flight. The other readers in this folder build on them.
+ */
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { ARMAMENT_FLAGS } from '../../../contracts/domains/objects.mjs';
 import { buildUnitFacts, withMeleeReach } from '../../../game/character/compilation.mjs';
@@ -33,16 +39,19 @@ import { worldClassicFlyerTargeting } from '../services/settings-policy.mjs';
 const ATTACK_ITEM_TYPES = Object.freeze(['Weapon', 'Attack', 'Staff']);
 
 /* -------------------------------------------- */
-/*  Combat derivation context                   */
+/*  Combat setup                                */
 /* -------------------------------------------- */
 
 /**
- * Run `read` with both Actors prepared as they stand in this exchange, then put them back. Each Actor is given its
- * item, its opponent, the distance, engagement and melee reach, its side and any drawn chance rolls, and is
- * re-prepared so its stats reflect them. Afterwards their earlier in-memory values are restored and they are
- * prepared again. Nothing is saved. Each side's `myTarget` is the unit it fights, whichever side opened the
- * exchange, and `isAttacking` tells the two apart. Used by the exchange snapshot and projectExchangeHealthTarget
- * (combat-exchange.mjs) and by projectPreCombatApproach below.
+ * Run `read` with both Actors set up for this exchange, then put them back. Each Actor gets its item, its opponent
+ * (`myTarget`), the distance, engagement and melee reach, its side (`isAttacking`) and any drawn chance rolls as
+ * plain in-memory properties, and `reset()` re-prepares it so its stats reflect them. Afterwards the earlier values
+ * are put back and both Actors are prepared again, so each call prepares each Actor twice. Nothing is saved.
+ *
+ * `read` must be synchronous: the values are put back in `finally` as soon as it returns, so anything it awaited
+ * would run against the restored Actors. The attacker is prepared first, so while it prepares, a condition that
+ * reads its target sees the defender's stats from before this exchange; the defender then sees the attacker's stats
+ * for this exchange.
  * @param {object} input
  * @param {Actor} input.sourceActor The attacker.
  * @param {Actor} input.targetActor The defender.
@@ -52,12 +61,12 @@ const ATTACK_ITEM_TYPES = Object.freeze(['Weapon', 'Attack', 'Staff']);
  * @param {string} [input.engagement] Melee or ranged, as resolveEngagement gives it.
  * @param {boolean} [input.inMeleeRange] Whether the two stand within reach of each other, defaulting to the
  *   distance alone when the caller has read no terrain.
- * @param {number|null} [input.movementSpent] The attacker's squares moved this turn, including the open leg of its
- *   movement plan.
- * @param {object|null} [input.sourceChanceRolls] The attacker's chance-modifier rolls an authoritative action drew,
- *   replayed by this read's preparation. Without them no chance modifier fires.
+ * @param {number|null} [input.movementSpent] The attacker's squares moved this turn, including moves in a movement
+ *   plan not yet confirmed.
+ * @param {object|null} [input.sourceChanceRolls] The chance-modifier rolls already drawn for the attacker in this
+ *   action, reused while it prepares. Without them no chance modifier fires.
  * @param {object|null} [input.targetChanceRolls] The defender's, likewise.
- * @param {Function} read Called while the context is installed.
+ * @param {Function} read Called while both Actors are set up. Must be synchronous.
  * @returns {*} What `read` returns.
  */
 export function withFoundryCombatContext({
@@ -114,9 +123,8 @@ export function withFoundryCombatContext({
 }
 
 /**
- * A unit's condition context: what an authored condition can read about the unit and its target, the active item,
- * distance, engagement and side, from whatever withFoundryCombatContext installed on the Actor. Read by the combat,
- * encounter and item projections and by the character writer.
+ * What an authored condition can read about a unit in combat: the unit and its target, the active item, distance,
+ * engagement and side, taken from whatever withFoundryCombatContext set on the Actor.
  */
 export function projectFoundryCombatActorContext(actor) {
   if (!actor) return null;
@@ -134,11 +142,8 @@ export function projectFoundryCombatActorContext(actor) {
 }
 
 /**
- * Project the condition contexts both sides of a hypothetical matchup read, in the shape
- * projectFoundryCombatActorContext gives a live exchange, without installing a combat context on either Actor.
- * `projectMeasuredMatchup` and `projectThreatMatchups` in attack-targeting.mjs pass each unit with the system data
- * its hypothetical compile produced, so the damage-type trees calculateCombatSide in game/combat/exchange.mjs
- * evaluates read the distance and engagement of the attack being measured, as they do in the exchange.
+ * Build both sides' condition data for an imagined attack, in the same shape projectFoundryCombatActorContext gives
+ * a real exchange, without touching either Actor. Each unit comes with the system data compiled for this matchup.
  * @param {object} input
  * @param {{actor: Actor, system: object, item: Item|null}} input.attacker The attacking unit, its system data for
  *   this matchup, and the Item it strikes with.
@@ -162,7 +167,7 @@ export function projectMatchupCombatContexts({ attacker, defender, distance, eng
   });
 }
 
-/** Build a combatant's condition context. Live exchanges and what-if matchups both use it, so they share one shape. */
+/** The condition data for one side of an attack, real or imagined, so both share one shape. */
 function shapeCombatActorContext({
   self: facts, target, activeItem, distance, engagement, inMeleeRange, attacking, defending, usingWeaponArt
 }) {
@@ -189,8 +194,8 @@ function isWeaponArtItem(item) {
 }
 
 /**
- * Unit facts built while withFoundryCombatContext or withSharedProjections runs, cached because the read asks for
- * the same unchanged facts more than once. Null outside both.
+ * Each unit's condition values, cached by Actor while withFoundryCombatContext or withSharedProjections runs, since
+ * one read asks for the same unit more than once. Null outside both.
  */
 let unitFactsInContext = null;
 
@@ -198,10 +203,10 @@ let unitFactsInContext = null;
 let itemCopiesInScope = null;
 
 /**
- * Run a read that projects the same unchanged units and Items many times over, such as one threat grade
- * (projectThreatMatchups in attack-targeting.mjs), sharing each unit's facts and each Item's copies until it
- * returns. The read must not write anything, since every copy it shares was taken before it ran.
- * @param {Function} read The read.
+ * Run `read` with each unit's condition values and each Item's copies cached until it returns, for work that reads
+ * the same units and Items many times, such as grading one threat (projectThreatMatchups in attack-targeting.mjs).
+ * `read` must be synchronous and must not change any Actor or Item, since the cached copies would then be stale.
+ * @param {Function} read The work to run.
  * @returns {*} What `read` returns.
  */
 export function withSharedProjections(read) {
@@ -219,8 +224,7 @@ export function withSharedProjections(read) {
 
 /**
  * One copy of an Item's data per withSharedProjections run, made by `copy` the first time it is asked for, or a
- * fresh copy outside a run. Callers never mutate what it returns. Read by projectGearItem and projectContextItem
- * here and by projectContextItem in characters.mjs.
+ * fresh copy outside a run. Callers must not change what it returns.
  * @param {Item} item The Item copied.
  * @param {string} kind Which copy of it, since callers copy different views of the same Item.
  * @param {Function} copy Makes the copy.
@@ -235,8 +239,8 @@ export function sharedItemCopy(item, kind, copy) {
 }
 
 /**
- * One Actor as the flat facts authored conditions name (buildUnitFacts in game/character/compilation.mjs), cached
- * while a combat context or shared projection runs. The aura board and Character compilation read it.
+ * One Actor as the flat values authored conditions read (built by buildUnitFacts in game/character/compilation.mjs),
+ * cached while withFoundryCombatContext or withSharedProjections runs.
  */
 export function projectUnitFacts(actor) {
   if (!actor) return null;
@@ -248,8 +252,8 @@ export function projectUnitFacts(actor) {
 }
 
 /**
- * Shape one Actor's facts from its system data: the live data by default, or the data a hypothetical compile
- * produced, whose equipment ids then name the gear that compile put in hand.
+ * Build one Actor's condition values from system data: its live data by default, or data compiled for an imagined
+ * matchup, whose equipment ids then name the gear that compile put in hand.
  */
 function shapeUnitFacts(actor, system = actor.system ?? {}) {
   return Object.freeze(structuredClone(buildUnitFacts({ ...system, turn: projectCharacterTurn(actor, system.turn) }, {
@@ -268,10 +272,8 @@ function shapeUnitFacts(actor, system = actor.system ?? {}) {
 }
 
 /**
- * A unit's size as authored conditions read it (`size`, `caster.size`, `target.size`): the width in whole squares of
- * the Token it stands on, from the saved footprint the Guard bond check (FoundryGuardBondRepository.sideOf and
- * resolveGuardBond) reads, so a unit resized only on the board is judged at its board size. A unit with no placed
- * Token reads its prototype Token's width. Read by shapeUnitFacts and by projectCharacterSource in characters.mjs.
+ * A unit's size as authored conditions read it (`size`, `caster.size`, `target.size`): the saved width, in whole
+ * squares, of its Token on the scene, or of its prototype Token if it isn't placed.
  */
 export function projectUnitSize(actor) {
   const width = persistedTokenPosition(placedUnitToken(actor))?.width ?? actor.prototypeToken?.width;
@@ -291,14 +293,18 @@ function placedUnitToken(actor) {
 }
 
 /**
- * The unit's stored turn state, with `movementSpent` taken from the combat context while one is installed, so the
- * open leg of a movement plan counts.
+ * The unit's saved turn state, with `movementSpent` replaced by the value withFoundryCombatContext set while it runs,
+ * which also counts moves in a movement plan not yet confirmed.
  */
 export function projectCharacterTurn(actor, turn) {
   const movementSpent = Number(actor?.combatMovementSpent);
   return Number.isFinite(movementSpent) ? { ...(turn ?? {}), movementSpent } : { ...(turn ?? {}) };
 }
 
+/**
+ * The Item in one equipment slot, with a copy of its saved (unprepared) system data. An empty weapon slot falls back
+ * to a borrowed Armament.
+ */
 function projectGearItem(actor, key, system = actor?.system) {
   const id = system?.equipment?.[key];
   const item = id ? actor.items?.get?.(id) ?? null : key === 'weaponId' ? projectWieldedArmament(actor)?.weapon ?? null : null;
@@ -314,7 +320,7 @@ export function normalizeStatusKey(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-/** Collect one Actor's active status keys from its effects' names, status ids, statuses, and Token statuses. */
+/** Collect one Actor's active status keys from its effects' names, status ids and statuses, and `actor.statuses`. */
 export function projectActorStatusKeys(actor) {
   const statuses = new Set();
   for (const effect of statusCollection(actor?.effects)) {
@@ -340,6 +346,7 @@ function statusCollection(collection) {
 /*  Context restoration                         */
 /* -------------------------------------------- */
 
+/** The in-memory properties withFoundryCombatContext sets on an Actor. They are never saved. */
 const CONTEXT_KEYS = Object.freeze([
   'activeItem', 'myTarget', 'combatDistance', 'combatEngagement', 'combatInMeleeRange',
   'combatMovementSpent',
@@ -368,6 +375,7 @@ function restoreContext(actor, state) {
   }
 }
 
+/** An Item as an authored condition reads it, with a frozen copy of its saved (unprepared) system data. */
 function projectContextItem(item) {
   if (!item) return null;
   return sharedItemCopy(item, 'context', () => Object.freeze({
@@ -391,23 +399,23 @@ function movesBeforeCombat(item) {
 
 /**
  * The distance and engagement an attack is fought at. It starts from where the two units stand. When the attacking
- * Item moves its user before the attacks, it predicts where that move lands (predictGeometryApproach), evaluated
- * under the combat context at the starting distance. Called by the exchange snapshot in combat-exchange.mjs.
+ * Item moves its user before the attacks, it predicts where that move lands (predictGeometryApproach), with both
+ * Actors set up by withFoundryCombatContext at the starting distance.
  * @param {object} input
  * @param {Token} input.sourceToken Attacking Token.
  * @param {Token} input.targetToken Defending Token.
- * @param {Item|null} input.activatedItem The Art or weapon installed as the attacker's active Item.
+ * @param {Item|null} input.activatedItem The Art or weapon the attacker uses as its active Item.
  * @param {Item|null} input.targetItem The defender's wielded Item.
- * @param {object|null} input.movement The attacker's movement snapshot, standing where it is now.
+ * @param {object|null} input.movement The attacker's movement state (projectMovementSnapshot), from where it stands now.
  * @param {number|null} [input.movementSpent] The attacker's squares moved this turn, as the exchange counts them.
  * @param {number} input.gridSize Pixels per grid square.
  * @param {object|null} [input.sourceChanceRolls] The attacker's drawn chance-modifier rolls, when an action drew them.
  * @param {object|null} [input.targetChanceRolls] The defender's, likewise.
  * @param {number} [input.effectRange] The attack's maximum range.
  * @param {string} [input.attackShape] The attacking weapon's targeting shape.
- * @returns {object} `boardDistance`, `boardEngagement`, `reachDistance` and `reachEngagement` (the board facts
- *   measured the way the weapon's shape aims, for the range check), the fought `distance`, `engagement` and
- *   `inMeleeRange`, and `moved`.
+ * @returns {object} `boardDistance` and `boardEngagement` (where the two stand now), `reachDistance` and
+ *   `reachEngagement` (the same, measured the way the weapon's shape aims, for the range check), the fought
+ *   `distance`, `engagement` and `inMeleeRange`, and `moved`.
  */
 export function projectPreCombatApproach({
   sourceToken, targetToken, activatedItem, targetItem, movement, movementSpent = null, gridSize,
@@ -469,16 +477,16 @@ export function projectPreCombatApproach({
 
 /**
  * Whether the attacker meets the authored requirements of the Item it attacks with, checked from where it stands.
- * A geometry requirement counts the placements the mover could walk to within the geometry's own budget. The
- * exchange snapshot in combat-exchange.mjs reads it.
+ * A geometry requirement counts the squares the mover could walk to within the geometry's own movement allowance.
  * @param {object} input
  * @param {Item|null} input.item The Weapon Art or weapon whose requirements apply.
- * @param {object} input.source The attacker's projected side, its `conditionSelf` and `weapon` among its facts.
- * @param {object|null} input.target The defender's projected side.
+ * @param {object} input.source The attacker's side of the exchange; its `conditionSelf` and `weapon` are read.
+ * @param {object|null} input.target The defender's side.
  * @param {Token} input.sourceToken Attacking Token.
  * @param {Token|null} input.targetToken Defending Token.
- * @param {object|null} input.movement The attacker's movement snapshot.
- * @param {Function} [input.targetMovement] Lazily projects the defender's movement snapshot for a target mover.
+ * @param {object|null} input.movement The attacker's movement state.
+ * @param {Function} [input.targetMovement] Builds the defender's movement state on demand, for a requirement that
+ *   moves the target.
  * @param {number} input.gridSize Pixels per grid square.
  * @param {number|string} [input.effectRange] The attacker's range; its weapon's when not given.
  * @returns {Readonly<{ok: boolean, code: string, names: readonly string[]}>}
@@ -495,8 +503,8 @@ export function projectAttackRequirements(input) {
 }
 
 /**
- * The facts an Item's authored requirements are checked against: the list itself, both units as placements, and
- * the resolver that counts the placements a geometry requirement could reach.
+ * What an Item's authored requirements are checked against: the requirement list, both units with their squares, and
+ * the function that counts the squares a geometry requirement could reach.
  * @param {object} input The same shape {@link projectAttackRequirements} takes.
  * @returns {object} The input `validateActivationRequirements`, `checkCaster` and `checkTargets` all read.
  */
@@ -536,7 +544,11 @@ export function projectRequirementFacts({
   };
 }
 
-/** A token's footprint in grid cells from its saved position, corner rounded down, from placeable or document. */
+/**
+ * A token's footprint in grid cells from its saved position, corner rounded down, from placeable or document.
+ * Dividing pixels by the grid size by hand is safe because hooks/scene.mjs keeps every Scene at padding 0 on a
+ * square or gridless grid. The size comes from the token's own Scene, not canvas.grid, which may show another Scene.
+ */
 function tokenGridRect(token, gridSize) {
   const position = persistedTokenPosition(token);
   if (!position || !(Number(gridSize) >= 1)) return null;
@@ -572,7 +584,7 @@ export function projectWieldedArmament(actor) {
   return Object.freeze({ token, actor: armament, weapon: armamentWeaponShape(token, armament) });
 }
 
-/** Whether a weapon reference is the detached Armament shape rather than an embedded Item. */
+/** Whether a weapon reference is a borrowed Armament's weapon shape rather than an embedded Item. */
 export function isArmamentWeapon(weapon) {
   return weapon?.armament === true;
 }
@@ -628,7 +640,7 @@ function armamentWeaponShape(token, armament) {
 }
 
 /* -------------------------------------------- */
-/*  Shared combat facts                         */
+/*  Shared combat stats                         */
 /* -------------------------------------------- */
 
 /** Whether an Item is one a unit attacks with. */
@@ -653,15 +665,14 @@ export function wornArmor(actor) {
 }
 
 /**
- * The facts calculateCombatSide, buildCombatSequence and defenderCanCounter in game/combat/exchange.mjs read from
- * one Character. The exchange's projectSide in combat-exchange.mjs, whose snapshot the Combat Preview shows, and
- * projectCombatSide in attack-targeting.mjs, which the planner measurement and threat lines read, both start from
- * these. Each adds hit points, stance, protections and damage types from its own source.
- * @param {Actor} actor The unit, prepared under whatever withFoundryCombatContext installed.
- * @param {Item|object|null} weapon The weapon it strikes with, or the detached Armament shape.
+ * The combat stats one Character brings to an attack, as calculateCombatSide, buildCombatSequence and
+ * defenderCanCounter in game/combat/exchange.mjs read them. The real exchange and the preview and Enemy AI estimates
+ * all start from these, each adding hit points, stance, protections and damage types from its own source.
+ * @param {Actor} actor The unit, prepared with whatever withFoundryCombatContext set on it.
+ * @param {Item|object|null} weapon The weapon it strikes with, or a borrowed Armament's weapon shape.
  * @param {Item|null} [activeItem] The Weapon Art it strikes through, if any.
- * @param {object} [system] Its system data: the live data, or what a hypothetical compile produced.
- * @param {object|null} [conditionSelf] Its condition context, when the caller built one for a hypothetical matchup.
+ * @param {object} [system] Its system data: the live data, or data compiled for an imagined matchup.
+ * @param {object|null} [conditionSelf] Its condition data, when the caller built it for an imagined matchup.
  * @returns {Readonly<object>}
  */
 export function projectCombatRuleFacts(actor, weapon, activeItem = null, system = actor.system ?? {},
@@ -722,8 +733,8 @@ export function projectCombatRuleFacts(actor, weapon, activeItem = null, system 
 }
 
 /**
- * The same facts for a Destructible, which defends with its Integrity alone: no weapon, no attacks, no traits and
- * no experience. projectObjectSide in combat-exchange.mjs reads it, and the Destructible preview shows that snapshot.
+ * The same combat stats for a Destructible, which defends with its Integrity alone: no weapon, no attacks, no traits and
+ * no experience. The exchange uses it for an attack on a Destructible, and the Destructible preview shows the result.
  * @param {Actor} actor The Destructible Object.
  * @returns {Readonly<object>}
  */
@@ -784,9 +795,9 @@ export function isStanceBrokenActor(actor) {
 }
 
 /**
- * The flight facts airborneBeyondMelee (game/targeting/attack-grid.mjs) checks for one attacker and target, which
- * resolveEngagement also reads beside the two elevations. Every projection that checks melee against flyers builds
- * them here. The map's flight permission comes from the target's Scene.
+ * The flight details airborneBeyondMelee (game/targeting/attack-grid.mjs) checks for one attacker and target, which
+ * resolveEngagement also reads beside the two elevations. Every check of melee against flyers builds them here. The
+ * map's flight permission comes from the target's Scene.
  */
 export function projectFlightReach(sourceToken, targetToken) {
   const document = targetToken?.document ?? targetToken ?? sourceToken?.document ?? sourceToken;
@@ -814,16 +825,13 @@ function effectiveWeaponRange(system, item) {
   return resolveEffectiveAttackRange(base, derived);
 }
 
-/**
- * A token's occupied cells from its saved position, for the attack targeting and exchange projections and the
- * flank check here. Empty when the grid size is unusable.
- */
+/** A token's occupied cells from its saved position. Empty when the grid size is unusable. */
 export function tokenCells(token, gridSize) {
   if (!token || !(Number(gridSize) >= 1)) return [];
   return persistedTokenFootprintCells(token, gridSize);
 }
 
-/** Whether each side of a melee exchange is flanked by a unit with Outflank, for the exchange snapshot. */
+/** Whether each side of a melee exchange is flanked by a unit with Outflank, from where every token stands now. */
 export function boardFlanking(sourceToken, targetToken, gridSize) {
   const occupancy = sceneCombatOccupancy(sourceToken?.document?.parent ?? sourceToken?.parent, gridSize);
   return {
@@ -833,9 +841,8 @@ export function boardFlanking(sourceToken, targetToken, gridSize) {
 }
 
 /**
- * Flanking with the mover placed on a square it is considering, by the same occupancy rule the exchange uses. Its
- * only caller is projectFlankingFrom in attack-targeting.mjs, which the Enemy AI planner reads as
- * game.emblemRpg.api.combat.flanking.
+ * Flanking with the mover placed on a square it is considering, by the same occupancy rule the exchange uses. The
+ * Enemy AI reads it through game.emblemRpg.api.combat.flanking.
  * @param {object} input
  * @param {Token} input.token The mover.
  * @param {{x: number, y: number}} input.standing The square it would stand on, in grid cells.
@@ -862,7 +869,7 @@ function alreadyFlanked(token) {
   return projectActorStatusKeys(actor).has('flanked') || actor?.system?.statuses?.flanked === true;
 }
 
-/** Mark a side flanked on the board, recording in `exchangeFlanked` whether the exchange is what raises the status. */
+/** Mark a side flanked by where units stand, recording in `exchangeFlanked` whether this exchange raises the status. */
 export function withExchangeFlanking(side, flanked) {
   return Object.freeze({
     ...side,
@@ -871,6 +878,7 @@ export function withExchangeFlanking(side, flanked) {
   });
 }
 
+/** Which unit covers each cell of a Scene, by `x,y` key, for flanking. `relocated` moves one token to another square. */
 function sceneCombatOccupancy(scene, gridSize, relocated = null) {
   const cells = new Map();
   for (const token of collectionValues(scene?.tokens)) {
@@ -892,6 +900,7 @@ function sceneCombatOccupancy(scene, gridSize, relocated = null) {
   return cells;
 }
 
+/** A token's top-left cell from its saved position, by the same hand-done grid math as tokenGridRect. */
 function tokenAnchor(token, gridSize) {
   const position = persistedTokenPosition(token);
   return { x: Math.floor(finite(position?.x) / gridSize), y: Math.floor(finite(position?.y) / gridSize) };
@@ -901,6 +910,7 @@ function tokenIsFlanked(token, occupancy, gridSize) {
   return tokenIsFlankedAt(token, tokenAnchor(token, gridSize), occupancy);
 }
 
+/** Whether a unit standing at `anchor` is flanked. Only a one-square unit can be flanked. */
 function tokenIsFlankedAt(token, anchor, occupancy) {
   const document = token?.document ?? token;
   const position = persistedTokenPosition(token);
@@ -937,10 +947,10 @@ export function footprintTerrainElevation(footprint, elevations) {
 }
 
 /**
- * One weapon as the plain facts the previews, the exchange and the planner read. `wielderSystem` is the unit's
- * system data with this weapon in hand. It defaults to the live Actor, which is right for the weapon actually
- * equipped. A planner asking about a weapon the unit only carries passes a what-if compile instead, so the range
- * doesn't borrow the reach of the weapon equipped now.
+ * One weapon as the plain values the previews, the exchange and the Enemy AI read. `range` is worked out from
+ * `wielderSystem`, which should be the unit's system data compiled with this weapon in hand. The default, the live
+ * Actor's data, is right only for the weapon equipped now; for any other weapon the range takes on the equipped
+ * weapon's reach.
  */
 export function projectWeapon(actor, item, wielderSystem = actor?.system) {
   if (!item) return Object.freeze({ present: false, uses: Object.freeze({}) });
@@ -968,7 +978,7 @@ export function projectWeapon(actor, item, wielderSystem = actor?.system) {
   });
 }
 
-/** Project one Item as the detached facts an authored rule may read. */
+/** One Item as an authored rule reads it, with a copy of its saved (unprepared) system data. */
 export function projectRuleItem(item) {
   return Object.freeze({
     uuid: String(item?.uuid ?? ''),
@@ -978,7 +988,7 @@ export function projectRuleItem(item) {
   });
 }
 
-/** Read the weapon damage-type conditions passed to combat rule evaluation. */
+/** Copies of a weapon's condition tree for each damage type, by damage type, for the combat rules. */
 export function projectDamageTypeConditions(itemSystem = {}) {
   return Object.fromEntries(DAMAGE_TYPES.map(type => [
     type,
@@ -1025,7 +1035,7 @@ export function markedAllyBonus(attacker, defender) {
 
 /**
  * Add an ally's Mark bonuses to a combat side. projectMarkedBonus in game/combat/exchange.mjs decides what the Mark
- * is worth, and the effect's identity is kept beside it so settlement can spend the Mark this side actually used.
+ * is worth, and the effect's identity is kept beside it so the exchange can spend the Mark this side actually used.
  */
 export function withMarkedBonus(side, bonus) {
   return Object.freeze({
@@ -1036,7 +1046,7 @@ export function withMarkedBonus(side, bonus) {
 }
 
 /**
- * The heal-echo policies on a unit's Items, for combat settlement and item activation. A policy names the healing it
+ * The heal-echo policies on a unit's Items, for resolving combat and item activation. A policy names the healing it
  * echoes by Item name (`items`), by kind (`sources`), or both, and resolveHealEchoAmount in game/effects/planning.mjs
  * matches them. A policy naming neither, or with no positive fraction, echoes nothing and is dropped.
  */
@@ -1062,15 +1072,14 @@ export function projectHealEchoPolicies(actor) {
 /*  Weapon proficiency                          */
 /* -------------------------------------------- */
 
-/** Project earned and compiled proficiency, experience and multiplier for combat rules and progression. */
+/** The unit's proficiency for a weapon's type, as projectProficiencyByKey gives it. */
 export function projectProficiency(actor, weapon) {
   return projectProficiencyByKey(actor, weapon?.system?.weapon?.req);
 }
 
 /**
- * Every proficiency's compiled total, by key, from the system data given: the Combat Preview's weapon switcher
- * offers only the weapons these ranks allow. projectSide in combat-exchange.mjs reads them under the exchange's
- * combat context, and projectCombatSide in attack-targeting.mjs from a hypothetical compile.
+ * Every proficiency's compiled total, by key, from the system data given. The Combat Preview's weapon switcher
+ * offers only the weapons these ranks allow.
  */
 export function projectProficiencyTotals(system) {
   return Object.freeze(Object.fromEntries(Object.entries(system?.prof ?? {})
@@ -1079,8 +1088,7 @@ export function projectProficiencyTotals(system) {
 
 /**
  * One weapon proficiency by key: the earned base, the compiled total, the banked experience, the best experience
- * multiplier the unit carries for it, and the rank thresholds. projectProficiency reads the key from a weapon, and
- * the downtime roster in downtime.mjs reads every key for a training session.
+ * multiplier the unit carries for it, and the rank thresholds.
  */
 export function projectProficiencyByKey(actor, proficiencyKey) {
   const key = String(proficiencyKey ?? '').toLowerCase();

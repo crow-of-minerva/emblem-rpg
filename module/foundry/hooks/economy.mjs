@@ -9,8 +9,8 @@ import { isActiveGm as isCurrentCoordinator } from '../adapters/services/host.mj
 /* -------------------------------------------- */
 
 /**
- * Route a Coinpurse landing on an Actor into the reconciliation that keeps gold one purse per carrier. A purse
- * created inbound on a Convoy is not the Convoy's gold yet, so it waits for a staff delivery.
+ * On the host client, merge a Coinpurse added to an Actor so each actor keeps its gold in one purse. A purse sent
+ * inbound to a Convoy isn't the Convoy's gold yet, so it waits until the GM delivers it.
  */
 export function createCoinpurseLifecycle({ executeInternal, notify = null }) {
   return Object.freeze({

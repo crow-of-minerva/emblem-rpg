@@ -1,4 +1,8 @@
-/* System stylesheet loaded directly by system.json. */
+/* System stylesheet, listed in system.json. Foundry loads it into the cascade layer `system`, which comes after
+   all of core's layers and before `modules`. So an ordinary rule here beats any core rule whatever its specificity,
+   and module stylesheets beat it in turn. Specificity only decides between rules in this file. An `!important`
+   here loses to an `!important` in core (layer order flips for important rules), so it is only needed to beat
+   inline styles, such as the size and position ApplicationV2 writes on a window. */
 /* Design tokens */
 @import url('https://fonts.googleapis.com/css?family=Lato:400,700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Hind+Vadodara:wght@400;700&display=swap');
@@ -85,7 +89,8 @@
 }
 
 /* Foundry foundations */
-/* Shipped and user-authored game sprites are pristine pixel art. */
+/* Game sprites are pixel art, so draw them unsmoothed. These path matches apply to any image whose path holds
+   these folders, other packages' images included. */
 img[src*="/assets/items/"],
 img[src*="/assets/abilities/"],
 img[src*="/assets/spells/"],
@@ -144,7 +149,9 @@ img[src*="/emblem/character/"] {
   margin-top: 0;
 }
 
-/* Cursor fallbacks stay at zero specificity so authored controls retain their intent. */
+/* Base cursors for the whole page. These sit above Foundry's own CSS, so they replace core's cursor rules
+   whatever their specificity: a control not listed below shows the plain arrow. :where() only keeps them easy to
+   override from later rules in this file. */
 html,
 body {
   cursor: var(--cursor-default);
@@ -199,8 +206,7 @@ body {
   cursor: var(--cursor-wait);
 }
 
-/* Match ProcessingBlocker’s refused controls with the hourglass. Include the BG3 id to override Core
-   specificity. */
+/* While the system is busy and refusing input, show the hourglass everywhere, BG3 hotbar included. */
 body.emblem-busy,
 body.emblem-busy *,
 body.emblem-busy #bg3-hotbar-container,
@@ -208,8 +214,8 @@ body.emblem-busy #bg3-hotbar-container * {
   cursor: var(--cursor-wait) !important;
 }
 
-/* Preserve usable cursors for input allowed by processingInputKind: chat, search, window controls, tabs and
-   staff segment stop. */
+/* While busy, keep normal cursors on what still works: chat, search, window buttons, tabs and the GM's Stop
+   button. */
 body.emblem-busy :is(#chat-message, .chat-input, #chat-form input, #chat-form textarea,
   input[type="search"], [name="search"], .directory-header input) {
   cursor: var(--cursor-text) !important;
@@ -268,7 +274,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   cursor: var(--cursor-not-allowed);
 }
 
-/* Hard fallbacks for Foundry chrome, legacy windows, and semantic splitters. */
+/* Window headers show a grab cursor on every window, core and module ones included. */
 .application:not(.minimized) .window-header,
 .app:not(.minimized) .window-header {
   cursor: var(--cursor-grab) !important;
@@ -294,6 +300,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   color: var(--emblem-icon-hover, #ffffff);
 }
 
+/* Divider handles and the editor's table-resize state show resize cursors. */
 :where([role="separator"][aria-orientation="vertical"], .ProseMirror.resize-cursor) {
   cursor: var(--cursor-ew-resize) !important;
 }
@@ -302,7 +309,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   cursor: var(--cursor-ns-resize) !important;
 }
 
-/* Inline cursor keywords cannot be reached through the stylesheet API. */
+/* The cursor script only rewrites stylesheets, so these catch cursors set in inline style attributes. */
 [style*="cursor:default"],
 [style*="cursor: default"] { cursor: var(--cursor-default) !important; }
 [style*="cursor:pointer"],
@@ -398,7 +405,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   box-shadow: var(--emblem-shadow);
 }
 
-/* Emblem applications retain keyboard focus behavior without rendering a focus state. */
+/* Hide focus outlines in system windows. Keyboard focus still works but is not shown. */
 .application.emblem-rpg:focus,
 .application.emblem-rpg:focus-visible,
 .application.emblem-rpg :focus,
@@ -420,7 +427,8 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
     linear-gradient(145deg, #211a28, var(--emblem-ink));
 }
 
-/* EmblemSheetMixin minimizes system sheets to a narrow title bar. */
+/* EmblemSheetMixin minimizes system sheets to a narrow title bar. The !important rules beat the inline width and
+   height ApplicationV2 writes on the window. */
 .application.emblem-rpg.sheet {
   --emblem-collapsed-width: 140px;
   --emblem-collapsed-height: 36px;
@@ -860,7 +868,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .emblem-token-tooltip .tooltip-open { color: #88cd65; }
 .emblem-token-tooltip .tooltip-locked { color: #ffe366; }
 
-/* The column spans the card's height and tabs shrink to fit it, so the fit settles in the card's own layout pass. */
+/* The tab column is as tall as the tooltip; tabs shrink to fit. */
 .emblem-token-tooltip .tooltip-tabs {
   position: absolute;
   top: 9px;
@@ -921,6 +929,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 }
 
 /* Character sheet */
+/* Fixed size: the !important beats the inline width and height ApplicationV2 writes on the window. */
 .application.sheet.emblem-rpg.character-sheet:not(.minimized) {
   width: 540px !important;
   height: 432px !important;
@@ -1870,7 +1879,6 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .emblem-character .journal-recipe-unlink:hover { color: #c2544f; }
 
 /* Actor and container sheets */
-/** @layer presentation/sheets */
 
 .application.sheet.emblem-rpg.actor:not(.minimized) .window-header {
   cursor: var(--cursor-grab);
@@ -2084,6 +2092,8 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
       font-size: 13px;
     }
 
+/* Convoy window frame. The rules from here to the end of the convoy section override the base convoy rules above
+   on purpose. */
 .application.sheet.emblem-rpg.convoy:not(.minimized) {
     border: none;
     background: rgba(0, 0, 0, 0) !important;
@@ -2484,7 +2494,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   cursor: var(--cursor-grab-down);
 }
 
-/* Locked stock survives stock changes. */
+/* Locked items, which Clear Stock keeps, get a gold border. */
 .vendor-item.is-locked {
   border: 1px solid #9c7a1a !important;
   box-shadow: 0 0 4px rgba(156, 122, 26, 0.45), inset 0 0 3px rgba(156, 122, 26, 0.25);
@@ -2612,8 +2622,8 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 }
 
 /* ============================================================
-   Frame skin
-   so the Vendor window is visually parallel to the Convoy window.
+   Vendor window frame (same look as the Convoy window). The rules from here
+   to the end of the vendor section override the base vendor rules above.
    ============================================================ */
 
 .application.sheet.emblem-rpg.vendor:not(.minimized) {
@@ -3211,7 +3221,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   padding: 14px 10px;
 }
 
-/* The notice a bracketed Object subtype shows where its authoring fields would be. */
+/* Placeholder shown for Object types that aren't built yet. */
 .obj-bracketed {
   border-style: dashed;
   border-color: rgba(120, 110, 140, 0.35);
@@ -3448,7 +3458,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .eff-row-btn:hover {  color: var(--emblem-icon-hover, #c2544f); }
 .eff-row-delete:hover {  color: var(--emblem-delete-hover, #e04b4b); }
 
-/* ==================== Cooking Station ==================== */
+/* ==================== Cooking Pot ==================== */
 .cooking-recipe-list { display: flex; flex-direction: column; gap: 5px; max-height: 420px; overflow-y: auto; }
 .cooking-recipe { background: rgba(30, 25, 40, 0.55); border: 1px solid rgba(120, 110, 140, 0.28); border-radius: 4px; }
 .cooking-recipe-summary { display: flex; align-items: center; gap: 7px; padding: 5px 7px; cursor: var(--cursor-pointer); list-style: none; }
@@ -3578,7 +3588,6 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .cooking-library-row .obj-add-btn { align-self: center; flex-shrink: 0; }
 
 /* Item sheet */
-/** @layer presentation/sheets */
 
 .application.sheet.emblem-rpg.item.item-sheet:not(.minimized) {
   box-shadow: 15px 20px 12px rgba(0, 0, 0, 0.3) !important;
@@ -4761,8 +4770,6 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   display: inline-block;
 }
 
-/* Checkbox ticks use background SVG because Chromium input pseudo-elements are unreliable. Checked rules
-   follow below. */
 
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .add-entry-group {
   display: flex;
@@ -5182,10 +5189,8 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   color: rgb(210,210,210);
 }
 
-/* Refresh and disabled toggles. The label
-   text itself signals state. Grey = off, green (Refreshes) / red (Disabled)
-   = on. The underlying <input> stays in the DOM (display:none) so form
-   submission keeps working; clicks anywhere on the <label> still toggle it. */
+/* Refreshes and Disabled toggles: the checkbox is hidden and the label colour shows the state (grey when off,
+   green for Refreshes or red for Disabled when on). Clicking the label still toggles the hidden input. */
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .refreshes-checkbox,
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .no-extra-attacks-checkbox {
   display: none !important;
@@ -5625,7 +5630,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .application.sheet.emblem-rpg.item.item-sheet .extra-attacks input { width: 55px; text-align: center; }
 .application.sheet.emblem-rpg.item.item-sheet .extra-attacks label { font-size: 10px; color: #aaa; }
 
-/* The add buttons reuse the sidebar directory header button recipe. */
+/* Add buttons copy the look of the sidebar directory header buttons; keep the two in step. */
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) :is(.add-effect-btn,.add-modifier,.add-requirement-btn,.open-params-btn) {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(208, 168, 92, 0.35);
@@ -5984,7 +5989,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   padding-right: 5px;
 }
 
-/* Override ApplicationV2 geometry after the Item and Resource sheet rules. */
+/* Cost box position and frame on Item and Resource sheets. */
 .application.sheet.emblem-rpg.item:is(.item-sheet, .resource-sheet) .cost-tracker {
   top: 13px !important;
   right: 3% !important;
@@ -6021,8 +6026,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   box-shadow: inset 0 -2px 0 #d8a04a;
 }
 
-/* Consolidated Class sheet family */
-/* Class-sheet overrides follow the shared Item-sheet rules. */
+/* Class sheet */
 
 .application.sheet.emblem-rpg.item.class-sheet:not(.minimized) {
     width: 500px !important;
@@ -6166,9 +6170,8 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 .class-sheet .promotion-rank { position:absolute; right:-4px; bottom:0; width:12px; height:12px; border:0; image-rendering:pixelated; }
 .class-sheet .promotion-requirement small { position:absolute; right:-7px; bottom:0; color:#ead9bd; }
 
-/* Source: styles/source/play-surfaces.css */
 /* -------------------------------------------- */
-/*  Foundry chat log                     */
+/*  Chat log (restyles every chat message)      */
 /* -------------------------------------------- */
 
 .chat-message {
@@ -6194,6 +6197,8 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 
 .chat-message .message-content h3{ color: var(--emblem-gold-bright); }
 
+/* Hides the header of every chat message from any sender, core and modules included: the speaker name, time,
+   whisper recipients, roll flavour text and the delete and dismiss buttons. */
 .message-header { display: none; }
 
 .chat-scroll,
@@ -6392,8 +6397,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 /* -------------------------------------------- */
 /*  Steal verdict cards                         */
 /* -------------------------------------------- */
-/* The settled theft: the thief reaching left for what was picked, the reach crossed out when the hand
-   closed on nothing. */
+/* Steal result: thief, arrow, stolen item; the arrow is crossed out on a failed steal. */
 .emblem-steal-card .emblem-steal-body {
   gap: 6px;
   padding-top: 2px;
@@ -8299,7 +8303,7 @@ margin-right:9px!important; text-align:right;
   z-index: 10;
   pointer-events: none;
 }
-/* Use shadow instead of glow for phase captions; other BannerPresentation variants retain glow. */
+/* Player and enemy phase captions get a dark shadow; the generic banner keeps its white glow. */
 .phase-banner-text.is-player {
   font-style: italic;
   color: rgba(70, 105, 255, 1);
@@ -8331,7 +8335,7 @@ margin-right:9px!important; text-align:right;
 }
 
 /* Round countdown, pinned top-right of the viewport just left of the sidebar.
-   The right offset is set from the presentation layer against the live sidebar edge. */
+   banners.mjs sets `right` inline from the sidebar's current edge. */
 .emblem-round-warning {
   position: fixed;
   top: 10px;
@@ -8437,7 +8441,7 @@ margin-right:9px!important; text-align:right;
 }
 .ect-phase-panel.ect-phase-player { --ect-faction: var(--ect-player); }
 .ect-phase-panel.ect-phase-enemy { --ect-faction: var(--ect-enemy); }
-/* A paused map keeps the running board's shape, with neither side's colour on it. */
+/* While the map is paused the panel keeps its layout but shows neither side's colour. */
 .ect-phase-panel.ect-phase-paused { --ect-faction: var(--ect-paused); }
 
 .ect-phase-row {
@@ -8509,8 +8513,8 @@ margin-right:9px!important; text-align:right;
 .ect-roster-enemy { --ect-faction: var(--ect-enemy); }
 .ect-roster-paused { --ect-faction: var(--ect-paused); }
 
-/* Sides, sort order and sort direction share one 22px strip; the tab group flexes so the sort
-   controls sit flush against the panel's right edge with nothing floating between them. */
+/* The side tabs, sort order and sort direction share one 22px bar; the tabs stretch so the sort controls
+   sit against the panel's right edge. */
 .ect-roster-bar {
   flex: 0 0 auto;
   display: flex;
@@ -8667,8 +8671,8 @@ margin-right:9px!important; text-align:right;
 /* -------------------------------------------- */
 /*  Unit rows                                   */
 /* -------------------------------------------- */
-/* Rows carry no stripe: the roster's spine already says whose they are. A unit's own faction colour
-   rings its portrait instead, so an ally fighting under a custom colour still shows it. */
+/* Rows have no side stripe; the roster's coloured left border shows the side. Each portrait's ring shows the
+   unit's own faction colour, so an ally with a custom colour still shows it. */
 
 .ect-unit {
   display: flex;
@@ -8826,8 +8830,8 @@ img.ect-name-badge {
 /* -------------------------------------------- */
 /*  Controls                                    */
 /* -------------------------------------------- */
-/* Every tracker control is text: no fill, no border, no radius. Intent is carried by colour and
-   weight, and hover only raises luminance over a 4% wash. */
+/* Tracker buttons are plain text with no fill or border; colour shows their purpose, and hover adds a faint
+   highlight. */
 
 .ect-btn {
   display: inline-flex;
@@ -8880,8 +8884,8 @@ img.ect-name-badge {
 }
 .ect-btn-quiet:hover:not([disabled]) { color: var(--emblem-text-muted, #bdb2a4); }
 
-/* An armed two-stage control counts down in place: colour and weight carry the state, as everywhere
-   else in this strip, and the label itself becomes the prompt. */
+/* A two-click button waiting for its second click turns amber, and its label becomes the prompt and counts
+   down. */
 .ect-btn.is-confirming,
 .ect-btn.is-confirming:hover:not([disabled]) {
   color: #e0a33a;
@@ -8899,7 +8903,7 @@ img.ect-name-badge {
 }
 .ect-btn-toggle.is-on { color: var(--emblem-gold-bright, #f0d18a); }
 
-/* Place encounter switches above phase progress and lifecycle controls below the roster. */
+/* The toggle rows at the top of the tracker (auto-advance, combat music) and the footer buttons below the roster. */
 .ect-toggles {
   flex: 0 0 auto;
   display: flex;
@@ -8935,8 +8939,8 @@ img.ect-name-badge {
 /* -------------------------------------------- */
 /*  Tracker header buttons                      */
 /* -------------------------------------------- */
-/* Create Combat, the Free Exploration toggle and its downtime sweep are the combat sidebar's head. Give them the
-   frame the directory headers use for Create Actor and Configure Party, so every sidebar head reads the same.
+/* Create Combat, the Free Exploration toggle and Reset Downtime sit at the top of the combat sidebar. They get
+   the same frame as the directory header buttons (Create Actor, Configure Party).
    Keep this rule above the exploration rules below: they share its specificity and set the states' own colours. */
 .combat-tracker-header .combat-control-lg {
   background: rgba(0, 0, 0, 0.3);
@@ -9158,7 +9162,8 @@ img.ect-name-badge {
   object-fit: contain;
 }
 
-/* Uncoloured folders default their spine to gold; a folder's own colour overrides it inline. */
+/* Folder headers get a gold left border. Core writes a folder's own colour inline, as the header's background and
+   the contents' left border colour, so a coloured folder shows its colour as the header fill under the gradient. */
 .sidebar-tab.directory li.directory-item.folder {
   --sidebar-folder-color: var(--emblem-gold);
   margin-bottom: 3px;
@@ -9194,7 +9199,7 @@ img.ect-name-badge {
   color: var(--emblem-gold-bright);
 }
 
-/* Header create buttons materialize on hover so resting folders read as plain banners. */
+/* A folder header's create button only shows on hover. */
 .sidebar-tab.directory .folder-header .create-button {
   opacity: 0;
   color: var(--emblem-gold-bright);
@@ -9205,13 +9210,13 @@ img.ect-name-badge {
   opacity: 0.85;
 }
 
-/* Banners scroll away with their contents: Foundry pins every folder header with a depth-indexed sticky offset,
-   which stacks them at the top of the directory and hides the rows they belong to. */
+/* Folder headers scroll away with their contents. Core makes each folder header sticky (offset by depth), which
+   stacks them at the top of the directory and hides the rows they belong to. */
 .sidebar-tab.directory li.directory-item.folder > header.folder-header {
   position: static;
 }
 
-/* The tray: recessed and spine-continued, scrolling with the directory rather than as its own scrollport. */
+/* A folder's contents: darker background and a left border in the folder's colour, scrolling with the list. */
 .sidebar-tab.directory ol.subdirectory.plain {
   margin: 2px 0 4px 4px;
   padding: 3px 0 3px 6px;
@@ -9277,8 +9282,8 @@ img.ect-name-badge {
   font-weight: 700;
 }
 
-/* A playlist entry is an expandable stack of sound controls rather than a row, so it takes the tray ground and
-   leaves Foundry's own compact control layout alone. */
+/* A playlist entry is an expandable stack of sound controls rather than a row, so it takes the folder-contents
+   background and leaves Foundry's own compact control layout alone. */
 .sidebar-tab.directory.playlists-sidebar li.directory-item.document.playlist {
   margin: 0 0 2px;
   padding: 2px 8px;
@@ -9813,7 +9818,7 @@ img.ect-name-badge {
 /*  Promotion preview                           */
 /* -------------------------------------------- */
 
-/* The promotion window wears the trade menus' frameless frame but takes its content height, not their fixed one. */
+/* The promotion window uses the trade menus' frame but sizes to its content instead of their fixed height. */
 .application.dialog.trade-menu-dialog.window-promote-preview {
   height: auto !important;
   max-height: none !important;
@@ -10230,7 +10235,7 @@ img.ect-name-badge {
 /*  Vendor shop                                 */
 /* -------------------------------------------- */
 
-/* The vendor shop is taller than the shared 550px trade-menu pin so the
+/* The vendor shop is taller than the shared 550px trade-menu height so the
    cart footer fits without shrinking the item list. */
 .application.dialog.trade-menu-dialog.window-vendor-shop {
   height: 606px !important;
@@ -10838,6 +10843,7 @@ img.ect-name-badge {
 /* -------------------------------------------- */
 /*  Token HUD status palette                    */
 /* -------------------------------------------- */
+/* Six 32px icons per row, set through core's own status palette variables. */
 #token-hud .status-effects {
   --effect-columns: 6;
   --effect-size: 32px;
@@ -11304,13 +11310,13 @@ img.ect-name-badge {
   image-rendering: pixelated;
   transition: filter 0.3s ease, transform 0.3s ease;
 }
-/* A performance whose track was cut off: the icon greys in a dark red glow as the band closes */
+/* A performance whose track was cut off: the icon greys in a dark red glow as the banner closes */
 .emblem-work-banner-image.is-track-stopped {
   filter: grayscale(1) brightness(0.8) drop-shadow(0 0 16px rgba(110, 10, 18, 0.95))
     drop-shadow(0 0 34px rgba(80, 0, 10, 0.7));
 }
 
-/* Crafting menus: the Workshop and the Laboratory share one frame, one panel vocabulary and one markup prefix */
+/* Crafting menus: the Workshop and the Laboratory share one layout and the `ws-` class prefix */
 .window-game-menu .gm-detail-cols { display: flex; align-items: stretch; gap: 14px; }
 .window-game-menu .gm-detail-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .window-game-menu .gm-col-label {
@@ -11823,8 +11829,9 @@ img.ect-name-badge {
 /* Authoring tools */
 /* Shared authoring dialog frame. */
 .dialog-editor .window-content { color:var(--color-light-3); font-family:'Signika',sans-serif; }
-/* Foundry's unlayered `button { color: var(--button-text-color) }` outranks any layered rule, so every
-   editor button restates its colour with the same weight. Icon-only buttons keep their Font Awesome face. */
+/* Editor buttons. The cascade layer already lets these colours beat core's `button` rule, so the `!important` is
+   not needed for that. Add buttons (a class containing `add-`) are gold and delete buttons (`delete` or `-del`) are
+   red. Icon-only buttons keep their Font Awesome face. */
 .dialog-editor button:not([class*='fa-']) {
   color: var(--emblem-text-muted) !important;
   background: transparent;
@@ -11967,7 +11974,7 @@ img.ect-name-badge {
 .dialog-class-selection .class-select-item:hover .class-checkbox { border-color:rgba(255,255,255,.4); }
 .dialog-class-selection .class-checkbox.checked { background:var(--emblem-ed-path); border-color:var(--emblem-ed-path); }
 
-/* Character authoring editors: the stat, skill, proficiency, level and Support windows ride the shared ed-row. */
+/* Character authoring editors. The stat, skill, proficiency, level and Support windows use the shared editor rows. */
 .dialog-add-support .support-add-search { position:relative; }
 .dialog-add-support .support-add-search input { width:100%; box-sizing:border-box; height:var(--emblem-control-height); padding:1px 6px; font-size:var(--emblem-text-s); }
 .dialog-support-editor { --emblem-ed-value-w:170px; }
@@ -12045,6 +12052,8 @@ img.ect-name-badge {
 .dialog-editor :is(input,select,textarea):not([type='checkbox']) { min-width:0; color:var(--color-light-2); background:var(--emblem-ed-well); border:none; border-radius:2px; font-family:var(--emblem-font-mono); }
 .dialog-editor :is(input,select,textarea):not([type='checkbox']):focus { outline:none; box-shadow:inset 0 0 0 1px rgba(127,163,158,.55); }
 .dialog-editor label:not(.ed-field) > :is(input:not([type='checkbox']),select,textarea) { flex:1; }
+/* Selects in the editors keep core's input colours so they read as dropdowns, not text fields. The modifier editor
+   draws its selects like its other inputs. */
 .emblem-rpg.dialog-editor:not(.dialog-modifier-editor) select { color:var(--input-text-color,var(--color-light-3)); background:var(--input-background-color,var(--color-cool-4)); border:1px solid var(--input-border-color,transparent); border-radius:4px; box-shadow:none; }
 .emblem-rpg.dialog-editor:not(.dialog-modifier-editor) select:focus { outline:2px solid var(--input-focus-outline-color,var(--color-cool-3)); outline-offset:-2px; box-shadow:none; }
 .emblem-rpg.dialog-editor:not(.dialog-modifier-editor) select:disabled { color:var(--color-light-4); background:var(--color-cool-5); border-color:var(--color-cool-4); }
@@ -12071,9 +12080,9 @@ img.ect-name-badge {
 .dialog-editor .craft-material-zone small { display:block; color:#9c8d83; font-size:10px; font-weight:400; }
 .dialog-editor .dmg-cond-block { margin:5px 0; padding:5px; border:none; border-radius:3px; background:rgba(0,0,0,.14); }
 
-/* Consolidated Item authoring editors */
+/* Item authoring editors: the shared field system */
 
-/* One control height per context. Regular (24px) is the dialog's identity row and its short forms; compact (21px)
+/* One control height per context. Regular (24px) is the dialog's top row and its short forms; compact (21px)
    is anything inside a card, a panel or a repeating row. Older rules that read --emblem-control-height follow it. */
 .dialog-editor {
   --ed-control: 24px;
@@ -12436,7 +12445,7 @@ img.ect-name-badge {
   text-align: center;
 }
 
-/* A read-only row is a derived readout, not a dimmed control, so it keeps full contrast in the literal tint. */
+/* A read-only row shows a computed value, not a disabled control, so it keeps full contrast. */
 .dialog-editor .ed-row > input:disabled {
   color: var(--emblem-ed-lit);
   background: rgba(0, 0, 0, 0.16);
@@ -12662,7 +12671,7 @@ img.ect-name-badge {
   color: var(--color-light-2);
 }
 
-/* An if card and its branches wear one rail colour per nesting depth. */
+/* An if card and its branches get a left border colour (`--eff-rail`) that changes with nesting depth. */
 .dialog-editor .ed-card[data-rail='1'] { --eff-rail: #6b8fae; }
 .dialog-editor .ed-card[data-rail='2'] { --eff-rail: #9b7fb8; }
 .dialog-editor .ed-card[data-rail='3'] { --eff-rail: #b8915e; }
@@ -12793,6 +12802,7 @@ img.ect-name-badge {
 .dialog-editor .ed-kind { color: var(--emblem-ed-kind); }
 
 
+/* Uses formula editor */
 .dialog-uses-formula {
   min-width: 425px;
   max-width: 425px;
@@ -12936,6 +12946,7 @@ img.ect-name-badge {
 }
 
 
+/* Target parameters dialog */
 .dialog-target-params {
   --ed-label-w: 150px;
 }
@@ -12944,6 +12955,7 @@ img.ect-name-badge {
   display: none;
 }
 
+/* Weapon damage conditions dialog */
 .dialog-weapon-dmg-conditions .dmg-cond-container {
   display: flex;
   flex-direction: column;
@@ -13023,6 +13035,7 @@ img.ect-name-badge {
 
 
 
+/* Modifier editor */
 .dialog-modifier-editor {
   min-width: 665px !important;
   height: auto;
@@ -13332,7 +13345,7 @@ img.ect-name-badge {
 }
 
 
-/* Requirement editor: the header and the placement panel ride the shared field system; only the window width and
+/* Requirement editor: the header and the placement panel use the shared field system; only the window width and
    the condition-tree spacing are its own. */
 .dialog-requirement-editor {
   min-width: 665px !important;
@@ -13731,7 +13744,7 @@ img.ect-name-badge {
   gap: 4px;
   flex-wrap: wrap;
 }
-/* Branch add buttons take their branch's rail and recede, so the root row stays the dominant set. */
+/* Add buttons inside a branch use the branch's border colour and are dimmer than the top-level buttons. */
 .dialog-effect-action-editor .eff-if-branch .eff-add-step-btn {
   padding: 1px 6px;
   font-size: 10px;
@@ -13863,6 +13876,7 @@ img.ect-name-badge {
 }
 
 
+/* Animation editor */
 .dialog-animation-editor {
   min-width: 600px !important;
   max-width: 600px !important;
@@ -14062,6 +14076,7 @@ img.ect-name-badge {
 }
 
 
+/* Crafting settings */
 .dialog-crafting-settings .craft-container {
   width: 100%;
   min-width: 0;
@@ -14412,8 +14427,8 @@ img.ect-name-badge {
   margin: 0;
 }
 
-/* Existing authoring tools */
-/* Actor Control Panel fields use shared editor styles. */
+/* Actor Control Panel */
+/* Base field label and input styles; the panel's "fields" rules below restyle most of them. */
 .emblem-actor-control-panel .ed-label {
   display: block;
   margin-bottom: 4px;
@@ -14437,9 +14452,9 @@ img.ect-name-badge {
   transition: border-color 0.2s ease;
 }
 
-/* Actor Control Panel */
+/* Actor Control Panel: colours and window */
 
-/* Actor Control Panel surfaces and semantic control colors. */
+/* Panel colours. Party configuration (--cp-*) and the Terrain Builder (--tb-*) repeat the same values. */
 
 .emblem-actor-control-panel {
   --acp-ground: #0f0d16;
@@ -14464,7 +14479,7 @@ img.ect-name-badge {
   --acp-card-fx: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-/* ---- window frame: blended header, gold title ---- */
+/* ---- window frame: header in the window's background colour, gold title ---- */
 .emblem-actor-control-panel.application {
   background: var(--acp-ground);
   border: none;
@@ -14524,7 +14539,7 @@ img.ect-name-badge {
   border: none;
 }
 
-/* subtle scrollbars — panels scroll without announcing it */
+/* thin, faint scrollbars */
 .emblem-actor-control-panel *::-webkit-scrollbar { width: 8px; height: 8px; }
 .emblem-actor-control-panel *::-webkit-scrollbar-track { background: transparent; }
 .emblem-actor-control-panel *::-webkit-scrollbar-thumb {
@@ -14534,7 +14549,7 @@ img.ect-name-badge {
 .emblem-actor-control-panel *::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.24); }
 .emblem-actor-control-panel *::-webkit-scrollbar-corner { background: transparent; }
 
-/* ---- body: a bare rail and two raised plates on the ground ---- */
+/* ---- layout: tab column on the left, two panels on the dark background ---- */
 .emblem-actor-control-panel .acp-root {
   display: flex;
   flex-direction: row;
@@ -14593,7 +14608,7 @@ img.ect-name-badge {
   min-height: 0;
 }
 
-/* ---- tray rail: bare column on the ground, dark red marks the live tray ---- */
+/* ---- tab column: no background of its own; dark red marks the open tab ---- */
 .acp-tray-rail {
   flex: 0 0 40px;
   width: 40px;
@@ -14658,7 +14673,7 @@ img.ect-name-badge {
 
 .acp-tray-tab.is-active:hover { background: rgba(255, 255, 255, 0.04); }
 
-/* ---- panes: raised plates ---- */
+/* ---- panes: raised panels ---- */
 .acp-pane {
   display: flex;
   flex-direction: column;
@@ -14742,7 +14757,7 @@ img.ect-name-badge {
   outline: none;
 }
 
-/* the system suppresses every focus outline and ring, so focus reads as a gold cast on the field itself */
+/* the system hides focus outlines everywhere, so a focused field gets a faint gold tint instead */
 .emblem-actor-control-panel .ed-input:focus,
 .emblem-actor-control-panel .ed-select:focus,
 .acp-input:focus {
@@ -14799,7 +14814,7 @@ img.ect-name-badge {
 
 .acp-flex { flex: 1 1 auto; min-width: 0; }
 
-/* ---- buttons: every one carries an explicit height, or core wins at 32px ---- */
+/* ---- buttons: each sets its own height, or core's 32px button height applies ---- */
 .acp-btn {
   display: inline-flex;
   align-items: center;
@@ -15049,7 +15064,7 @@ img.ect-name-badge {
   text-transform: uppercase;
 }
 
-/* frames recess to the ground tone; empty is quiet, hot is a gold ring */
+/* token frames: dark background like the fields; a drop target gets a gold outline */
 .acp-token-frame {
   width: 109px;
   height: 109px;
@@ -15358,7 +15373,7 @@ img.ect-name-badge {
   box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3);
 }
 
-/* ---- trigger / guard chips: gold fires it, lavender gates it ---- */
+/* ---- promotion chips: triggers are gold, conditions are lavender-grey ---- */
 .acp-promo-entry-conds {
   flex: 1 1 auto;
   min-width: 0;
@@ -15591,7 +15606,7 @@ img.ect-name-badge {
   gap: 9px;
 }
 
-/* ---------- Combat AI tray ---------- */
+/* ---------- Combat AI tab ---------- */
 
 .acp-help-dot {
   display: inline-flex;
@@ -15624,7 +15639,7 @@ img.ect-name-badge {
   margin-bottom: 4px;
 }
 
-/* the AI tray is its only home, so it must outrank the left column's button trim */
+/* mini buttons appear only in the Combat AI tab; the second selector beats `.acp-left .acp-btn` */
 .acp-btn-mini,
 .acp-left .acp-btn.acp-btn-mini {
   display: inline-flex;
@@ -15736,7 +15751,7 @@ img.ect-name-badge {
   gap: 4px;
 }
 
-/* ---------- Left column trim ---------- */
+/* ---------- Left column overrides ---------- */
 
 .acp-left .acp-label {
   font-size: 8.5px;
@@ -15860,7 +15875,7 @@ img.ect-name-badge {
   font-weight: 600;
 }
 
-/* ---------- Class tabs: resting slots, raised white active chip ---------- */
+/* ---------- Class tabs: inactive tabs are flat, the active one is raised with a bright label ---------- */
 
 .acp-tab-strip {
   display: flex;
@@ -15976,7 +15991,7 @@ img.ect-name-badge {
   color: var(--acp-danger);
 }
 
-/* the add glyph trails the tabs; Fill From Class holds the far end */
+/* the add button follows the last tab; Fill From Class sits at the far end */
 .acp-tab-actions {
   display: flex;
   align-items: center;
@@ -16089,7 +16104,7 @@ img.ect-name-badge {
   opacity: 0.75;
 }
 
-/* ---------- Token Effects: raised cards, collapsed until lit ---------- */
+/* ---------- Token Effects: one card per effect; its options stay hidden until it is ticked ---------- */
 
 .acp-fx-section { gap: 6px; }
 
@@ -16228,7 +16243,7 @@ img.ect-name-badge {
 }
 
 
-/* ConfigurePartyApp surfaces and semantic control colors. */
+/* ConfigurePartyApp colours; the same values as the Actor Control Panel's. */
 
 .emblem-configure-party {
   --cp-ground: #0f0d16;
@@ -16248,7 +16263,7 @@ img.ect-name-badge {
   --cp-card-fx: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-/* ---- window frame: blended header carrying the legend and the commit ---- */
+/* ---- window frame: header in the window's background colour, holding the Create Party button ---- */
 .emblem-configure-party.application {
   background: var(--cp-ground);
   border: none;
@@ -16304,7 +16319,7 @@ img.ect-name-badge {
   border: none;
 }
 
-/* subtle scrollbars — panels scroll without announcing it */
+/* thin, faint scrollbars */
 .emblem-configure-party *::-webkit-scrollbar { width: 8px; height: 8px; }
 .emblem-configure-party *::-webkit-scrollbar-track { background: transparent; }
 .emblem-configure-party *::-webkit-scrollbar-thumb {
@@ -16324,7 +16339,7 @@ img.ect-name-badge {
   color: var(--cp-tx);
 }
 
-/* ---- topbar: hoisted into the window header at render ---- */
+/* ---- top bar: moved into the window header on render ---- */
 .emblem-configure-party .cp-topbar {
   display: flex;
   align-items: center;
@@ -16374,7 +16389,7 @@ img.ect-name-badge {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(216, 179, 106, 0.35);
 }
 
-/* ---- body: two raised plates on the ground ---- */
+/* ---- layout: two panels on the dark background ---- */
 .emblem-configure-party .cp-body {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
@@ -16427,7 +16442,7 @@ img.ect-name-badge {
   gap: 8px;
 }
 
-/* ---- cards: raised plates inside the panel ---- */
+/* ---- cards: raised cards inside the panel ---- */
 .emblem-configure-party .cp-card {
   flex: 0 0 auto;
   background: var(--cp-card);
@@ -16609,7 +16624,7 @@ img.ect-name-badge {
   color: var(--cp-gold-bright);
 }
 
-/* ---- drop zones: no dashed boxes; the hot state is a gold ring ---- */
+/* ---- drop zones: a gold outline while something is dragged over them ---- */
 .emblem-configure-party .cp-drop {
   border: none;
   border-radius: 3px;
@@ -16804,7 +16819,7 @@ img.ect-name-badge {
   opacity: 0.8;
 }
 
-/* ---- drag affordances ---- */
+/* ---- dragging unit rows ---- */
 .emblem-configure-party .cp-row[data-unit-drag] {
   cursor: var(--cursor-grab);
 }
@@ -16817,7 +16832,7 @@ img.ect-name-badge {
   opacity: 0.4;
 }
 
-/* ---- prompt dialogs raised by the panel ---- */
+/* ---- prompt dialogs opened from the window ---- */
 .dialog-configure-party .cp-dialog-field {
   display: flex;
   flex-direction: column;
@@ -16862,7 +16877,7 @@ img.ect-name-badge {
   flex: 1 1 100%;
   white-space: nowrap;
 }
-/* TerrainBuilder surfaces and semantic control colors. */
+/* TerrainBuilder colours; the same values as the Actor Control Panel's. */
 
 .emblem-terrain-builder {
   --tb-ground: #0f0d16;
@@ -16884,7 +16899,7 @@ img.ect-name-badge {
   --tb-card-fx: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-/* ---- window frame: fixed width, blended header ---- */
+/* ---- window frame: fixed width, header in the window's background colour ---- */
 .emblem-terrain-builder.application {
   min-width: 812px;
   max-width: 812px;
@@ -16908,7 +16923,7 @@ img.ect-name-badge {
   white-space: nowrap;
 }
 
-/* subtle scrollbars — panels scroll without announcing it */
+/* thin, faint scrollbars */
 .emblem-terrain-builder *::-webkit-scrollbar { width: 8px; height: 8px; }
 .emblem-terrain-builder *::-webkit-scrollbar-track { background: transparent; }
 .emblem-terrain-builder *::-webkit-scrollbar-thumb {
@@ -16963,7 +16978,7 @@ img.ect-name-badge {
   color: var(--tb-tx);
 }
 
-/* ---- mode tabs: hoisted into the window header, resting slots + white active chip ---- */
+/* ---- mode tabs: moved into the window header; inactive tabs are flat, the active one is raised and bright ---- */
 .emblem-terrain-builder .window-header .terrain-modebar {
   display: flex;
   gap: 3px;
@@ -17016,7 +17031,7 @@ img.ect-name-badge {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
 
-/* ---- terrain mode: [tray rail] [selection] [zones] ---- */
+/* ---- terrain mode: [side tabs] [selection] [zones] ---- */
 .emblem-terrain-builder .terrain-terrain-mode {
   display: flex;
   flex-direction: row;
@@ -17031,7 +17046,7 @@ img.ect-name-badge {
 .emblem-terrain-builder .terrain-tray-drawer { order: 2; }
 .emblem-terrain-builder .terrain-zones-pane { order: 3; }
 
-/* ---- panes are raised plates on the ground ---- */
+/* ---- panes: raised panels on the dark background ---- */
 .emblem-terrain-builder .terrain-pane {
   display: flex;
   flex-direction: column;
@@ -17195,7 +17210,7 @@ img.ect-name-badge {
   color: var(--tb-mu);
 }
 
-/* ---- fields: recessed, strokeless ---- */
+/* ---- fields: dark, borderless ---- */
 .emblem-terrain-builder .terrain-field {
   display: flex;
   flex-direction: column;
@@ -17643,7 +17658,7 @@ img.ect-name-badge {
   margin-left: auto;
 }
 
-/* ---- tray rail ---- */
+/* ---- side tabs ---- */
 .emblem-terrain-builder .terrain-tray-rail {
   flex: 0 0 40px;
   width: 40px;
@@ -17704,7 +17719,7 @@ img.ect-name-badge {
   border: none;
 }
 
-/* ---- Selection panel: the active tray, titled by it ---- */
+/* ---- Selection panel: shows the open side tab, under that tab's title ---- */
 .emblem-terrain-builder .terrain-tray-drawer {
   flex: 0 0 244px;
   width: 244px;
@@ -17750,7 +17765,7 @@ img.ect-name-badge {
   opacity: 0.8;
 }
 
-/* ---- Overview tray: the square's saved data, editable in place ---- */
+/* ---- Overview tab: the square's saved data, editable in place ---- */
 .emblem-terrain-builder .terrain-tray-tab--overview {
   margin-bottom: 4px;
   padding-bottom: 6px;
@@ -17967,7 +17982,7 @@ img.ect-name-badge {
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* ---- directional pad (Geography tray) ---- */
+/* ---- directional pad (Geography tab) ---- */
 .emblem-terrain-builder .terrain-dpad {
   display: grid;
   grid-template-areas: ". up ." "left all right" ". down .";
@@ -18050,7 +18065,7 @@ img.ect-name-badge {
 
 .emblem-terrain-builder input.terrain-xz-mult { padding-inline: 2px; }
 
-/* ---- sliders (FX / Audio / Light trays) ---- */
+/* ---- sliders (FX / Audio / Light tabs) ---- */
 .emblem-terrain-builder .terrain-slider input[type="range"] {
   width: 100%;
   height: 18px;
@@ -18592,7 +18607,7 @@ img.ect-name-badge {
   background: rgba(216, 179, 106, 0.14);
 }
 
-/* Objective editor card layout and shared dialog chrome. */
+/* Objectives editor. */
 .dialog-objectives { min-width: 480px !important; }
 .dialog-objectives .is-hidden { display: none !important; }
 
@@ -18954,8 +18969,8 @@ img.ect-name-badge {
 }
 
 
-/* Recipe Library: the window language of the Studio module. Surfaces step ground, panel, card, control with no
-   borders; labels are small uppercase Signika; gold and rust carry the accents. */
+/* Recipe Library: styled like the Studio module's windows: borderless panels in stepped shades, small uppercase
+   Signika labels, gold and rust accents. */
 .application.recipe-library {
   --rl-ground: #24212d;
   --rl-panel: #2e2a39;
@@ -19038,7 +19053,7 @@ img.ect-name-badge {
   background: transparent;
 }
 
-/* ----- Rail ----- */
+/* ----- Side tabs ----- */
 
 .recipe-library .rl-rail {
   grid-row: 1;
@@ -19713,6 +19728,8 @@ img.ect-name-badge {
     color: #e3c100;
 }
 
+/* The HUD stays hidden until it has a state class: BG3 HUD Core's bg3-hud-visible shows it. The system adds
+   emblem-fade-active while it fades the HUD in or out (presentation/interface/bg3-hud.mjs, core-runtime.mjs). */
 .bg3-hud {
     opacity: 0;
     transition: opacity 0.3s ease-in-out;
@@ -19735,15 +19752,15 @@ img.ect-name-badge {
     transition: opacity 0.3s ease-in-out !important;
 }
 
+/* Lowers BG3 HUD Core's centre region (the hotbar grid) by 12px. */
 .bg3-hud-region-center {
     position: relative !important;
     bottom: -12px !important;
 }
 
-/* The GM hotbar idles with the rest of the interface. Foundry keeps --ui-fade-opacity and --ui-fade-duration on
-   <body> from its Fade UI setting, and Core writes --bg3-faded-opacity and --bg3-faded-delay inline on this
-   container only once its own Faded Opacity leaves 1, so a hand-set Core value still overrides these. Core owns
-   the fade itself: its :hover rule restores --bg3-normal-opacity. */
+/* The GM hotbar fades with Foundry's Fade UI setting (--ui-fade-opacity and --ui-fade-duration on <body>). BG3 HUD
+   Core writes its own fade values inline on this container once its Faded Opacity setting is below 1, and those
+   win. BG3 HUD Core runs the fade itself; its :hover rule restores --bg3-normal-opacity. */
 #bg3-hotbar-container.emblem-gm-hotbar {
     --bg3-faded-opacity: var(--ui-fade-opacity, 1);
     --bg3-faded-delay: var(--ui-fade-duration, 0.5s);
@@ -19755,6 +19772,7 @@ img.ect-name-badge {
     transition-delay: 0s !important;
 }
 
+/* Hides BG3 HUD Core's weapon-set and quick-access block beside the portrait; the system does not use it. */
 #bg3-hotbar-container .bg3-weapon-quick-wrapper {
     display: none !important;
 }
@@ -20022,6 +20040,8 @@ img.ect-name-badge {
     z-index: 100;
 }
 
+/* The active item: two sparks circle the cell's border. The box-shadow places two soft inset glows on opposite
+   sides, offset by --emblem-orbit along the current --emblem-spark-angle, so they follow the sparks round. */
 #bg3-hotbar-container .bg3-grid-cell.emblem-active-item,
 #bg3-hotbar-container .bg3-grid-cell.emblem-equipped.emblem-active-item {
     --emblem-spark-color: color-mix(in srgb, var(--emblem-active-color, rgb(255, 0, 200)) 55%, rgb(255, 245, 235));
@@ -20050,12 +20070,15 @@ img.ect-name-badge {
     }
 }
 
+/* Registered as an angle so the keyframes below can animate it; an unregistered custom property would jump. */
 @property --emblem-spark-angle {
     syntax: '<angle>';
     initial-value: 0deg;
     inherits: true;
 }
 
+/* The spark ring: the mask keeps only the 6px padding band, where two conic gradients turning with
+   --emblem-spark-angle draw the two sparks and their halos half a turn apart. */
 #bg3-hotbar-container .bg3-grid-cell.emblem-active-item::after {
     content: '';
     position: absolute;
@@ -20158,6 +20181,7 @@ img.ect-name-badge {
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
 }
 
+/* Hotbar cells never show item names. This also overrides BG3 HUD Core's own item-name display option. */
 .hotbar-item-name {
     display: none !important;
 }
@@ -20510,6 +20534,7 @@ img.ect-name-badge {
     background: rgba(140,110,80,0.5)!important;
 }
 
+/* Hides BG3 HUD Core's saved hotbar views switcher; the system decides what the hotbar holds. */
 .bg3-views-container {
     display: none !important;
 }
@@ -20667,12 +20692,13 @@ img.ect-name-badge {
 }
 
 /*
- * The counterattack toggle drawn by injectCounterMode in presentation/interface/bg3-hud.mjs. Its buttons carry
- * Core's .hotbar-control-button look; these rules put the pair on the line of Core's control row, centred under the
- * first hotbar column, and fade it in and out with that row. The fallback offset, used until the column is
- * measured, assumes the 10px side padding .bg3-hotbar-container gets above. The active button shows its mode's
- * colour, and the active button and a locked pair keep their look under the pointer. Foundry loads this sheet in an
- * earlier cascade layer than Core's, so a rule that overrides a Core declaration needs !important.
+ * The counterattack toggle drawn by injectCounterMode in presentation/interface/bg3-hud.mjs. Its buttons use
+ * BG3 HUD Core's .hotbar-control-button look; these rules put the pair on the line of that module's control row,
+ * centred under the first hotbar column, and fade it in and out with that row. The fallback offset, used until the
+ * column is measured, assumes the 10px side padding .bg3-hotbar-container gets above. The active button shows its
+ * mode's colour, and the active button and a locked pair keep their look under the pointer. BG3 HUD Core's
+ * stylesheet is in the `modules` cascade layer, after this one, so overriding one of its declarations needs
+ * !important; a stronger selector is not enough.
  */
 .emblem-counter-mode {
     position: absolute;
@@ -20748,6 +20774,7 @@ img.ect-name-badge {
   image-rendering: pixelated;
 }
 
+/* Dice So Nice's dice draw above everything, Foundry's notifications (z-index 99999) included. */
 #dice-box-canvas {
   z-index: 100100 !important;
 }
@@ -20757,16 +20784,14 @@ img.ect-name-badge {
 /* -------------------------------------------- */
 
 /*
- * One dropdown for the whole client: the system's sheets and dialogs, the companion modules' applications and Core's
- * own windows.
+ * One dropdown list for every single-choice select in the client: the system's, the companion modules' and
+ * Foundry's own windows.
  *
- * Chromium paints a native select popup in a widget outside the page, where neither the cursor tokens in "Cursor
- * fallbacks" nor any other rule here reaches it. Base appearance renders the list as ordinary DOM in the top layer
- * instead, so the rows below are the system's own: they take the pointer from the element policy above and their
- * colors from the tokens in `:root`. Only the list is shared. Each control keeps the size, ground, border and
- * typeface its own component gives it, which is why nothing here paints the closed select.
+ * Chromium draws a native select popup outside the page, where no rule in this file reaches it. `appearance:
+ * base-select` renders the list as page elements instead, so its rows take the system's cursors and the colours in
+ * `:root`. Only the open list is styled here; each control keeps its own closed look.
  *
- * A multiple-choice select is a list on the page already, not a popup, so it is left with Core’s own rendering.
+ * A multiple-choice select is already a list on the page, not a popup, so it keeps Foundry's own rendering.
  */
 body.system-emblem-rpg select:not([multiple]) {
   appearance: base-select;
@@ -20820,7 +20845,7 @@ body.system-emblem-rpg select:not([multiple])::picker(select) {
   font-size: var(--emblem-text-m);
 }
 
-/* A group label names the rows beneath it and is not itself pickable, so it reads as a heading and keeps the arrow. */
+/* A group label cannot be picked, so it is styled as a heading and keeps the default cursor. */
 body.system-emblem-rpg select:not([multiple]) optgroup {
   padding: 5px 6px 2px;
   background: transparent;
@@ -20832,7 +20857,7 @@ body.system-emblem-rpg select:not([multiple]) optgroup {
   cursor: var(--cursor-default);
 }
 
-/* A row is a row wherever it sits: the heading's small caps stop here, so a grouped option reads like a loose one. */
+/* Options undo the group label's heading style, so an option inside a group looks like one outside it. */
 body.system-emblem-rpg select:not([multiple]) option {
   display: flex;
   align-items: center;
@@ -20857,7 +20882,7 @@ body.system-emblem-rpg select:not([multiple]) option:checked {
   color: var(--emblem-select-mark);
 }
 
-/* A row this list will not take reads as unavailable rather than merely unlit. */
+/* A disabled option is greyed out. */
 body.system-emblem-rpg select:not([multiple]) option:disabled {
   color: var(--emblem-text-muted);
 }
@@ -20873,8 +20898,9 @@ body.system-emblem-rpg select:not([multiple]) option::checkmark {
 /*  Availability by role and table state        */
 /* -------------------------------------------- */
 
-/* Cursor precedence follows input handling: movement, targeting, pause, then processing.
-   Keep this block last and name the BG3 id where needed to override Core selectors. */
+/* Cursor precedence follows input handling: movement, targeting, pause, then processing. These `!important` rules
+   must stay below Module integrations and name the `#bg3-hotbar-container` id where needed, so they beat that
+   section's `!important` BG3 HUD cursor rules. */
 
 /* A read-only sheet has disabled everything it will not let this user author. Its fields are printed values now, so
    they read as content; its controls are still controls this role may not press. */
@@ -20887,7 +20913,9 @@ body.system-emblem-rpg select:not([multiple]) option::checkmark {
   cursor: var(--cursor-locked);
 }
 
-/* Match the encounter scene-lock adapter: lock other Scenes while keeping the current Scene available. */
+/* Locked cursor on the Scenes a player cannot switch to during an encounter scene lock (scene-lock.mjs). The current
+   Scene should stay available, but v14 marks only the viewed level with `.view` and gives directory entries no
+   `.active` class, so the current Scene's other levels and its directory entry also show the locked cursor. */
 body.emblem-scene-locked #scene-navigation [data-scene-id]:not(.view),
 body.emblem-scene-locked #scene-navigation [data-scene-id]:not(.view) *,
 body.emblem-scene-locked #scenes .directory-item:not(.active),
@@ -20895,8 +20923,8 @@ body.emblem-scene-locked #scenes .directory-item:not(.active) * {
   cursor: var(--cursor-locked) !important;
 }
 
-/* The board while this client carries a unit on its pathfinding drag, and while any pick waits for the square or
-   unit it was drawn to collect. An open plan with nothing in hand is not a carry and keeps the ordinary arrow. */
+/* Walk cursor on the map while this user drags a unit along a path; target cursor while the game waits for them to
+   pick a square or unit. */
 body.emblem-board-drag #board {
   cursor: var(--cursor-walk) !important;
 }
@@ -20905,7 +20933,8 @@ body.emblem-board-pick #board {
   cursor: var(--cursor-target) !important;
 }
 
-/* Match markPauseFreeze for non-staff gameplay surfaces. Inspection, chat and camera remain available. */
+/* Not-allowed cursor on the map and hotbar for a player while the game is paused (markPauseFreeze never marks a
+   GM). Inspection, chat and camera stay available. */
 body.emblem-pause-frozen #board,
 body.emblem-pause-frozen #bg3-hotbar-container .bg3-grid-cell,
 body.emblem-pause-frozen #bg3-hotbar-container .bg3-grid-cell *,
@@ -20916,7 +20945,8 @@ body.emblem-pause-frozen #bg3-hotbar-container
   cursor: var(--cursor-not-allowed) !important;
 }
 
-/* ProcessingBlocker outranks pause and targeting cursors, including BG3 weapon-set selectors. */
+/* Hourglass on the map and hotbar while ProcessingBlocker holds input (`emblem-busy`). It beats the pause and
+   targeting cursors, the BG3 weapon-set selectors included. */
 body.emblem-busy #board,
 body.emblem-busy #bg3-hotbar-container,
 body.emblem-busy #bg3-hotbar-container *,
@@ -20931,9 +20961,9 @@ body.emblem-busy #bg3-hotbar-container
   cursor: var(--cursor-wait) !important;
 }
 
-/* ProcessingBlocker refuses every input while the client loads, so the startup hourglass takes no exceptions.
-   The second :is() argument matches nothing; it lends the rule two ids of specificity, so it outranks every
-   table-state and emblem-busy cursor rule, the admitted chat, tab and window-header cursors included. */
+/* ProcessingBlocker refuses every input while the client loads, so the startup hourglass covers the whole page.
+   The second :is() argument matches nothing; it gives the rule the specificity of two ids, so it beats every other
+   cursor rule here, including the chat, tab and window-header cursors that stay usable while busy or paused. */
 body.emblem-starting,
 body.emblem-starting :is(*, #board#bg3-hotbar-container) {
   cursor: var(--cursor-wait) !important;
@@ -21087,7 +21117,7 @@ body.emblem-starting :is(*, #board#bg3-hotbar-container) {
   text-transform: uppercase;
   color: var(--color-light-2);
 }
-/* Ten stats in two rows of five, in the song library's order; the stats the song inspires are lit. */
+/* Ten stats in two rows of five, in the song library's order; the stats the song inspires are highlighted. */
 .window-performance-menu .pf-bonus-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -21299,9 +21329,10 @@ body.emblem-starting :is(*, #board#bg3-hotbar-container) {
 .song-library .sl-song-tags [hidden] { display: none; }
 .song-library .sl-song-track { font-size: 9px; color: var(--rl-gold); }
 
-/* Conversation banner: the working band's frame for two speakers. Each portrait frame bobs and glows while the image
-   inside keeps its zoom and, on the left, the inline mirror that turns it to face the right speaker. The band sits
-   below Dice So Nice's canvas (z 1000), so the Sociability rolls made while it is open stay visible. */
+/* Conversation banner: the work banner's layout, with two portraits. Each portrait frame bobs and glows while the
+   image inside keeps its zoom and, on the left, the inline mirror that turns it to face the right speaker. The banner
+   sits below the Dice So Nice canvas (raised to z-index 100100 under Module integrations), so the Sociability rolls
+   made while it is open stay visible. */
 .emblem-conversation-banner-wrapper {
   pointer-events: none;
   position: fixed;
@@ -21359,7 +21390,7 @@ body.emblem-starting :is(*, #board#bg3-hotbar-container) {
 .emblem-conversation-banner-icon.is-success { color: #ff6e9e; text-shadow: 0 0 26px rgba(255, 110, 160, 1); }
 .emblem-conversation-banner-icon.is-failure { color: #8b93a1; text-shadow: none; }
 
-/* Social menu (templates/menus/social-menu.hbs): the mode rail on the left stretches beside the body and the Begin
+/* Social menu (templates/menus/social-menu.hbs): the mode tabs on the left stretch beside the body and the Begin
    footer, which sits in flow here rather than in the game menu's absolute footer strip, so the window has no dead
    space. The body shows the two units face to face with the mode's icon and reminder between them, and in Train
    the ten weapon proficiencies as a 2 x 5 grid; social-app.mjs puts the trainer on the left once one is picked. */
@@ -21766,7 +21797,7 @@ body.emblem-starting :is(*, #board#bg3-hotbar-container) {
 .window-requisition-menu .rq-ticket.is-bad { color: #d9534f; }
 
 /* Stationary sheet: each faction row holds its name, relation, wealth, the enabled switch and the delete on one line;
-   a requisitioned row adds the marker, with the staff clear button, on a second line. The list keeps its scrollbar
+   a requisitioned row adds the marker, with the GM's clear button, on a second line. The list keeps its scrollbar
    gutter and the name takes only the width left over, so a list long enough to scroll keeps every row on one line. */
 .stationary-note { font-size: 11px; font-style: italic; color: var(--color-light-4); }
 .stationary-faction-list { scrollbar-gutter: stable; }
@@ -21823,7 +21854,7 @@ body.emblem-starting :is(*, #board#bg3-hotbar-container) {
 .stationary-lock-clear i { margin-right: 3px; }
 
 /* Convoy header: the portrait, the name over the item count, and a right-aligned column with the Stored / Inbound
-   switch over the gold field. The staff Deliver button joins the gold's row on the Inbound view, so the switch and the
+   switch over the gold field. The GM's Deliver button joins the gold's row on the Inbound view, so the switch and the
    gold keep their places when ConvoySheet changes view. The rules hang off the sheet window's classes: the template's
    own <form class="convoy-sheet"> is dropped inside the window's form. */
 .application.emblem-rpg.convoy .convoy-header {
@@ -21965,7 +21996,7 @@ body.emblem-starting :is(*, #board#bg3-hotbar-container) {
   letter-spacing: 0.5px;
 }
 
-/* Convoy inbound rows are dimmed under a small tag, since nobody takes them until staff deliver them. */
+/* Convoy inbound rows are dimmed under a small tag; nobody can take them until the GM delivers them. */
 .application.emblem-rpg.convoy .convoy-inbound-item { opacity: 0.6; cursor: var(--cursor-default); }
 .application.emblem-rpg.convoy .convoy-inbound-item:hover { opacity: 0.85; }
 .application.emblem-rpg.convoy .convoy-inbound-tag {

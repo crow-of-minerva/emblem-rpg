@@ -15,8 +15,8 @@ export class TokenArtTransitionCoordinator {
   /**
    * @param {object} [options]
    * @param {object} [options.diagnostics]
-   * @param {Function} [options.schedule] Runs a callback after a delay and returns a handle. In play it uses the
-   *   host's pacing clock, so a hidden host still reverts shared art on time.
+   * @param {Function} [options.schedule] Runs a callback after a delay and returns a handle. In play it uses a clock
+   *   whose timers a hidden browser tab doesn't slow, so a hidden host still reverts shared art on time.
    * @param {Function} [options.cancelScheduled] Cancels a handle schedule returned.
    * @param {Function} [options.wait] Resolves after a delay, on the same clock.
    */
@@ -34,7 +34,7 @@ export class TokenArtTransitionCoordinator {
     this.refreshTimers = new Map();
   }
 
-  /** Cancel a transient lock's revert and watchdog. */
+  /** Cancel a held swap's revert and watchdog timers. */
   #clearLockTimers(lock) {
     if (lock?.timer) this.cancelScheduled(lock.timer);
     if (lock?.watchdog) this.cancelScheduled(lock.watchdog);
@@ -119,6 +119,7 @@ export class TokenArtTransitionCoordinator {
     }
     entry.desired = desired;
     entry.count += 1;
+    // The chain never rejects (failures are logged on the next line), so the second `write` is only a fallback.
     const result = entry.chain.then(write, write);
     entry.chain = result.catch((diagnosticError) => { recordDiagnostic(this.diagnostics, { sourcePath: import.meta.url, error: diagnosticError, detail: 'enqueueWrite' }); });
     return result.finally(() => {

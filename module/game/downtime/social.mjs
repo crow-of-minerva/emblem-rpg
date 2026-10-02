@@ -49,7 +49,7 @@ function proficiencyRankLabel(total) {
  * Decide who teaches whom in one proficiency. The higher total teaches. A tie goes to the better instructor by
  * Charisma bonus (the Command skill's stat), and a second tie to `first`, which callers pass as the visited unit.
  * @param {object} first The visited unit, a downtime roster entry carrying `proficiencies` and `attributes`.
- * @param {object} second The driving unit.
+ * @param {object} second The acting unit.
  * @param {string} key A weapon proficiency key.
  * @returns {?{trainer: object, trainee: object, trainerRank: number, traineeRank: number, equal: boolean}}
  *   Null when neither unit holds the proficiency.
@@ -92,11 +92,11 @@ export function eligibleTraining(first, second) {
 /*  Plans                                       */
 /* -------------------------------------------- */
 /**
- * Validate a socialize for engine/downtime/commands.mjs before anything is rolled or written. The pair is the
- * driving unit and the unit it visited. Both must be distinct units of the same party standing adjacent in free
- * exploration, and both must still have their Downtime Action. The partner's owner is never asked.
- * @param {object} snapshot The social snapshot: `exploring`, `cursor`, `partner`, `inReach` and `roster`
- *   (downtime units carrying `partyId`, `level`, `experienceMultiplier` and `proficiencies`).
+ * Validate a socialize before anything is rolled or written. The pair is the acting unit and the unit it visited.
+ * Both must be distinct units of the same party standing adjacent in free exploration, and both must still have
+ * their Downtime Action. The partner's owner is never asked.
+ * @param {object} snapshot `exploring`, the acting unit (`cursor`), `partner`, `inReach` and `roster` (downtime
+ *   units carrying `partyId`, `level`, `experienceMultiplier` and `proficiencies`).
  * @returns {Readonly<object>} A refusal, or `{ok: true, code, data}` with `{cursor, partner}` also under `plan`.
  */
 export function planSocialize(snapshot = {}) {
@@ -107,9 +107,9 @@ export function planSocialize(snapshot = {}) {
 }
 
 /**
- * Validate a training session for engine/downtime/commands.mjs: the pair checks of planSocialize, then the chosen
- * proficiency must be one the pair can train. The plan names the direction, both labelled ranks and the raw spar
- * experience each side earns before multipliers.
+ * Validate a training session: the pair checks of planSocialize, then the chosen proficiency must be one the pair
+ * can train. The plan names the direction, both labelled ranks and the raw spar experience each side earns before
+ * multipliers.
  * @param {object} snapshot As planSocialize.
  * @param {object} intent A normalizeTrainingIntent result.
  * @returns {Readonly<object>} A refusal, or `{ok: true, code, data}` with the plan also under `plan`.
@@ -141,8 +141,8 @@ export function planTraining(snapshot = {}, intent = {}) {
 }
 
 /**
- * Why a unit cannot spend its Downtime Action, or empty when it can. Ownership is not a block here: the command
- * authorizes the driving unit's Token, and the partner may belong to another player.
+ * Why a unit cannot spend its Downtime Action, or empty when it can. Ownership is not checked: the command already
+ * checks the acting unit's Token, and the partner may belong to another player.
  */
 export function actionLaneBlock(unit) {
   const [row] = resolveParticipants([{ ...unit, owned: true }], { lane: DOWNTIME_LANES.ACTION });
@@ -150,9 +150,9 @@ export function actionLaneBlock(unit) {
 }
 
 /**
- * The checks both plans share, in the order the social menu's view reports them: exploration, the driving unit and
- * the partner in the roster, self-pairing, the pair's shared party, adjacency, then each unit's Action lane. A unit
- * in no party pairs with nobody, and two units pair only inside the same party.
+ * The checks both plans share, in the order the social menu reports them: exploration, the acting unit and the
+ * partner in the roster, self-pairing, the pair's shared party, adjacency, then whether each unit still has its
+ * Downtime Action. A unit in no party pairs with nobody, and two units pair only inside the same party.
  */
 function resolvePair(snapshot) {
   if (snapshot?.exploring !== true) return refuse(RESULT_CODES.DOWNTIME_EXPLORATION_REQUIRED);

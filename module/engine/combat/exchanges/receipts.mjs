@@ -10,7 +10,7 @@ const PHYSICAL_DAMAGE_TYPES = ['slashing', 'piercing', 'crushing', 'missile', 'n
 const MAGICAL_DAMAGE_TYPES = ['fire', 'ice', 'lightning', 'wind', 'decay', 'arcane', 'shadow', 'holy'];
 
 /* -------------------------------------------- */
-/*  Beat messages                               */
+/*  Presentation messages                       */
 /* -------------------------------------------- */
 // The messages an exchange broadcasts for CombatPresentation to play on every client.
 
@@ -52,8 +52,8 @@ export function attackMessage(label, side, snapshot, acting, defending, check) {
 }
 
 /**
- * Build the impact beat consumed by CombatPresentation. Carry the authenticated requester so
- * the Foundry attack-card writer uses the attacker's roll mode.
+ * The impact message CombatPresentation plays for a blow. It carries the requesting user, so the attack card uses
+ * the attacker's roll mode.
  */
 export function impactMessage(blow, acting, defending, health = null, requester = null) {
   return combatPresentationMessage(COMBAT_PRESENTATION_BEATS.IMPACT, {
@@ -153,7 +153,10 @@ export function combatDamagePresentation(combat, resolution, rolledDamage, actin
 /*  Health messages                             */
 /* -------------------------------------------- */
 
-/** The damage a landed blow presents, using the totals the settlement actually wrote. */
+/**
+ * The damage numbers for a landed blow, from the totals actually written. `lastHit` comes from the rolled result
+ * (`resolution.defeated`), not from the defeat the write recorded.
+ */
 export function damageMessage(target, resolution, persisted, critical) {
   return healthPresentationMessage({
     tokenUuid: target.tokenUuid,

@@ -79,8 +79,8 @@ async function openLock(context, services) {
 
 /**
  * Pay a free-exploration attempt's Energy, roll the Locktouch check when the plan needs one and wait for its card,
- * then unlock through FoundryObjectRepository and use up the key if the plan says so. The turn is spent inside the
- * same operation, which openLock captured through before the first write.
+ * then unlock through FoundryObjectRepository and use up the key if the plan says so. The turn is spent under the
+ * same undo record, which openLock filled before the first write.
  */
 async function settleLock(services, snapshot, plan, context) {
   let opened = true;
@@ -128,8 +128,9 @@ async function settleLock(services, snapshot, plan, context) {
 }
 
 /**
- * Spend a lockpick's Energy and commit the unit to the Energy lane, as gathering, forging and brewing do, through
- * FoundryObjectRepository.spendEnergy. The exploration roster then shows the attempt against the unit's Energy.
+ * Spend a lockpick's Energy and record the attempt as the unit's downtime Energy activity, as gathering, forging and
+ * brewing do, through FoundryObjectRepository.spendEnergy. The exploration roster then shows the attempt against
+ * the unit's Energy.
  */
 async function spendLockpickEnergy(services, snapshot, cost) {
   const spend = energyLaneSpend({
@@ -266,8 +267,8 @@ function armamentRefusalData(snapshot) {
 /* -------------------------------------------- */
 
 /**
- * Drop an item on the ground as loot or discard it, through FoundryObjectRepository. A drop that plans a square
- * commit also closes the unit's plan on its square.
+ * Drop an item on the ground as loot or discard it, through FoundryObjectRepository. When the drop calls for it,
+ * the unit's open move also ends on its current square.
  */
 async function dropItem(context, services) {
   const intent = normalizeItemDropIntent(context.payload);
@@ -304,8 +305,8 @@ async function dropItem(context, services) {
 }
 
 /**
- * Refuse a ground drop the writer could not finish: stale facts before anything was written, or a failed write
- * whose partial effects CommandDispatcher puts back before the refusal reaches the caller.
+ * Refuse a ground drop the writer could not finish: data that changed before anything was written, or a failed
+ * write whose partial changes CommandDispatcher undoes before the refusal reaches the caller.
  */
 function refuseDropSettlement(services, outcome) {
   const code = String(outcome?.code ?? DROP_SETTLEMENT_OUTCOMES.STALE);
@@ -318,7 +319,7 @@ function refuseDropSettlement(services, outcome) {
   return refuse(RESULT_CODES.DROP_SETTLEMENT_FAILED, { reasonCode, diagnostic });
 }
 
-/** Close the unit's open plan on the square it stands on, after the item has been dropped. */
+/** End the unit's open move on the square it stands on, after the item has been dropped. */
 async function settleDropSquare(services, snapshot, context) {
   const movement = snapshot.source.movement;
   if (!movement) return;
@@ -328,7 +329,7 @@ async function settleDropSquare(services, snapshot, context) {
 }
 
 /* -------------------------------------------- */
-/*  Lock facts                                  */
+/*  Lock helpers                                */
 /* -------------------------------------------- */
 
 function lockFacts(snapshot, method) {
@@ -361,8 +362,8 @@ function lockRefusalData(snapshot, plan) {
 }
 
 /**
- * Whether the caller holds the unit's open movement plan, which an attempt that spends the turn or commits the
- * square needs before anything rolls or unlocks, so the turn can be settled through that plan.
+ * Whether the caller controls the unit's open move. An attempt that spends the turn or fixes the unit's square
+ * needs it before anything rolls or unlocks, so the turn can be ended through that move.
  */
 function lockAttemptPlanned(snapshot, userId) {
   if (snapshot.claimsAction !== true && snapshot.commitsSquare !== true) return true;

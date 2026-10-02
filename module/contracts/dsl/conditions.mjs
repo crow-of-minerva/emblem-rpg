@@ -30,8 +30,8 @@ export function empty() {
 }
 
 /**
- * Whether a value is a condition node, an object with a `kind`. Character compilation and the board projection use
- * it to ask whether a modifier carries a condition tree.
+ * Whether a value is a condition node, an object with a `kind`, as when asking whether a modifier carries a
+ * condition tree.
  */
 export function hasConditionTree(tree) {
   return tree !== null && typeof tree === 'object' && typeof tree.kind === 'string';
@@ -52,24 +52,24 @@ export function isEmpty(tree) {
 }
 
 /* -------------------------------------------- */
-/*  Surfaces and facts                          */
+/*  Surfaces and values                         */
 /* -------------------------------------------- */
 /**
  * The places a condition tree is authored: an effect entry or `if` step, a standard modifier, an aura modifier, an
- * activation requirement and a weapon damage-type condition. Only the effect surface has a moment to draw a chance.
+ * activation requirement and a weapon damage-type condition. Only the effect surface allows a chance.
  */
 export const CONDITION_SURFACES = Object.freeze(['effect', 'modifier', 'aura', 'requirement', 'damageType']);
 
-/** Context roots that name a unit. Below them a path reads that unit's facts. */
+/** Context roots that name a unit. Below them a path reads that unit's values. */
 const UNIT_ROOTS = Object.freeze(['self', 'target', 'caster', 'actor']);
 
-/** Context roots that hold item or call data rather than unit facts, so any path below them is accepted. */
+/** Context roots that hold item or call data rather than unit values, so any path below them is accepted. */
 const OPEN_ROOTS = Object.freeze([
   'item', 'activeItem', 'selectedParams', 'targetLocation', 'savingThrowResult', 'skillCheckResult',
   'casterPlacement', 'targetPlacement'
 ]);
 
-/** Unit facts the evaluator's contexts carry beyond the authoring vocabulary. */
+/** Unit values the evaluator's contexts carry beyond the authoring vocabulary. */
 const UNIT_FACT_EXTRAS = Object.freeze([
   'statuses', 'physicalWeaponTypesCarried', 'hasStealables',
   ...STATS.map(stat => `stats.${stat.key}.total`),
@@ -102,7 +102,7 @@ const ROOTED_FACTS = withPrefixes([
 ]);
 
 /**
- * Whether a dotted path names a fact some condition context supplies. A bare name reads the unit itself, a unit root
+ * Whether a dotted path names a value some condition context supplies. A bare name reads the unit itself, a unit root
  * (`self`, `target`, `caster`, `actor`) reads that unit, and a trailing `length` reads a list's size.
  */
 export function isKnownFactPath(path) {
@@ -136,7 +136,7 @@ export function expressionPaths(text) {
   return paths;
 }
 
-/** Every fact path a tree reads. A status leaf reads `statuses`, or `target.statuses` on the target side. */
+/** Every value path a tree reads. A status leaf reads `statuses`, or `target.statuses` on the target side. */
 export function conditionPaths(tree) {
   if (!isPlainObject(tree)) return [];
   switch (tree.kind) {
@@ -153,7 +153,10 @@ function statusKey(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-/** The system's own status names: every status key, the airborne status's `Flying` id and Stance Break. */
+/**
+ * The status names the validator knows: every status key, the airborne status's `Flying` id and Stance Break.
+ * Rally and Guarded are not listed, so a check on either gets a warning.
+ */
 const KNOWN_STATUS_KEYS = Object.freeze([...STATUS_KEYS, 'Flying', STANCE_BREAK_STATUS_ID].map(statusKey));
 
 /* -------------------------------------------- */

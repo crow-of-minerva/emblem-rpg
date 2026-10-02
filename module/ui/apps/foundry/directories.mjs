@@ -64,6 +64,7 @@ function scopedDirectoryClass(documentName) {
       }
     }
 
+    // Join the collection's apps, so Foundry re-renders this window when the folder's documents change.
     _onFirstRender(context, options) {
       super._onFirstRender(context, options);
       this.collection.apps.push(this);

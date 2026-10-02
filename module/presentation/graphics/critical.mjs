@@ -46,6 +46,7 @@ export class CriticalPresentation {
         elements.image.style.width = `${ratio * elements.image.naturalWidth * 0.255}px`;
         elements.image.style.height = `${ratio * elements.image.naturalHeight * 0.255}px`;
       }
+      // Reading offsetHeight forces a layout, so the height transition starts from the closed banner.
       void elements.container.offsetHeight;
       await this.wait(CRITICAL_BANNER_TIMING.settle);
       this.#animatePortrait(elements.imageWrapper);

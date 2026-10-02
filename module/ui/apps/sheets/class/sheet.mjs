@@ -184,6 +184,7 @@ export class ClassSheet extends EmblemSheetMixin(foundry.applications.sheets.Ite
   _prepareSubmitData(event, form, formData) {
     if (!canCurrentUserAuthor(this.document)) return {};
     const data = super._prepareSubmitData(event, form, formData);
+    // Lower any base stat above its cap to the cap. Unplayable Classes keep whatever was entered.
     if ((data.system?.tier ?? this.document.system.tier) === 'Unplayable') return data;
     data.system ??= {}; data.system.baseStats ??= {};
     for (const key of GROWTH_STATS) {
@@ -234,6 +235,8 @@ export class ClassSheet extends EmblemSheetMixin(foundry.applications.sheets.Ite
 
     const bundles = Array.from(item.system.features).map(normalizeBundle).sort((a, b) => a.lvl - b.lvl);
     const states = bundleStates(item, bundles);
+    // On a Character's Class, blocked (a lock) = not owned and not eligible; selectable = can be ticked now. opaque =
+    // full opacity: always on a Class no Character holds, otherwise when owned, skipped, or eligible in a ready bundle.
     context.features = bundles.map((bundle, position) => {
       const { state, ownership, eligibility, skipped } = states[position];
       bundle.state = state;
@@ -288,8 +291,8 @@ const GRANT_TYPES = new Set(['Ability', 'Spell']);
 
 /**
  * Add or edit a feature bundle: the Abilities and Spells the Class grants at a level, how many a unit picks, and
- * what each one replaces. openEditor saves it into `system.features`. `reopenable` offers a GM the reopen box for an
- * automatic bundle that skipped an upgrade; saving with it ticked sends api.character.classes.reopenBundle.
+ * what each one replaces. Saving writes the bundle into `system.features`. `reopenable` offers a GM the reopen box
+ * for an automatic bundle that skipped an upgrade; saving with it ticked sends api.character.classes.reopenBundle.
  */
 async function openBundleEditor(classItem, existing = null, { reopenable = false } = {}) {
   const bundle = foundry.utils.deepClone(existing ?? {
@@ -426,7 +429,7 @@ const PROMOTION_PROFICIENCIES = PROFICIENCIES.filter(entry => !entry.misc);
 
 /**
  * Add or edit a promotion: the Class it leads to, its level, the Promotion item it uses, and the proficiency and
- * skill ranks it requires. openEditor saves it into `system.promotions`.
+ * skill ranks it requires. Saving writes the promotion into `system.promotions`.
  */
 async function openPromotionEditor(classItem, existing = null) {
   const promotion = normalizePromotion(existing);

@@ -53,21 +53,20 @@ const MOUNT_STAT_KEYS = Object.freeze({
 const ATTACK_STAT_KEYS = Object.freeze({ Might: 'mgt', Wit: 'wit', Technique: 'tqn' });
 const PHYSICAL_WEAPON_FAMILIES = Object.freeze(new Set(['brawling', 'blade', 'polearm', 'heavy', 'bow', 'covert']));
 const MAGE_ARMOR_DEFENSE_FLOOR = 5;
+/** Lowest active effect change priority at which an effect's protection, vulnerability or immunity change counts. */
 const PROTECTION_OVERRIDE_PRIORITY = 99;
 const OVERRIDABLE_PROTECTIONS = Object.freeze(['prots', 'vulns', 'imms']);
 /** The damage-type flags where an effect's override outranks an item modifier. For immunity, the modifier wins. */
 const EFFECT_RANKED_PROTECTIONS = Object.freeze(['prots', 'vulns']);
 const SIMPLE_TARGET = /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/;
-/** Compiled families whose leaves a modifier sets outright instead of adding to, so it can clear one as well. */
+/** Groups of on/off flags: a modifier switches one of these on or off instead of adding to it. */
 const BOOLEAN_FAMILIES = Object.freeze(['combat', 'statuses', 'unitType']);
 
 /**
- * Compile a Character's derived stats, statuses and equipment from its stored data and carried items, as
- * projectCharacterSource (foundry/adapters/projections/characters.mjs) builds them. prepareCharacterData in the
- * Character data model fills the derived fields from the result. compileCharacterAs in that projection file and
- * statModifierDeltas (game/character/modifier-deltas.mjs) use it for what-if compiles. It reads and writes no
- * documents.
- * @param {object} source Detached source produced by the Foundry projection.
+ * Work out a Character's derived stats, statuses and equipment from its stored data and carried items. Used by
+ * actor data preparation (prepareCharacterData) and by previews. Reads and writes no documents.
+ * @param {object} source A detached copy of the Character's data, built by projectCharacterSource in
+ *   foundry/adapters/projections/characters.mjs.
  * @returns {object}
  */
 export function compileCharacterData(source) {
@@ -172,8 +171,9 @@ function emptyCompilation(system, gear) {
 }
 
 /**
- * Collect weapon families and stealable-item facts once for compileCharacterData. Only carried Equipment Weapons
- * count toward the families: armor and shields carry a `weapon.req` too, and a worked Armament is not carried.
+ * Count the physical weapon families the unit carries and whether it holds anything stealable, for item modifier
+ * conditions. Only the unit's own Equipment Weapons count: armor and shields carry a `weapon.req` too, innate
+ * weapons such as Unarmed Attack are skipped, and an Armament the unit is operating is not one of its items.
  */
 function carryFacts(items) {
   const families = new Set();
@@ -258,7 +258,7 @@ function applyArmor(compiled, armor, stanceBroken, mageArmor = false) {
  * Merge the active Weapon Art into the wielded weapon's traits. An Art only ever adds: its effectiveness and breaker
  * flags join the weapon's and are never switched off. Extra attacks are the exception, because either the weapon or
  * the Art disabling them turns them off for both. combineWeaponArtTraits in game/combat/exchange.mjs does the same
- * merge for the combat-context projection.
+ * merge for combat.
  */
 function applyWeaponArt(compiled, weapon, activeItem) {
   const art = activeItem?.system?.itemType === 'Weapon Art' ? activeItem.system.weapon : null;
@@ -279,7 +279,8 @@ function applyWeaponArt(compiled, weapon, activeItem) {
  * Apply the protection, vulnerability and immunity overrides that effects set, over what worn armor grants. Armor
  * grants no immunities, so they come only from these overrides and from item modifiers (applyAtSchemaPath).
  * compileCharacterData runs it after the equipment pass. applyModifier runs it again for protections and
- * vulnerabilities after a modifier sets one, so the effect's override outranks the modifier.
+ * vulnerabilities after a modifier sets one, so the effect's override outranks the modifier. Only effect changes at
+ * priority 99 or higher count; lower ones are ignored.
  * @param {object} compiled Character under compilation.
  * @param {object[]} [overrides] The effect changes projectCharacterSource collects as `protectionOverrides`.
  * @param {ReadonlyArray<string>} [groups] Which of `prots`, `vulns` and `imms` to apply.
@@ -338,7 +339,7 @@ function finalizeUnitTypes(compiled) {
 /*  Statuses                                    */
 /* -------------------------------------------- */
 
-/** Raise the combat flags an effect grants. The compiled flags replace the ones Foundry applied to the actor. */
+/** Raise the combat flags an effect grants. These flags overwrite whatever active effects wrote to the actor. */
 function applyEffectCombatFlags(compiled, flags) {
   for (const [key, raised] of Object.entries(flags ?? {})) {
     if (raised === true && key in compiled.combat) compiled.combat[key] = true;
@@ -561,9 +562,9 @@ function addRange(base, delta) {
 /**
  * Split item modifiers into unconditional and gated groups, for compileCharacterData and modifierChanceRequirements.
  * Aura modifiers are left to game/effects/auras.mjs.
- * @param {object[]} items Projected items.
+ * @param {object[]} items The items from the compile source.
  * @param {{equippedOnly?: boolean}} [options] Whether a modifier that needs its item equipped is left out while the
- *   item is not. Chance draws keep it, so an item equipped mid-action reads the draw its action already made.
+ *   item is not. modifierChanceRequirements keeps it, so an item equipped mid-action reuses its chance roll.
  * @returns {{unconditional: object[], conditional: object[]}}
  */
 function collectModifiers(items, { equippedOnly = true } = {}) {
@@ -590,13 +591,13 @@ function isEquipped(item) {
 /* -------------------------------------------- */
 /*  Modifier application                        */
 /* -------------------------------------------- */
-/** Apply the unconditional item modifiers, then settle any unit type they changed before totalizeCharacter. */
+/** Apply the unconditional item modifiers, then recompute any unit types they changed. */
 function applyModifierBucket(compiled, modifiers, source) {
   for (const modifier of modifiers) applyModifier(compiled, modifier, source);
   settleModifiedUnitTypes(compiled);
 }
 
-/** Apply the gated item modifiers whose conditions hold, reading the unit types the unconditional bucket settled. */
+/** Apply the conditional item modifiers whose conditions hold. Conditions see the unit types left by the others. */
 function applyConditionalModifiers(compiled, modifiers, source) {
   for (const modifier of modifiers) {
     if (modifier.requiresActivation && source.modifierContext?.activeItemId !== modifier.sourceItem.id) continue;
@@ -624,9 +625,9 @@ function applyConditionalModifiers(compiled, modifiers, source) {
 }
 
 /**
- * Settle unit types after a modifier bucket, since finalizeUnitTypes and applyStatuses ran before any modifier. A
- * granted levitation grants flight, a granted armored, cavalry or flying type clears infantry, and `airborne` is
- * derived again from the flight and levitation the bucket left.
+ * Recompute flying, infantry and airborne after item modifiers change unit types, since finalizeUnitTypes and
+ * applyStatuses ran before any modifier. Levitation grants flight, an armored, cavalry or flying unit is no longer
+ * infantry, and `airborne` follows the flight and levitation the modifiers left.
  * @param {object} compiled Character under compilation.
  */
 function settleModifiedUnitTypes(compiled) {
@@ -766,10 +767,10 @@ function modifierChanceRoll(modifier, source) {
 }
 
 /**
- * The chance draws the item modifiers need, for the dice adapter's action scope
- * (foundry/adapters/dice/modifier-chances.mjs). Unequipped items are included, so an item equipped later in the
- * same action reuses its draw.
- * @param {object[]} items Projected items, as the compile source carries them.
+ * The chance rolls the item modifiers need, for the dice adapter (foundry/adapters/dice/modifier-chances.mjs),
+ * which rolls them once per action. Unequipped items are included, so an item equipped later in the same action
+ * reuses its roll.
+ * @param {object[]} items The items, as the compile source carries them.
  * @returns {Array<{key: string, path: string, percent: number}>}
  */
 export function modifierChanceRequirements(items = []) {
@@ -814,14 +815,14 @@ function modifierChanceKey(modifier) {
   return `${modifier.sourceItem.id ?? ''}:${modifier.modifierIndex}`;
 }
 
-/** A plain name resolves through the vocabulary. Anything else is an expression that yields the name. */
+/** A plain name is looked up with resolveTarget. Anything else is an expression that yields the name. */
 function resolveModifierTarget(name, evaluationContext) {
   if (SIMPLE_TARGET.test(name)) return resolveTarget(name);
   const evaluated = SafeEval.evaluate(name, evaluationContext());
   return typeof evaluated === 'string' ? resolveTarget(evaluated) : null;
 }
 
-/** A modifier's value: a number, boolean or quoted string. Unit facts are built only if an expression needs them. */
+/** A modifier's value: a number, boolean or quoted string. The unit's values are built only for an expression. */
 function resolveModifierQuantity(rawQuantity, evaluationContext) {
   if (typeof rawQuantity === 'number') return Number.isFinite(rawQuantity) ? rawQuantity : 0;
   if (typeof rawQuantity === 'boolean') return rawQuantity;
@@ -845,7 +846,8 @@ function resolveModifierQuantity(rawQuantity, evaluationContext) {
 /* -------------------------------------------- */
 
 /**
- * Build the unit facts consumed by game/effects/conditions.mjs from compiled or projected Character data.
+ * Build the flat record of a unit's values (level, HP, stats, gear, turn state) that authored conditions and
+ * expressions read (game/effects/conditions.mjs), from compiled or prepared Character data.
  * @param {object} unit A unit-shaped system: the compiled result during preparation, the live system elsewhere.
  * @param {object} [extras] Values that live outside the system, such as the name, token size and gear items.
  * @returns {object}
@@ -904,8 +906,8 @@ export function buildUnitFacts(unit, extras = {}) {
 }
 
 /**
- * Add matchup melee reach to buildUnitFacts output so either side's conditions can read it.
- * @param {object|null} facts A unit's facts, or null when there is no such unit.
+ * Add `inMeleeRange` to a unit's buildUnitFacts record, so conditions on either side of a fight can read it.
+ * @param {object|null} facts A unit's record, or null when there is no such unit.
  * @param {boolean} inMeleeRange Whether the two units stand within reach of each other.
  * @returns {object|null}
  */
@@ -918,8 +920,8 @@ function mapTotals(family) {
 }
 
 /**
- * Build the equipment facts nested under buildUnitFacts for authored conditions.
- * @param {object|null} item Projected item, or `{name, system}` from the combat-context projection, or null.
+ * Summarise one gear slot for authored conditions, nested under buildUnitFacts (for example `weapon.type`).
+ * @param {object|null} item An item from the compile source, or `{name, system}` from combat, or null.
  * @param {'weapon'|'armor'|'shield'|'mount'|'class'} slot The gear slot the item fills.
  * @returns {object|null}
  */
@@ -939,8 +941,8 @@ function gearFacts(item, slot) {
 
 /**
  * The `type` gearFacts reports for one slot: a weapon's family on `weapon.req`, an armor or shield weight class on
- * `armor.req`, a Class's tier. Armor and shields carry a `weapon.req` of their own, and the compiler's item
- * projection gives a Class one too, so the slot decides which field is read.
+ * `armor.req`, a Class's tier. Armor and shields carry a `weapon.req` of their own, and the compile source gives a
+ * Class one too, so the slot decides which field is read.
  */
 function gearType(system, slot, tier) {
   if (slot === 'armor' || slot === 'shield') return system.armor?.req ?? '';
@@ -971,7 +973,10 @@ function modifierEvaluationContext(compiled, modifier, source) {
 
 const GEAR_BY_ITEM_LIST = new WeakMap();
 
-/** The worn, wielded and ridden gear of one item list, which no modifier can change mid-preparation. */
+/**
+ * The worn, wielded and ridden gear of one item list, which no modifier can change mid-preparation. It is cached
+ * per item array, so an array must not be changed after it has been compiled; a what-if compile passes a new array.
+ */
 function gearFor(source) {
   const items = source.items ?? [];
   const cached = GEAR_BY_ITEM_LIST.get(items);

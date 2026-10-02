@@ -190,9 +190,9 @@ export async function enforceObjectTokenSight() {
 
 /**
  * createToken handler: fill a newly placed unlinked unit or Object to full HP and stance, and reset its rotation.
- * Linked Tokens, effect spawns and Tokens re-created by a rollback are skipped, since they already carry their
- * health. It waits until creation finishes, then writes only fields that haven't changed since, so it can't
- * overwrite damage taken meanwhile.
+ * Linked Tokens, effect spawns and Tokens re-created by undo are skipped, since they already carry their health.
+ * It waits one tick (setTimeout 0) for creation to finish, then refills HP and Stance only if they haven't changed
+ * since, so it can't overwrite damage taken meanwhile. Rotation is reset only if it hasn't changed either.
  * @param {TokenDocument} tokenDocument The Token just created.
  * @param {object} [options] The creation options the `createToken` hook received.
  */
@@ -231,7 +231,7 @@ const FIXTURE_TOKEN_SORT = -1000;
 const FIXTURE_TYPES = Object.freeze(['Object', 'Vendor', 'Convoy']);
 
 /**
- * Settle a fixture Token's art, scale and layering before it is placed.
+ * Set a fixture Token's art, scale and layering before it is placed.
  *
  * Elevation is flattened, since the system has its own elevation model rather than the core field. An Object
  * arrives showing the art state it is actually in. A Vendor arrives at the base magnification with whatever
@@ -344,8 +344,7 @@ function fixtureSightRequested(update) {
 const bondOptions = () => ({ animate: false, emblemEffectSettlement: true });
 
 /**
- * Forms, keeps and breaks Guard bonds: the Token flags a bond is recorded in, and the status both units wear. Used by
- * the Guard step in effect execution, movement settlement, defeat and the encounter teardown.
+ * Forms, keeps and breaks Guard bonds: the Token flags a bond is recorded in, and the status both units wear.
  */
 export class FoundryGuardBondRepository {
   constructor({ notify = null } = {}) {
@@ -364,8 +363,6 @@ export class FoundryGuardBondRepository {
   /**
    * One half of a Guard pair as resolveGuardBond and planGuardBond in game/effects/planning.mjs read it: the square
    * its move landed on, rounded to the nearest one, its size and flight, and whether it already stands in a bond.
-   * The Guard step in document-writes/effect-execution.mjs forms the bond from it, and the item activation snapshot
-   * in projections/items.mjs refuses a bond it cannot form before the use writes anything.
    */
   sideOf(token) {
     if (!token) return { tokenUuid: '', name: '', flying: false, width: 1, height: 1, bonded: false };
@@ -385,10 +382,10 @@ export class FoundryGuardBondRepository {
   }
 
   /**
-   * Form the bond a pure plan describes. Both Tokens and the two status halves are captured into the caller's
-   * operation before the first write, so a refused command leaves neither unit bonded nor displaced.
-   * @param {object} plan The pure plan from game/effects/planning.mjs.
-   * @param {{operation?: object|null}} [context] The dispatcher operation, when one is running.
+   * Form the bond a plan describes. Both Tokens and the two bond effects are recorded in the caller's undo record
+   * before the first write, so a refused command leaves neither unit bonded nor moved.
+   * @param {object} plan The plan from game/effects/planning.mjs.
+   * @param {{operation?: object|null}} [context] The running command's undo record, if any.
    */
   async establish(plan, { operation = null } = {}) {
     const guarder = await resolveToken(plan.guarderTokenUuid);
@@ -406,6 +403,7 @@ export class FoundryGuardBondRepository {
       creating: halves.map(half => ({ parent: half.actor, documentName: 'ActiveEffect', ids: [half.data._id] }))
     });
     const gridSize = guarded.parent.grid.size;
+    // displaceToken moves with the 'displace' action; Foundry v14 ignores the `teleport` option.
     if (!await displaceToken(guarder, plan.destination, gridSize, { ...bondOptions(), teleport: true })) {
       return Object.freeze({ ok: false, code: 'effect.move-refused' });
     }
@@ -438,8 +436,8 @@ export class FoundryGuardBondRepository {
   }
 
   /**
-   * Break the bond a Token stands in because it fell, left the map or its encounter ended, capturing both halves
-   * into the caller's operation.
+   * Break the bond a Token stands in because it fell, left the map or its encounter ended, recording both bond
+   * effects in the caller's undo record.
    */
   async breakFor(tokenUuid, reason, { operation = null } = {}) {
     const token = await resolveToken(tokenUuid);
@@ -449,10 +447,10 @@ export class FoundryGuardBondRepository {
   }
 
   /**
-   * What breaking one Token's bond would change, so a caller that is already capturing can include it in its own
-   * call. FoundryHealthRepository.finishDefeat and the encounter teardown and withdrawal record it with the Tokens
-   * they remove, and the #break that follows then adds nothing new.
-   * @returns {{documents: Array<object>, deleting: Array<object>}} Capture arguments, empty when nothing is bonded.
+   * What breaking one Token's bond would change, so a caller can record it for undo together with its own writes,
+   * such as the Tokens it removes.
+   * @returns {{documents: Array<object>, deleting: Array<object>}} Arguments for `operation.capture`, empty when
+   *   nothing is bonded.
    */
   breakCaptures(token) {
     const bond = this.bondOf(token);
@@ -500,7 +498,7 @@ function guardBondEffects(actor) {
   ));
 }
 
-/** The before-images breaking one bond needs: the guarded Token, whose flags and sort change, and both statuses. */
+/** What breaking one bond changes, for undo: the guarded Token, whose flags and sort change, and both statuses. */
 function bondCaptures(bond) {
   return {
     documents: bond.guarded ? [bond.guarded] : [],
@@ -549,10 +547,7 @@ const TOKEN_ART_TRANSITION_METHODS = Object.freeze([
 ]);
 
 /**
- * A stand-in for the transition coordinator until init/system.mjs calls configureFoundryTokenArt. Each method
- * throws an error naming this file and the setter, which says more than a null-property error would. Callers
- * include the presentation and API token-art ports (fireActorTokenCondition and the functions beside it) as well as
- * document hooks, so a throw isn't always caught by Foundry's hook runner.
+ * Placeholder that throws a clear error if token art is used before init/system.mjs calls configureFoundryTokenArt.
  */
 function unconfiguredTokenArtPort(name, methods) {
   return Object.freeze(Object.fromEntries(methods.map(method => [method, () => {
@@ -572,18 +567,18 @@ const ART_PATHS = Object.freeze([
 ]);
 
 /**
- * Install the presentation-owned transition coordinator, which init/system.mjs builds on the presentation pacing
- * clock. The art itself is chosen by game/character/token-art.mjs.
+ * Install the object that times and queues token art changes, built in init/system.mjs. The art itself is chosen
+ * by game/character/token-art.mjs.
  */
 export function configureFoundryTokenArt(configuration = {}) {
   transitions = configuration.transitions ?? unconfiguredTokenArtPort('transitions', TOKEN_ART_TRANSITION_METHODS);
 }
 
 /* -------------------------------------------- */
-/*  Actor Projection                            */
+/*  Actor art data                              */
 /* -------------------------------------------- */
 
-/** Project a live Character into the plain facts game/character/token-art.mjs selects its art from. */
+/** Read a live Character into the plain data game/character/token-art.mjs selects its art from. */
 function projectTokenArtFacts(actor, usedItem = null) {
   const art = actor?.system?.art ?? {};
   const tokens = art.tokens ?? {};
@@ -621,7 +616,7 @@ export async function revertActorTokenCondition(actorUuid, options = {}) {
   return actor ? revertConditionalTokenEvent(actor, options) : false;
 }
 
-/** Resolve an Actor UUID and repair any token that missed its baseline transition. */
+/** Resolve an Actor UUID and put back any token still showing temporary art instead of its current art. */
 export async function ensureActorTokenArtBaseline(actorUuid) {
   const actor = await resolveActor(actorUuid);
   return actor ? ensureActorTokenBaseline(actor) : false;
@@ -718,7 +713,7 @@ export function onRefreshTokenArt(token) {
 /*  Transient conditional art                   */
 /* -------------------------------------------- */
 /**
- * Find all placed Tokens for Actor art writes, independent of the host’s displayed Scene.
+ * Find all placed Tokens for Actor art writes, whichever Scene the host client is showing.
  * A transient change with an explicit Token UUID affects only that placement.
  * @param {Actor} actor The Character whose art changes.
  * @param {string} [tokenUuid] The one Token a transient swap belongs to.
@@ -774,7 +769,7 @@ async function revertConditionalTokenEvent(actor, options = {}) {
   await restoreActorTokenArt(actor, lock);
 }
 
-/** Verify that queued combat swaps have settled back to the current persistent art. */
+/** Wait for queued combat art swaps to finish, then put any token not on its current art back on it. */
 async function ensureActorTokenBaseline(actor) {
   if (!actor) return false;
   const key = actor.uuid ?? actor.id;
@@ -811,8 +806,8 @@ export const FACING_FLIP_MS = 180;
 const FACING_MINIMUM_MAGNITUDE = 0.95;
 
 /**
- * Turn two Character tokens to face each other and write it: the host does so when an exchange or activation starts,
- * and for a training session, and the Enemy AI through api tokenArt.faceTargets. Aiming writes nothing (see
+ * Turn two Character tokens to face each other and save it: the host client does so when an exchange or activation
+ * starts, and for a training session, and the Enemy AI through api tokenArt.faceTargets. Aiming saves nothing (see
  * turnFoundryAimFacing in projections/attack-targeting.mjs).
  */
 export async function faceTokensTowardEachOther(sourceTokenUuid, targetTokenUuid) {
@@ -896,6 +891,8 @@ async function writeTokenTexture(tokenDocument, path, scale, { force = false, fa
     const facedScaleX = (Number(persisted.scaleX) < 0 ? -1 : 1) * magnification;
     if (!sourceChanged && Math.abs(Number(persisted.scaleX) - facedScaleX) < epsilon
       && Math.abs(Number(persisted.scaleY) - scaleY) < epsilon) return;
+    // A new source gets a timestamp query so Foundry sees a changed src and plays the fade, even on a forced
+    // refresh of the same path. `diff: false` sends the update even when nothing differs from the saved data.
     const source = sourceChanged ? `${desiredPath}?${Date.now()}` : tokenDocument.texture.src;
     const options = sourceChanged ? { diff: false, animation: { duration: fadeMs } } : { diff: false, animate: false };
     await tokenDocument.update({ texture: { src: source, scaleX: facedScaleX, scaleY } }, options);
@@ -940,7 +937,7 @@ function isMountEffect(effect) {
     || String(effect?.name ?? '').startsWith('Mounted: ');
 }
 
-/** Project a live or detached Item into the semantic facts game/character/token-art.mjs reads. */
+/** Read a live or detached Item into the plain data game/character/token-art.mjs reads. */
 export function projectFoundryTokenArtItem(item) {
   if (!item || typeof item !== 'object') return null;
   const system = item.system ?? {};

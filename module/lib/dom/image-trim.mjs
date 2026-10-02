@@ -1,5 +1,6 @@
 /** @layer lib/dom */
 
+// Both caches are keyed by the image element's `src`, which the browser resolves to an absolute URL.
 const trimmed = new Map();
 const boxes = new Map();
 
@@ -7,8 +8,8 @@ const boxes = new Map();
 /*  Alpha trimming                              */
 /* -------------------------------------------- */
 /**
- * Crop transparent sprite padding for UI frames and cache by source. Return null for tight, empty or unreadable
- * images.
+ * Crop transparent sprite padding for UI frames and cache it by the image's resolved URL. Return null for tight,
+ * empty or unreadable images.
  * @param {HTMLImageElement} image A loaded image element.
  * @returns {Promise<string|null>} Cropped data URL, or null when nothing was cropped.
  */
@@ -66,7 +67,7 @@ export function trimmedSpriteBox(image) {
 
 /**
  * Read an already-computed crop without waiting, so a first paint can use it.
- * @param {string} source Original image source.
+ * @param {string} source The image's resolved absolute URL. A relative path as authored does not match.
  * @returns {string|null} Cropped data URL, or null when it is absent or was not croppable.
  */
 export function cachedTrimmedImage(source) {
@@ -74,8 +75,8 @@ export function cachedTrimmedImage(source) {
 }
 
 /**
- * Apply cached or pending crops to UI container images. Recheck element presence and source before replacing an
- * image after an async trim.
+ * Crop the `[data-sprite-src]` images in a rendered container, skipping any whose crop is already cached. After
+ * the async crop, an image is replaced only if it is still on the page with the same source.
  * @param {HTMLElement} container Rendered container holding `[data-sprite-src]` images.
  */
 export function trimContainerSprites(container) {

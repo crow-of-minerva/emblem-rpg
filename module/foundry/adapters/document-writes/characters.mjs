@@ -29,10 +29,10 @@ const ARMAMENT_FLAG_PATHS = Object.freeze([
   `flags.${SYSTEM_ID}.${ARMAMENT_FLAGS.PREVIOUS_WIELDED_ID}`
 ]);
 
-/** The one path the free-targeting command writes, and the one its operation captures. */
+/** The flag the free-targeting command writes, and the only path it saves for undo. */
 const FREE_TARGETING_PATH = `flags.${SYSTEM_ID}.${UNIT_FREE_TARGETING_FLAG}`;
 
-/** The one path the counterattack mode command writes, and the one its operation captures. */
+/** The field the counterattack mode command writes, and the only path it saves for undo. */
 const PACIFIST_PATH = 'system.pacifist';
 
 /* -------------------------------------------- */
@@ -40,8 +40,9 @@ const PACIFIST_PATH = 'system.pacifist';
 /* -------------------------------------------- */
 /**
  * Reads and writes a unit's turn, inventory, equipment effects, hotbar layout, aura and terrain fields, support
- * bonds and innate grants, for the character, inventory, board and support commands in engine/. Each settle method
- * compares a fresh snapshot's fingerprint first and returns `stale: true` if what it read has changed.
+ * bonds and innate grants, for the character, inventory, aura, terrain and support commands in engine/. Each write
+ * re-reads the actor first and returns `stale: true` if it changed since the command read it. `operation` is the
+ * running command's undo record: a write saves the old values on it first, so a failed command can be put back.
  */
 export class FoundryActorRepository {
   constructor({ diagnostics = null } = {}) {
@@ -49,8 +50,9 @@ export class FoundryActorRepository {
   }
 
   /**
-   * A unit's stats, skills, turn, free-targeting state and counterattack mode, with a fingerprint update uses to spot
-   * changes. `turn` and `encounterActive` are the facts planPacifistChange (game/character/counter-mode.mjs) weighs.
+   * A unit's stats, skills, turn, free-targeting state and counterattack mode, with a `fingerprint` (a JSON copy)
+   * that update compares to spot changes. planPacifistChange (game/character/counter-mode.mjs) checks `turn` and
+   * `encounterActive`.
    */
   async getSnapshot(actorUuid) {
     const actor = await fromUuid(actorUuid);
@@ -92,11 +94,11 @@ export class FoundryActorRepository {
   }
 
   /**
-   * Write the staff free-targeting override onto one unit. The flag is the only thing the command touches, so the
-   * capture names its path alone. The command (engine/character/commands.mjs) reads the current state from getSnapshot.
+   * Write the GM's free-targeting override onto one unit. Only this flag is saved for undo, because it is the only
+   * thing written. The command (engine/character/commands.mjs) reads the current state from getSnapshot.
    * @param {string} actorUuid The unit the Token HUD control named.
    * @param {boolean} enabled Whether the unit's actions should ignore line of sight.
-   * @param {object|null} [operation] The running operation, which captures the flag before it changes.
+   * @param {object|null} [operation] The running operation, which saves the flag before it changes.
    * @returns {Promise<boolean>} Whether the write landed.
    */
   async setFreeTargeting(actorUuid, enabled, operation = null) {
@@ -113,11 +115,11 @@ export class FoundryActorRepository {
   }
 
   /**
-   * Write one unit's counterattack mode. The field is the only thing the command touches, so the capture names its
-   * path alone. The command (engine/character/commands.mjs) reads the current mode from getSnapshot.
+   * Write one unit's counterattack mode. Only this field is saved for undo, because it is the only thing written.
+   * The command (engine/character/commands.mjs) reads the current mode from getSnapshot.
    * @param {string} actorUuid The unit the BG3 HUD toggle named.
    * @param {boolean} pacifist Whether the unit should never counterattack.
-   * @param {object|null} [operation] The running operation, which captures the field before it changes.
+   * @param {object|null} [operation] The running operation, which saves the field before it changes.
    * @returns {Promise<boolean>} Whether the write landed.
    */
   async setPacifist(actorUuid, pacifist, operation = null) {
@@ -136,7 +138,7 @@ export class FoundryActorRepository {
   /* -------------------------------------------- */
   /*  Shared hotbar layout                        */
   /* -------------------------------------------- */
-  /** A unit's shared hotbar layout as a save reads it: its revision and every Item it carries. */
+  /** A unit's shared hotbar layout revision and every Item it carries, for saveHotbarLayout. */
   async getHotbarLayoutSnapshot(actorUuid) {
     const actor = await fromUuid(actorUuid);
     if (!actor || actor.documentName !== 'Actor') return null;
@@ -149,8 +151,9 @@ export class FoundryActorRepository {
   }
 
   /**
-   * Write BG3 HUD layout flags and the next revision together. Refuse if another save changed the snapshot
-   * revision.
+   * Write BG3 HUD layout flags and the next revision together. Refuse if another save changed the revision since it
+   * was read. `hudState` is merged into the saved flag, not replaced, so a key dropped from `state` stays saved;
+   * removed hotbar cells still go, because the cells sit inside the `grids` arrays, which Foundry replaces whole.
    */
   async saveHotbarLayout(snapshot, state) {
     const actor = await fromUuid(snapshot.actorUuid);
@@ -164,8 +167,8 @@ export class FoundryActorRepository {
   }
 
   /**
-   * The players who own a unit, for a notice addressed to them rather than the table. Gamemasters are left out:
-   * a GM owns everything, and hears the reconciliation's own result on the host instead.
+   * The players who own a unit, for a notice addressed to them rather than the table. GMs are left out: a GM owns
+   * every actor and already sees the command's result on the host client.
    * @param {string} actorUuid The unit.
    * @returns {Promise<string[]>} Owning user ids.
    */
@@ -180,10 +183,9 @@ export class FoundryActorRepository {
 
   /**
    * The Convoy a unit's surplus equipment goes to: the one linked to the party of whichever player owns the unit,
-   * the same link the Character sheet offers. Returns an inventory snapshot so the capacity reconciliation in
-   * engine/character/commands.mjs can hand it straight to receiveInventoryItem, or null when nothing is linked.
-   * The Convoy's inbound Items are left off the list, while the fingerprint still covers them, so the writer's
-   * freshness check compares the whole Convoy.
+   * the same link the Character sheet offers. Returned in getInventorySnapshot's shape, so it can be passed straight
+   * to receiveInventoryItem, or null when nothing is linked. Undelivered (inbound) items are left off the list but
+   * still count in the fingerprint, so a change to them still makes the write give up.
    * @param {string} actorUuid The overflowing unit.
    * @returns {Promise<object|null>}
    */
@@ -200,9 +202,9 @@ export class FoundryActorRepository {
   }
 
   /**
-   * A Character's detached compile source, which game/character/equipment-effects.mjs compiles before and after a
-   * gear change to measure the Stn that gear grants. It's read only when equipment changes, because projecting it
-   * reads the board. null for anything but a Character.
+   * A Character's raw data, which game/character/equipment-effects.mjs prepares before and after a gear change to
+   * work out how much Stn the gear adds or removes. It's read only when equipment changes, because building it reads
+   * the map. null for anything but a Character.
    * @param {string} actorUuid
    * @returns {Promise<object|null>}
    */
@@ -214,8 +216,8 @@ export class FoundryActorRepository {
 
   /**
    * What the inventory and equipment rules read about an Actor: its items (as source data), its effects with their
-   * equipment kind, turn, proficiencies, carrying capacity and borrowed Armament, plus a fingerprint the settle
-   * methods check.
+   * equipment kind, turn, proficiencies, carrying capacity and borrowed Armament, plus a fingerprint the write
+   * methods compare to spot changes.
    */
   async getInventorySnapshot(actorUuid) {
     const actor = await fromUuid(actorUuid);
@@ -228,10 +230,10 @@ export class FoundryActorRepository {
       name: actor.name,
       type: actor.type,
       inCombat: encounterUnderway(),
-      /** The derived carrying capacity game/character/inventory.mjs admits and reconciles against. */
+      /** How many equipment slots the unit has (game/character/inventory.mjs). */
       equipmentSlots: Number(actor.system?.equipment?.slots),
       system: Object.freeze({
-        /** The turn facts game/character/inventory.mjs weighs: an Action to wield, a running turn to equip. */
+        /** What game/character/inventory.mjs checks: wielding needs an Action, equipping needs a running turn. */
         turn: Object.freeze({
           actionAvailable: actor.system?.turn?.actionAvailable === true,
           movementAvailable: actor.system?.turn?.movementAvailable === true
@@ -241,11 +243,11 @@ export class FoundryActorRepository {
           hp: Object.freeze({ value: Number(actor._source?.system?.resources?.hp?.value) || 0 }),
           stn: Object.freeze({ value: Number(actor._source?.system?.resources?.stn?.value) || 0 })
         }),
-        /** Stance Break as the compiler detects it. While it holds, equipment-effects.mjs grants no Stn from gear. */
+        /** Whether the unit has Stance Break. While it does, equipment-effects.mjs grants no Stn from gear. */
         statuses: Object.freeze({ stanceBroken: Array.from(actor.effects).some(isStanceBreakEffect) })
       }),
       armament: projectBorrowedArmament(actor),
-      /** Project caster requirements for equipment validation and the equipment drift sweep. */
+      /** The unit's state that item requirements are checked against, when equipping and when rechecking gear. */
       conditionSelf: projectFoundryCombatActorContext(actor),
       items: Object.freeze(actor.items.map(item => Object.freeze({
         id: item.id,
@@ -282,8 +284,8 @@ export class FoundryActorRepository {
   }
 
   /**
-   * Commit item state, special effects, and mount resource top-up together. The `operation` the caller's command
-   * holds captures every Item, effect and Actor field first, so the dispatcher can put them all back.
+   * Save item state, special effects and the mount's resource top-up together. The caller's `operation` saves
+   * every Item, effect and Actor field first, so the dispatcher can put them all back.
    */
   async settleEquipmentToggle(snapshot,
     { itemUpdates = [], effects = {}, resourceValues = {}, operation = null } = {}) {
@@ -350,7 +352,7 @@ export class FoundryActorRepository {
   /* -------------------------------------------- */
   /*  Aura persistence                            */
   /* -------------------------------------------- */
-  /** Project one Scene's placed units plus any detached Character still carrying aura values. */
+  /** One scene's placed units, plus any Character not on the map that still carries aura values. */
   async getAuraBoardSnapshot(sceneUuid) {
     const scene = await resolveScene(sceneUuid);
     const board = scene ? projectAuraBoard(scene) : null;
@@ -358,15 +360,15 @@ export class FoundryActorRepository {
     return Object.freeze({ ...board, fingerprint: auraBoardFingerprint(board) });
   }
 
-  /** Project the terrain board one Scene's standing modifiers are recomputed from. */
+  /** The terrain on one scene that the units' terrain modifiers are worked out from. */
   async getTerrainBoardSnapshot(sceneUuid) {
     const scene = await resolveScene(sceneUuid);
     return scene ? projectTerrainBoard(scene) : null;
   }
 
   /**
-   * Write planned aura and terrain fields together per Actor so preparation runs once.
-   * Reproject both boards from the snapshot’s Scene and refuse if either changed.
+   * Write each actor's aura and terrain fields in one update, so its data is prepared once. Re-read the scene's
+   * auras and terrain first and give up if either changed.
    */
   async settleModifierFields(snapshot, plans = [], operation = null) {
     const [auras, terrain] = await Promise.all([
@@ -399,7 +401,7 @@ export class FoundryActorRepository {
   /* -------------------------------------------- */
   /*  Support persistence                         */
   /* -------------------------------------------- */
-  /** Project one unit's affinity and bonds from persisted source, never from prepared data. */
+  /** One unit's affinity and bonds, read from its saved data, never from prepared data. */
   async getSupportSnapshot(actorUuid) {
     const actor = await fromUuid(actorUuid);
     if (!actor || actor.documentName !== 'Actor') return null;
@@ -407,7 +409,7 @@ export class FoundryActorRepository {
     return Object.freeze({ ...snapshot, fingerprint: JSON.stringify(snapshot) });
   }
 
-  /** Project every world Character whose reciprocal half a mirror sweep could have to correct. */
+  /** Every world Character, for the check that keeps both sides of each bond in step. */
   async getSupportRoster() {
     const units = game.actors
       .filter(actor => actor.type === 'Character')
@@ -415,7 +417,7 @@ export class FoundryActorRepository {
     return Object.freeze({ units: Object.freeze(units), fingerprint: supportRosterFingerprint(units) });
   }
 
-  /** Replace one unit's bonds, refusing when the list moved under the snapshot. */
+  /** Replace one unit's bonds; give up if they changed since the command read them. */
   async settleSupportPartners(snapshot, partners, context = {}) {
     const actor = await fromUuid(snapshot?.uuid);
     if (!actor || actor.documentName !== 'Actor') {
@@ -441,7 +443,7 @@ export class FoundryActorRepository {
     return { ok: true, stale: false };
   }
 
-  /** Write every mirrored bond the sweep corrected. A failed write refuses, and the dispatcher restores the rest. */
+  /** Write every bond the mirror check corrected. If one write fails, the dispatcher puts back the rest. */
   async settleSupportMirror(snapshot, plans = [], context = {}) {
     const current = await this.getSupportRoster();
     if (current?.fingerprint !== snapshot?.fingerprint) return { ok: false, stale: true };
@@ -466,9 +468,9 @@ export class FoundryActorRepository {
   }
 
   /**
-   * Move or copy an item from one Actor to another and rebuild the giver's equipment effects, capturing both sides
-   * before any write. An inbound source item is refused before anything is written, and a Resource never stacks
-   * onto an inbound one.
+   * Move or copy an item from one Actor to another and rebuild the giver's equipment effects, saving both sides for
+   * undo before any write. An undelivered (inbound) Convoy item is refused before anything is written, and a Resource
+   * never stacks onto an undelivered one.
    */
   async receiveInventoryItem({
     source, target, itemId, amount = null, stackId = null, move = true, sourceEffects = {}, sourceResourceValues = {},
@@ -554,8 +556,8 @@ export class FoundryActorRepository {
   /* -------------------------------------------- */
 
   /**
-   * Project the unit an innate-grant sync decides on, together with the source item every grant would copy: a named
-   * grant's item from the world or a compendium, or a built grant's data made for this unit (builtInnateSource).
+   * The unit and the source item for each ability it is granted automatically (an innate grant): a named grant's
+   * item from the world or a compendium, or a built grant's data made for this unit (builtInnateSource).
    *
    * A compendium actor is left alone: granting into a pack would rewrite shipped content.
    */
@@ -576,8 +578,9 @@ export class FoundryActorRepository {
   }
 
   /**
-   * Apply the innate-grant plan as one captured batch, in the order update, delete, create. Adoptions are recorded
-   * before duplicates are removed, and creates come last so a replaced grant leaves exactly one copy.
+   * Apply the innate-grant plan: one undo save, then three writes in the order update, delete, create. Existing
+   * copies are tagged or refreshed first, extra copies deleted next, and missing ones created last, so a replaced
+   * grant leaves exactly one copy.
    */
   async settleInnateGrants(snapshot, plan, operation = null) {
     const actor = await fromUuid(snapshot?.uuid).catch((diagnosticError) => { reportFoundryError(import.meta.url, diagnosticError, 'actor'); return null; });
@@ -631,7 +634,8 @@ export function clearInnateSourceCache() {
 
 /**
  * Whether a unit already holds every innate grant it qualifies for, under the name each built grant would give it
- * now (innateGrantsHeld). foundry/hooks/innate-grants.mjs then submits no reconcile, so no grant source is built.
+ * now (innateGrantsHeld). When it does, foundry/hooks/innate-grants.mjs sends no update command and builds no grant
+ * source.
  */
 export async function unitHoldsInnateGrants(actor) {
   const input = await innateBuildInput(actor);
@@ -649,7 +653,7 @@ async function innateBuildInput(actor) {
  * A built grant's source for one unit: the grant's `build` (the Rally Ability, game/support/rally-ability.mjs) from
  * the unit's affinity and the affinity table once it has loaded, passed through the Item data model so it carries
  * every stored field, as a compendium source does. A refresh then compares like with like and writes only real
- * changes. The document stamps are dropped, so two builds for an unchanged unit fingerprint the same. Returns null,
+ * changes. The document stamps (`_stats`) are dropped, so two builds for an unchanged unit compare equal. Returns null,
  * and grants nothing, when the data does not validate.
  */
 async function builtInnateSource(grant, actor) {
@@ -688,9 +692,9 @@ async function resolveInnateSource(name) {
 }
 
 /* -------------------------------------------- */
-/*  Innate grant settlement                     */
+/*  Innate grant helpers                        */
 /* -------------------------------------------- */
-/** The unit facts planInnateGrants and innateGrantsHeld read, with each item projected by projectInnateItem. */
+/** The unit data planInnateGrants and innateGrantsHeld read, with each item read by projectInnateItem. */
 function projectInnateUnit(actor) {
   return {
     uuid: actor.uuid,
@@ -738,7 +742,7 @@ function buildInnateUpdate(update) {
 }
 
 /* -------------------------------------------- */
-/*  Aura settlement                             */
+/*  Aura helpers                                */
 /* -------------------------------------------- */
 function auraBoardFingerprint(board) {
   return JSON.stringify(board.units.map(unit => [
@@ -774,7 +778,7 @@ function buildTerrainUpdates(fields) {
 
 
 /* -------------------------------------------- */
-/*  Support settlement                          */
+/*  Support helpers                             */
 /* -------------------------------------------- */
 function projectSupportUnit(actor) {
   const support = actor._source?.system?.support ?? {};
@@ -798,7 +802,7 @@ function supportRosterFingerprint(units) {
   return JSON.stringify(units.map(unit => [unit.uuid, unit.name, unit.partners]));
 }
 
-/** A bond settlement writes one array, so its capture protects that path alone rather than the whole unit. */
+/** Only the partner list is saved for undo, since a bond write changes nothing else on the unit. */
 function supportBonds(actor) {
   return { document: actor, paths: ['system.support.partners'] };
 }
@@ -821,7 +825,7 @@ function inventoryFingerprint(snapshot) {
 }
 
 /* -------------------------------------------- */
-/*  Equipment settlement helpers                */
+/*  Equipment helpers                           */
 /* -------------------------------------------- */
 /** The Armament a Character is working, read from its own flag by the Token that flag names. */
 function projectBorrowedArmament(actor) {
@@ -877,9 +881,9 @@ const MOUNT_TYPE_LABELS = Object.freeze({
 });
 
 /* -------------------------------------------- */
-/*  Equipment effect projection                 */
+/*  Equipment effect identity                   */
 /* -------------------------------------------- */
-/** Project one Foundry ActiveEffect into the narrow identity used by equipment rules. */
+/** Whether an ActiveEffect is a wield, armor or mount effect, and which item it belongs to. */
 export function projectEquipmentEffectIdentity(effect) {
   const flags = effectFlags(effect);
   let kind = '';
@@ -943,8 +947,8 @@ function buildEquipmentEffectDocument(intent) {
 }
 
 /**
- * Create the mount status and unit-type marker. Character compilation reads mount stat bonuses from the equipment
- * Item.
+ * Build the Mounted effect, which sets the mounted status and the unit types. The mount's stat bonuses are not here:
+ * character data preparation reads them from the Mount item itself.
  */
 function buildMountEffectDocument(intent, common) {
   const stats = intent?.mount?.stats ?? {};

@@ -97,10 +97,9 @@ import {
 /* -------------------------------------------- */
 
 /*
- * Attack and activation targeting: stage the Item, draw its grid, collect the target or square, and send the
- * command. Which step this client is on lives in ui/controls/targeting-state.mjs. The movement, combat and
- * indicator ports below are set by init/system.mjs through configureAttackTargetingControls. Until then, each of
- * their methods throws instead of giving a false answer.
+ * Attack and activation targeting: ready the Item, draw its grid, collect the target or square, and send the
+ * command. Which step this client is on lives in ui/controls/targeting-state.mjs. init/system.mjs plugs in the
+ * movement, combat and path-arrow helpers below through configureAttackTargetingControls; until then they throw.
  */
 const notifications = new NotificationService({ diagnostics: new FoundryDiagnostics() });
 const PORT_METHODS = Object.freeze({
@@ -121,9 +120,9 @@ export function isAttackTargetingActive() {
 /*  Composition                                 */
 /* -------------------------------------------- */
 /**
- * Plug in the ports targeting needs: the movement plan controls, the combat snapshot for previews, and the
- * pathfinding indicator. init/system.mjs calls this once at start-up. The movement controls come in through a
- * port because movement.mjs imports this file.
+ * Plug in the helpers targeting needs: the movement plan controls, the combat data for previews, and the unit's
+ * path arrow. init/system.mjs calls this once at start-up. Movement comes in this way because movement.mjs imports
+ * this file.
  */
 export function configureAttackTargetingControls(configuration = {}) {
   movement = configuredPort('movement', configuration.movement);
@@ -131,7 +130,7 @@ export function configureAttackTargetingControls(configuration = {}) {
   indicator = configuredPort('indicator', configuration.indicator);
 }
 
-/** A port whose methods all throw, so missing wiring shows up as an error rather than as a refused gesture. */
+/** A stand-in whose methods all throw, so missing wiring shows up as an error rather than as a refused gesture. */
 function unconfiguredPort(name) {
   return Object.freeze(Object.fromEntries(PORT_METHODS[name].map(method => [method, () => {
     throw new Error(`ui/controls/targeting.mjs: ${name}.${method} was used before `
@@ -139,7 +138,7 @@ function unconfiguredPort(name) {
   }])));
 }
 
-/** The supplied port, with any method it left out still throwing rather than giving a false answer. */
+/** The supplied helpers, with any method left out still throwing rather than giving a false answer. */
 function configuredPort(name, supplied) {
   return Object.freeze({ ...unconfiguredPort(name), ...supplied });
 }
@@ -151,8 +150,8 @@ function configuredPort(name, supplied) {
  * Enter attack targeting with an Item when the live state still allows it. Called by activateHotbarItem, and with
  * an Armament after takeUpArmament in interaction.mjs.
  *
- * A unit standing on another unit's square is refused here, before the Item is staged: it could not end its move
- * there, so the exchange it opened would only be refused once it settled.
+ * A unit standing on another unit's square is refused here, before the Item is readied: it could not end its move
+ * there, so the host would refuse the exchange anyway.
  * @param {string} itemUuid UUID of the Item in the pressed BG3 hotbar cell, or of the Armament token the unit has
  *   just taken up.
  * @param {string} [cellId] Address of the activated cell, so one Item in several slots marks only the used one.
@@ -190,9 +189,8 @@ export async function activateAttackItemFromHotbar(itemUuid, cellId = '') {
 }
 
 /**
- * Project an attack Item and judge it as a hotbar press does, staging and writing nothing. The hotbar entry calls it
- * before and after it wields the Item. The Combat Preview calls it for each weapon its list offers and for the one
- * picked there, with the frame's Weapon Art when one is in use (withUsableWeapons, swapPreviewWeapon).
+ * Read an attack Item and judge it as a hotbar press does, without readying or writing anything. The hotbar press
+ * uses it before and after wielding, and the Combat Preview uses it to judge each weapon in its list.
  * @param {string} itemUuid The pressed Item: a weapon or a Weapon Art.
  * @param {object|null} plan The movement plan open on this client.
  * @param {string} [weaponId] A carried weapon to judge a Weapon Art with in place of the wielded one.
@@ -207,8 +205,8 @@ async function projectAttackEntry(itemUuid, plan, weaponId = '') {
 }
 
 /**
- * Stage a judged attack activation, draw its grid and open it as the targeting frame. The hotbar entry aims through
- * here, and so does a weapon picked in the Combat Preview (swapPreviewWeapon).
+ * Make a judged attack the unit's active Item, draw its grid and open it as the targeting frame. The hotbar press
+ * aims through here, and so does a weapon picked in the Combat Preview (swapPreviewWeapon).
  * @param {object} activation projectHotbarAttackActivation's answer, already judged by projectAttackEntry.
  * @param {string} cellId The hotbar cell that aimed, or empty for a preview pick.
  * @returns {Promise<{frame?: object, reason?: string}>} The open frame, or why none opened.
@@ -379,7 +377,7 @@ export async function refreshTargetingOverlays({ sceneUuid, tokenUuids }, valid)
 }
 
 
-/** Leave targeting and send the confirmed exchange. The turn continuation decides whether movement resumes. */
+/** Leave targeting and send the confirmed exchange. The host's answer says whether the unit may move on afterwards. */
 async function commitConfirmedExchange(current, targetTokenUuid, { damageType, skippedAttacks, previewFingerprint }) {
   await leaveAttackTargeting(current, { resume: false, clearItem: false });
   try {
@@ -409,10 +407,8 @@ async function commitConfirmedExchange(current, targetTokenUuid, { damageType, s
 }
 
 /**
- * Turn the aiming unit toward its target on this client alone. Nothing is written until the host runs the confirmed
- * exchange or activation. The unit turns back to its saved facing when targeting is left without one
- * (leaveAttackTargeting) and as soon as the host answers one: the host faces its own target, an area's first unit
- * or the guard who steps in, and writes nothing when the saved facing already looks that way.
+ * Turn the aiming unit toward its target on this client only. It turns back to its saved facing when targeting ends
+ * without an attack, and as soon as the host answers one, since the host sets the real facing.
  */
 function faceAimedTarget(current, targetTokenUuid) {
   void turnFoundryAimFacing(current.tokenUuid, targetTokenUuid).catch((diagnosticError) => {
@@ -523,8 +519,8 @@ async function openPreviewForTarget(current, targetToken) {
 /**
  * Answer a weapon or damage type picked in the open Combat Preview. openCombatPreview (ui/apps/menus/previews.mjs)
  * renders the answer in place: `restore` when the pick changed nothing, otherwise the new `preview` and a `notice`.
- * A notice is why the host would refuse this attack, and the window keeps Attack disabled while it shows. A failure
- * that left the preview's frame retired drops it, so closing the window still hands the unit back to movement.
+ * A notice is why the host would refuse this attack, and the window keeps Attack disabled while it shows. If a
+ * failure ended the preview's targeting, its frame is dropped, so closing the window still hands the unit back.
  * @param {object} view The open preview's state from openPreviewForTarget.
  * @param {{weaponId: string|null, damageType: string}} choices What the window shows picked.
  * @returns {Promise<{restore?: boolean, preview?: object|null, notice?: string}>}
@@ -546,11 +542,10 @@ async function refreshCombatPreview(view, choices) {
 }
 
 /**
- * Switch the open Combat Preview to a weapon picked in it, as a hotbar press switches weapons: judge the pick with
- * projectAttackEntry, wield it through character.inventory.toggleEquipment, then aim with it through
- * enterAttackFrame, keeping any Weapon Art in use. The old frame is marked `swapping` while its weapon is put away,
- * so onTargetingSourceChanged doesn't end the aim this preview belongs to. A refusal before the wield changes
- * nothing. After it the unit holds the picked weapon, and when it can't aim with it `view.refusal` says why.
+ * Switch the open Combat Preview to a weapon picked in it, as a hotbar press would: judge it, wield it, then aim
+ * with it, keeping any Weapon Art in use. The old frame is marked `swapping` while its weapon is put away, so
+ * onTargetingSourceChanged doesn't end this aim. If the unit then can't aim with the new weapon, `view.refusal`
+ * says why.
  * @returns {Promise<boolean>} Whether the unit now holds the picked weapon.
  */
 async function swapPreviewWeapon(view, weaponId) {
@@ -595,8 +590,8 @@ async function swapPreviewWeapon(view, weaponId) {
 }
 
 /**
- * Project the exchange with the weapon the unit now holds, for refreshCombatPreview. The clicked target is judged
- * against the frame's grid as a click is, then the snapshot as the host will judge it. The first refusal becomes
+ * Work out the exchange with the weapon the unit now holds, for refreshCombatPreview. The clicked target is judged
+ * against the frame's grid as a click is, then the combat data as the host will judge it. The first refusal becomes
  * the notice, and the numbers still show, so a weapon that can't reach says why.
  */
 async function previewForFrame(view, damageType) {
@@ -658,7 +653,7 @@ async function settleClosedPreview(view, confirmed) {
   }
 }
 
-/** The weapon and Weapon Art names targetingMessage words a snapshot refusal with. */
+/** The weapon and Weapon Art names targetingMessage uses to word a refusal from the combat data. */
 function snapshotNames(snapshot) {
   return {
     itemName: String(snapshot?.source?.weapon?.name ?? ''),
@@ -707,7 +702,7 @@ async function settleTurnContinuation(current, continuation) {
 /**
  * Enter effect targeting for the hotbar Item. A self-targeted Item goes straight to confirmation. Other Items
  * collect a square, units or a line first. A unit sharing another unit's square is refused before the Item is
- * staged.
+ * readied.
  * @param {string} itemUuid UUID of the Item in the pressed cell.
  * @param {string} [cellId] Address of the activated cell, so one Item in several slots marks only the used one.
  * @returns {Promise<boolean>} Whether targeting was entered, or the activation already resolved.
@@ -1085,13 +1080,13 @@ const NO_PLACEMENT = Object.freeze({ status: 'none' });
 const ABANDONED_PLACEMENT = Object.freeze({ status: 'abandoned' });
 
 /**
- * Hold the confirm window over what the activation commits, stepping a declined window back one stage.
+ * Show the confirm window for what the activation will do, stepping a declined window back one stage.
  *
  * Declining returns to the square pick when there was a choice of squares, and to target selection otherwise.
  * @param {object} current The targeting frame.
- * @param {object} fresh Reprojected activation facts.
- * @param {object} resolved The delivery this activation settled on.
- * @param {object} request The aim or targets the player raised it with.
+ * @param {object} fresh The activation data, read again.
+ * @param {object} resolved The units and squares this activation will reach.
+ * @param {object} request The aim or targets the player chose.
  * @returns {Promise<{placement: object, choice: object}|null>} The confirmed placement and answer, or null.
  */
 async function confirmActivation(current, fresh, resolved, request) {
@@ -1117,7 +1112,7 @@ async function confirmActivation(current, fresh, resolved, request) {
   }
 }
 
-/** Highlight what the confirm window commits: the aimed area, or a picked square over its own candidate field. */
+/** Highlight what the confirm window commits: the aimed area, or a picked square over its candidate squares. */
 function drawConfirmHighlight(fresh, resolved, placement) {
   if (placement.stage) drawAttackTargetingGrid(placementGrid(placement.stage));
   const cells = [...resolved.cells, ...(placement.cells ?? [])];
@@ -1133,9 +1128,9 @@ function drawConfirmHighlight(fresh, resolved, placement) {
  * Run geometry placement between target selection and confirmation. A sole candidate is picked at once.
  * Otherwise wait for a square click or Cancel. Without a prompted step, effect execution places the unit.
  * @param {object} current The targeting frame raising the stage.
- * @param {object} fresh Reprojected activation facts.
- * @param {object} resolved The delivery this activation settled on.
- * @param {object} request The aim or targets the player raised it with.
+ * @param {object} fresh The activation data, read again.
+ * @param {object} resolved The units and squares this activation will reach.
+ * @param {object} request The aim or targets the player chose.
  * @returns {Promise<{status: string, placement?: {x: number, y: number}, cells?: object[], stage?: object}>}
  */
 async function promptGeometryPlacement(current, fresh, resolved, request) {
@@ -1185,7 +1180,7 @@ function geometryAnchorRect(geometry, fresh, target, mover, aim) {
   };
 }
 
-/** Enter the placement stage: the targeting field shows the candidate squares until settlePlacementStage ends it. */
+/** Enter the placement stage: the targeting grid shows the candidate squares until settlePlacementStage ends it. */
 function enterPlacementStage(stage) {
   return new Promise(resolve => {
     advanceTargeting(TARGETING_EVENTS.PLACE, { placement: { stage, resolve } });
@@ -1194,7 +1189,7 @@ function enterPlacementStage(stage) {
   });
 }
 
-/** The candidate squares as a targeting field, each square once however many candidates share it. */
+/** The candidate squares as a targeting grid, each square once however many candidates share it. */
 function placementGrid(stage) {
   const cells = new Map();
   for (const placement of stage.placements) {
@@ -1211,7 +1206,7 @@ function placementGrid(stage) {
   };
 }
 
-/** A settled pick: the square the unit lands on, the cells its footprint covers there, and the stage it left. */
+/** A finished pick: the square the unit lands on, the cells its footprint covers there, and the stage it left. */
 function pickedPlacement(placement, stage) {
   return {
     status: 'picked',
@@ -1221,7 +1216,7 @@ function pickedPlacement(placement, stage) {
   };
 }
 
-/** Resolve a waiting placement stage as picked, cancelled or abandoned. A pick keeps the candidate field drawn. */
+/** Resolve a waiting placement stage as picked, cancelled or abandoned. A pick keeps the candidate squares drawn. */
 function settlePlacementStage(current, outcome) {
   const waiting = activeTargeting() === current ? activePlacement() : null;
   if (!waiting) return false;
@@ -1293,7 +1288,7 @@ export function stepCancelAttackTargeting() {
   return true;
 }
 
-/** Put down the Armament a picked-up weapon staged, and say so when the host refuses to take it back. */
+/** Put down an Armament the unit picked up for this attack, and say so when the host refuses. */
 async function releaseHeldArmament(current) {
   if (!current.armament) return;
   const result = await game.emblemRpg.api.objects.releaseArmament({
@@ -1313,7 +1308,7 @@ function stealAbility(item) {
   return item?.documentName === 'Item' && isStealAbility(item) ? item : null;
 }
 
-/** The pressed cell, staged as the thief's activation so Steal reads as pending like every other aimed Item. */
+/** The pressed cell, marked as the thief's active item so Steal shows as pending like every other aimed Item. */
 function stealActivation(plan, item, cellId) {
   const actorUuid = String(item.actor?.uuid ?? '');
   if (!plan || !actorUuid) return null;
@@ -1358,9 +1353,10 @@ async function abandonAttackTargeting() {
 /**
  * Leave targeting when its source changes under it. init/hooks.mjs calls this from updateToken, destroyToken,
  * updateActor, updateItem and deleteItem. Targeting ends when the source token moves or is destroyed, when the
- * staged Item updates or is deleted, or when the Actor's movement plan ends. The plan is resumed afterwards
- * unless it ended or the token was destroyed. A frame marked `swapping` keeps its aim while the Combat Preview puts
- * its weapon away for one picked there (swapPreviewWeapon), which then aims with a new frame.
+ * aimed Item updates or is deleted, or when the Actor's movement plan ends. The plan is resumed afterwards unless
+ * it ended; when the token is destroyed, movement.mjs cancels the plan itself. A frame marked `swapping` keeps its
+ * aim while the Combat Preview puts its weapon away for one picked there (swapPreviewWeapon), which then aims with
+ * a new frame.
  */
 export function onTargetingSourceChanged(document, changes = null) {
   const current = activeTargeting();
@@ -1386,7 +1382,7 @@ async function abandonEntry(swapping, tokenUuid, reason = '') {
 
 /**
  * Leave the targeting frame. `clearItem` is set whenever it is left without a confirmed exchange or activation:
- * the staged Item is cleared and the aiming unit turns back to its saved facing. A confirmed one keeps both until the
+ * the unit's active Item is cleared and it turns back to its saved facing. A confirmed one keeps both until the
  * host answers (commitConfirmedExchange, resolveActivation).
  */
 async function leaveAttackTargeting(current, { resume, clearItem }) {

@@ -33,9 +33,8 @@ let registrationPromise = null;
 let lateRegistrationTimer = null;
 const reportedUnconfiguredPorts = new Set();
 /**
- * Record a diagnostic, once per port, when the HUD calls decorateHud or enforceVisibility before init/system.mjs
- * has called configureEmblemBg3Core, so the HUD isn't left undecorated without a trace. Both run inside Core's
- * refresh, where a throw could break Core in ways this system can't predict, so it records instead of throwing.
+ * Record a diagnostic once if the HUD calls decorateHud or enforceVisibility before init/system.mjs has called
+ * configureEmblemBg3Core. It records rather than throws, because both run inside Core's refresh.
  */
 function warnUnconfiguredCorePort(port) {
   if (reportedUnconfiguredPorts.has(port)) return;
@@ -61,10 +60,11 @@ export function configureEmblemBg3Core(configuration = {}) {
 }
 
 /**
- * Register this system's parts of the HUD with BG3 HUD Core. Nothing is patched or registered until Core's version
- * checks out and every private Core class the patches need has been imported. Then it patches those classes and
- * registers the portrait and passives containers and the tooltip renderer. Fires bg3HudRegistrationComplete
- * whether or not that worked. Called once, from onBg3HudReady.
+ * Register this system's parts of the HUD with BG3 HUD Core: check Core's version, import every private Core class
+ * the patches need, patch those classes, then register the portrait and passives containers and the tooltip
+ * renderer. A failed check stops before any class is patched. The adapter itself (onBg3HudReady) and the per-render
+ * patches (onRenderedEmblemBg3Hud) don't wait for this and apply either way. Fires bg3HudRegistrationComplete
+ * whether or not it worked. Called once, from onBg3HudReady.
  */
 export function initializeEmblemBg3Core(api, adapter) {
   if (registrationPromise) return registrationPromise;
@@ -116,7 +116,8 @@ async function importRequiredExport(modulePath, exportName) {
 /* -------------------------------------------- */
 /**
  * Run on every render of Core's HUD (the renderBG3Hotbar hook, through onRenderBg3Hotbar): patch the app instance
- * where it isn't patched yet, then decorate the HUD, watch its effect icons and tidy the shown unit's layout.
+ * where it isn't patched yet, then decorate the HUD, watch its effect icons and tidy the shown unit's layout. These
+ * patches apply whether or not initializeEmblemBg3Core succeeded.
  */
 export function onRenderedEmblemBg3Hud(app, html, hookApi) {
   if (globalThis.game?.system?.id !== SYSTEM_ID || !app) return;
@@ -127,6 +128,8 @@ export function onRenderedEmblemBg3Hud(app, html, hookApi) {
   patchInteraction(app);
   patchTooltipPosition();
   patchRowControls(app);
+  // New grids on this HUD start with 2 rows, the system's minimum, instead of Core's 3. The single-actor managers
+  // Core creates for item changes (PersistenceManager.forActor) still default to 3.
   if (app.persistenceManager?.DEFAULT_GRID_CONFIG) app.persistenceManager.DEFAULT_GRID_CONFIG.rows = 2;
   decorateHud(app, html);
   const root = html?.[0] ?? html ?? app.element;
@@ -225,6 +228,7 @@ function showTokenHud(token, intent) {
  * Wrap Core's app.refresh so bursts of refreshes collapse into one. A token swap Core can do in place
  * (_canSoftTokenRefresh) runs as a soft swap, queued per token. Any other call waits 10 ms and joins one shared
  * refresh (coalescedRefresh), which runs only the newest request. Every caller gets that refresh's promise.
+ * Unless forceFull is passed, a refresh that leaves the HUD on the same unit doesn't re-render (performRefresh).
  */
 function patchRefresh(app) {
   if (app._emblemRefreshPatched || typeof app.refresh !== 'function') return;
@@ -262,8 +266,8 @@ function patchRefresh(app) {
 }
 
 /**
- * A refresh promise the coalesced run settles later, so every caller that joins before it runs shares one. It is
- * marked handled, so a caller that drops it (`void app.refresh()`) raises no unhandled rejection.
+ * One promise shared by every refresh request that joins the same run. It is marked handled, so a caller that drops
+ * it (`void app.refresh()`) raises no unhandled rejection.
  */
 function deferredRefresh() {
   let resolve;
@@ -273,7 +277,7 @@ function deferredRefresh() {
   return { promise, resolve, reject };
 }
 
-/** Remember a running refresh so the next coalesced one waits for it, and forget it when it settles. */
+/** Remember a running refresh so the next one waits for it, and forget it when it finishes. */
 function trackInFlight(state, run) {
   state.inFlight = run;
   return run.finally(() => { if (state.inFlight === run) state.inFlight = null; });
@@ -308,8 +312,8 @@ async function softSwapRefresh(app, original, options) {
 }
 
 /**
- * Run one coalesced refresh after any refresh still in flight. If a newer request arrived meanwhile, it returns
- * that request's promise instead. A forced full refresh doesn't wait for a running soft swap.
+ * Run one shared refresh after any refresh still in flight. If a newer request arrived meanwhile, it returns that
+ * request's promise instead. A forced full refresh doesn't wait for a running soft swap.
  */
 async function coalescedRefresh(app, original, options, previous, next, sequence, state) {
   const fallback = options.forceFull && state.softSwap;
@@ -338,6 +342,7 @@ async function performRefresh(app, original, options, previous, next, sequence, 
       settleView();
       return undefined;
     }
+    // Same unit as before and not forced: no re-render, only show or hide the HUD and decorate it again.
     if (previous.kind === next.kind && previous.tokenId === next.tokenId) {
       if (next.kind === 'hidden') hideHudImmediately(root);
       else revealHudImmediately(root);
@@ -462,6 +467,8 @@ function fadeHudIn(app, root) {
  * Replace Core's controlToken handler. Selecting a token points the HUD at that unit, deselecting the shown token
  * sends a GM back to the GM bar (and a player to no HUD), and a GM's suppressed left-click is ignored. After Core's
  * own handler runs, enforceVisibility applies the system's visibility rules.
+ * Core keeps its hook ids in the coordinator's private `_hookIds` map. The patch turns Core's hook off, registers
+ * its own and stores the new id in that map, so Core's unregisterHooks removes it too.
  */
 function patchControlCoordinator(app, hookApi) {
   const coordinator = app.updateCoordinator;
@@ -876,6 +883,10 @@ async function openScaleMenu(ContextMenu, updateUIScale, event, row) {
   return menu;
 }
 
+/**
+ * Turn Foundry's Hotbar#collapse and #expand into silent no-ops. Since v13 they do nothing but log a deprecation
+ * warning. This applies to every caller, not only Core.
+ */
 function silenceHotbarDeprecations() {
   const prototype = foundry.applications.ui.Hotbar.prototype;
   if (prototype._emblemCollapseSilenced) return;

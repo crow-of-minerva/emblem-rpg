@@ -12,16 +12,16 @@ export const DOWNTIME_FLAG = 'downtime';
 /** The Item flag marking a buff a downtime activity granted, so a refresh can find and remove it. */
 export const DOWNTIME_ENTITY_FLAG = 'downtimeEntity';
 
-/** The two kinds of downtime act. An Energy-lane act spends Energy, and an Action-lane act uses the whole downtime. */
+/** The two kinds of downtime act. An Energy act spends Energy, and an Action act uses the whole downtime. */
 export const DOWNTIME_LANES = Object.freeze({ ENERGY: 'energy', ACTION: 'action' });
 
 /** Every unit's Energy before passive modifiers. The capacity is worked out when needed and never stored. */
 export const DOWNTIME_ENERGY_BASE = 3;
 
-/** Skill experience one Energy-lane act pays, as a fraction of the current rank bar per Energy spent. */
+/** Skill experience one Energy act pays, as a fraction of the current rank bar per Energy spent. */
 export const DOWNTIME_XP_FRACTION_PER_ENERGY = 0.03;
 
-/** Skill experience one Action-lane act pays, as a fraction of the current rank bar. */
+/** Skill experience one Action act pays, as a fraction of the current rank bar. */
 export const DOWNTIME_XP_FRACTION_ACTION = 0.10;
 
 /** The factions a downtime roster is drawn from. */
@@ -33,7 +33,7 @@ export const DOWNTIME_STATION_TYPES = Object.freeze({
   PERFORMANCE: 'Instrument', REQUISITION: 'Stationary'
 });
 
-/** Station priority used by the board interaction handler when more than one station is available. */
+/** Which station the map's click handling picks when more than one is available. */
 export const DOWNTIME_STATION_ORDER = Object.freeze([
   DOWNTIME_STATION_TYPES.COOKING, DOWNTIME_STATION_TYPES.GATHERING, DOWNTIME_STATION_TYPES.WORKSHOP,
   DOWNTIME_STATION_TYPES.LABORATORY, DOWNTIME_STATION_TYPES.PERFORMANCE, DOWNTIME_STATION_TYPES.REQUISITION
@@ -78,7 +78,7 @@ export const PERFORMANCE_GRADE_ORDER = Object.freeze([
   PERFORMANCE_GRADES.TRIUMPH
 ]);
 
-/** How the performance menu and the settled card name each grade. */
+/** How the performance menu and the results card name each grade. */
 export const PERFORMANCE_GRADE_LABELS = Object.freeze({
   [PERFORMANCE_GRADES.FAILURE]: 'Failed Performance',
   [PERFORMANCE_GRADES.LESSER]: 'Faltering',
@@ -119,21 +119,21 @@ export const GATHERING_TIMING = Object.freeze({
   bannerHold: 4000, stageHold: 900, stageSettle: 250, nodeRemoval: 3000
 });
 
-/** Forge and brew timings: the banner held before the roll, and the same staging pause as a gather. */
+/** Forge and brew timings: the banner held before the roll, and the same walk pause as a gather. */
 export const CRAFTING_TIMING = Object.freeze({ bannerHold: 3500, stageHold: GATHERING_TIMING.stageHold });
 
-/** Cooking timings: the pot's banner held before the roll, and the same staging pause as a gather. */
+/** Cooking timings: the pot's banner held before the roll, and the same walk pause as a gather. */
 export const COOKING_TIMING = Object.freeze({ bannerHold: 4000, stageHold: GATHERING_TIMING.stageHold });
 
 /**
- * Performance timings: the instrument's banner held before the rolls, and the same staging pause as a gather. A song
+ * Performance timings: the instrument's banner held before the rolls, and the same walk pause as a gather. A song
  * with a track keeps its banner up for at least `trackLinger` after it opens.
  */
 export const PERFORMANCE_TIMING = Object.freeze({
   bannerHold: 4000, stageHold: GATHERING_TIMING.stageHold, trackLinger: 8000
 });
 
-/** How long downtime settlement waits for the roll card's dice. The engine waits on its clock, not on Dice So Nice. */
+/** How long a downtime activity waits for the roll card's dice. It waits a fixed time, not for Dice So Nice. */
 export const DOWNTIME_CHECK_TIMING = Object.freeze({ diceSettleHold: 2600 });
 
 /** The skill both units roll when they socialize. */
@@ -148,10 +148,10 @@ export const TRAINING_SUPPORT_XP = 5;
 /** The two activities a pair of party units may share, chosen in the social menu. */
 export const SOCIAL_MODES = Object.freeze({ SOCIALIZE: 'socialize', TRAIN: 'train' });
 
-/** The board unit-pick modes ui/controls/interaction.mjs opens for a downtime activity between two units. */
+/** The unit-pick modes ui/controls/interaction.mjs opens on the map for a downtime activity between two units. */
 export const DOWNTIME_PICK_MODES = Object.freeze({ SOCIAL: 'socialize' });
 
-/** Socialize timings: the two-portrait band held open before the rolls, and the same staging pause as a gather. */
+/** Socialize timings: the two-portrait band held open before the rolls, and the same walk pause as a gather. */
 export const SOCIAL_TIMING = Object.freeze({ bannerHold: 4000, stageHold: GATHERING_TIMING.stageHold });
 
 /**
@@ -173,7 +173,7 @@ export const REQUISITION_KIND_ORDER = Object.freeze([
   REQUISITION_KINDS.FUNDING, REQUISITION_KINDS.EQUIPMENT, REQUISITION_KINDS.SUPPLIES, REQUISITION_KINDS.HIRELINGS
 ]);
 
-/** How the requisition menu and the settled card name each kind. */
+/** How the requisition menu and the results card name each kind. */
 export const REQUISITION_KIND_LABELS = Object.freeze({
   [REQUISITION_KINDS.FUNDING]: 'Funding',
   [REQUISITION_KINDS.EQUIPMENT]: 'Equipment',
@@ -181,7 +181,7 @@ export const REQUISITION_KIND_LABELS = Object.freeze({
   [REQUISITION_KINDS.HIRELINGS]: 'Hirelings'
 });
 
-/** The kinds planRequisition in game/downtime/requisition.mjs settles. The menu lists the rest as unavailable. */
+/** The kinds planRequisition in game/downtime/requisition.mjs handles. The menu lists the rest as unavailable. */
 export const REQUISITION_AVAILABLE_KINDS = Object.freeze([REQUISITION_KINDS.FUNDING]);
 
 /** The skill a requisitioner rolls. */
@@ -213,7 +213,7 @@ export const REQUISITION_LIMITS = Object.freeze({
   step: 100, min: 100, maxDemand: 100000, maxFactions: 24, maxName: 80
 });
 
-/** Requisition timings: the Stationary's banner held before the roll, and the same staging pause as a gather. */
+/** Requisition timings: the Stationary's banner held before the roll, and the same walk pause as a gather. */
 export const REQUISITION_TIMING = Object.freeze({ bannerHold: 4000, stageHold: GATHERING_TIMING.stageHold });
 
 /**
@@ -237,9 +237,9 @@ export const TRAINING_SPAR_ITEMS = Object.freeze({
 /*  Stationary factions                         */
 /* -------------------------------------------- */
 /**
- * Coerce one stored faction row of a Stationary (`system.requisition.factions`) into its canonical shape: a bounded
- * name, a known relation and wealth, and the two switches. The Object data model clamps its prepared rows with this,
- * and the requisition snapshot reads the station through it. The result is a fresh, mutable object.
+ * Clean up one stored faction row of a Stationary (`system.requisition.factions`): a name cut to length, a known
+ * relation and wealth, and the two switches. The Object data model cleans its prepared rows with this, and the
+ * requisition command reads the station through it. The result is a new, writable object.
  * @param {object} raw The stored row.
  * @param {string} [fallbackId] The id a row without one takes.
  */
@@ -266,13 +266,13 @@ export function normalizeFactions(rows) {
 /* -------------------------------------------- */
 /*  Intents                                     */
 /* -------------------------------------------- */
-// These normalizers bound the payloads engine/downtime/commands.mjs reads. A command refuses a null result with
+// These functions check the payloads engine/downtime/commands.mjs reads. A command refuses a null result with
 // DOWNTIME_INPUT_INVALID, and a menu read (inspectCooking, inspectSocial and the like) returns null.
 const GATHER_INTENT_KEYS = ['cursorTokenUuid', 'stationTokenUuid', 'performerUuid', 'destination'];
 const MAX_UUID_LENGTH = 512;
 const MAX_ITEMS = 24;
 
-/** Bound one gather: the unit driving it, the node it stands at, the unit sent to work it, and where the yield goes. */
+/** Check one gather: the selected token, the node beside it, the unit sent to work it, and where the yield goes. */
 export function normalizeGatheringIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, GATHER_INTENT_KEYS)) return null;
   const cursorTokenUuid = tokenUuid(payload.cursorTokenUuid);
@@ -287,7 +287,7 @@ export function normalizeGatheringIntent(payload) {
 const FORGE_INTENT_KEYS = ['cursorTokenUuid', 'stationTokenUuid', 'performerUuid', 'itemUuid'];
 const BREW_INTENT_KEYS = ['cursorTokenUuid', 'stationTokenUuid', 'performerUuid', 'recipeUuid'];
 
-/** Bound one forge: the driving unit, the station it stands at, the unit sent to work, and the carried copy. */
+/** Check one forge: the selected token, the station beside it, the unit sent to work, and the carried copy. */
 export function normalizeForgingIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, FORGE_INTENT_KEYS)) return null;
   const cursorTokenUuid = tokenUuid(payload.cursorTokenUuid);
@@ -299,7 +299,7 @@ export function normalizeForgingIntent(payload) {
   return Object.freeze({ cursorTokenUuid, stationTokenUuid, performerUuid, itemUuid });
 }
 
-/** Bound one brew: the driving unit, the station, the unit sent to work, and the recipe the world offers. */
+/** Check one brew: the selected token, the station, the unit sent to work, and the recipe the world offers. */
 export function normalizeBrewingIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, BREW_INTENT_KEYS)) return null;
   const cursorTokenUuid = tokenUuid(payload.cursorTokenUuid);
@@ -314,7 +314,7 @@ export function normalizeBrewingIntent(payload) {
 const COOK_INTENT_KEYS = ['cursorTokenUuid', 'stationTokenUuid', 'performerUuid', 'recipeId', 'specialName', 'dinerUuids'];
 const MAX_DINERS = 24;
 
-/** Bound one cook: the driving unit, the pot, the chef, the recipe id, an optional special ingredient, the diners. */
+/** Check one cook: the selected token, the pot, the chef, the recipe id, an optional special ingredient, the diners. */
 export function normalizeCookingIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, COOK_INTENT_KEYS)) return null;
   const cursorTokenUuid = tokenUuid(payload.cursorTokenUuid);
@@ -338,7 +338,7 @@ export function normalizeCookingIntent(payload) {
   });
 }
 
-/** Bound a whole recipe library the GM saves: a list of records within the recipe limits, detached. */
+/** Check a whole recipe library the GM saves, and return a copy: a list of records within the recipe limits. */
 export function normalizeRecipeLibraryIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, ['recipes'])) return null;
   if (!Array.isArray(payload.recipes) || payload.recipes.length > RECIPE_LIMITS.maxRecipes) return null;
@@ -363,7 +363,7 @@ const PERFORM_INTENT_KEYS = ['cursorTokenUuid', 'stationTokenUuid', 'performerUu
 const MAX_ACCOMPANIMENTS = SONG_LIMITS.performers.max - 1;
 
 /**
- * Bound one performance: the driving unit, the instrument, the lead performer, the song id, and the accompanying
+ * Check one performance: the selected token, the instrument, the lead performer, the song id, and the accompanying
  * units. Accompaniments come back distinct and without the lead. planPerformance checks their count against the song.
  */
 export function normalizePerformanceIntent(payload) {
@@ -389,8 +389,9 @@ export function normalizePerformanceIntent(payload) {
 }
 
 /**
- * Bound a whole song library the GM saves: a list of records within the song limits, detached, and optionally the
- * built-in ids it removed. Bonuses may name only song stats, and normalizeSong clamps every value afterwards.
+ * Check a whole song library the GM saves, and return a copy: a list of records within the song limits, and
+ * optionally the built-in ids it removed. Bonuses may name only song stats, and normalizeSong clamps every value
+ * afterwards.
  */
 export function normalizeSongLibraryIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, ['songs', 'removed'])) return null;
@@ -421,7 +422,7 @@ export function normalizeSongLibraryIntent(payload) {
 const REQUISITION_INTENT_KEYS = ['cursorTokenUuid', 'stationTokenUuid', 'performerUuid', 'factionId', 'kind', 'demand'];
 
 /**
- * Bound one requisition: the driving unit, the Stationary, the requisitioner, the faction row's id, a known request
+ * Check one requisition: the selected token, the Stationary, the requisitioner, the faction row's id, a known request
  * kind, and the demand as a whole number of GP. planRequisition in game/downtime/requisition.mjs decides whether the
  * kind is available and the demand fits the faction, so its refusal can say why.
  */
@@ -440,7 +441,7 @@ export function normalizeRequisitionIntent(payload) {
   });
 }
 
-/** Bound a read of one station: the pair of Tokens and nothing else. */
+/** Check a read of one station: the pair of Tokens and nothing else. */
 export function normalizeStationIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, ['cursorTokenUuid', 'stationTokenUuid'])) return null;
   const cursorTokenUuid = tokenUuid(payload.cursorTokenUuid);
@@ -453,8 +454,8 @@ const SOCIAL_INTENT_KEYS = ['cursorTokenUuid', 'partnerTokenUuid'];
 const TRAINING_INTENT_KEYS = ['cursorTokenUuid', 'partnerTokenUuid', 'proficiencyKey'];
 
 /**
- * Bound one socialize, and the social menu's read of a pair: the driving unit's Token and the adjacent Token it
- * visited. planSocialize in game/downtime/social.mjs rechecks the pair against the roster and the board.
+ * Check one socialize, and the social menu's read of a pair: the selected token and the adjacent Token it visited.
+ * planSocialize in game/downtime/social.mjs rechecks the pair against the roster and the map.
  */
 export function normalizeSocialIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, SOCIAL_INTENT_KEYS)) return null;
@@ -464,7 +465,7 @@ export function normalizeSocialIntent(payload) {
   return Object.freeze({ cursorTokenUuid, partnerTokenUuid });
 }
 
-/** Bound one training session: the same pair of Tokens and the weapon proficiency the pair trains. */
+/** Check one training session: the same pair of Tokens and the weapon proficiency the pair trains. */
 export function normalizeTrainingIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, TRAINING_INTENT_KEYS)) return null;
   const pair = normalizeSocialIntent({
@@ -478,14 +479,14 @@ export function normalizeTrainingIntent(payload) {
 /** The most Energy one restore may hand back, before the unit's own capacity caps it. */
 export const ENERGY_RESTORE_LIMIT = 99;
 
-/** Bound one unit's downtime administration: the Actor whose commitment the staff control is reaching for. */
+/** Check a GM's downtime action on one unit: the Actor whose commitment the GM control changes. */
 export function normalizeDowntimeUnitIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, ['actorUuid'])) return null;
   const uuid = actorUuid(payload.actorUuid);
   return uuid ? Object.freeze({ actorUuid: uuid }) : null;
 }
 
-/** Bound one Energy restoration: the unit and the whole number of points the staff caller asked for. */
+/** Check one Energy restoration: the unit and the whole number of points the GM asked for. */
 export function normalizeEnergyRestoreIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, ['actorUuid', 'amount'])) return null;
   const uuid = actorUuid(payload.actorUuid);
@@ -495,7 +496,7 @@ export function normalizeEnergyRestoreIntent(payload) {
 }
 
 /**
- * Bound one Reset Downtime: the Scene whose placed units, downtime buffs, Stationaries and Vendors' haggles are reset.
+ * Check one Reset Downtime: the Scene whose placed units, downtime buffs, Stationaries and Vendors' haggles are reset.
  */
 export function normalizeDowntimeResetIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, ['sceneUuid'])) return null;
@@ -538,7 +539,10 @@ export const DOWNTIME_PRESENTATION_EVENTS = Object.freeze({
 
 const MAX_PRESENTATION_MESSAGE_LENGTH = 8192;
 
-/** One downtime presentation message the active GM broadcasts: the working banner, its close, or the results card. */
+/**
+ * Build one downtime message the GM's client sends to every client: the working banner, its close, or the results
+ * card.
+ */
 export function downtimePresentationMessage(event, data = {}) {
   if (!Object.values(DOWNTIME_PRESENTATION_EVENTS).includes(event)) {
     throw new TypeError(`Unknown downtime presentation event: ${event}`);
@@ -546,7 +550,7 @@ export function downtimePresentationMessage(event, data = {}) {
   return Object.freeze({ kind: DOWNTIME_PRESENTATION_KIND, event, ...structuredClone(data) });
 }
 
-/** Accept only bounded downtime feedback at the presentation socket. */
+/** Check a downtime message received over the socket. */
 export function isDowntimePresentationMessage(value) {
   if (!plainRecord(value) || value.kind !== DOWNTIME_PRESENTATION_KIND) return false;
   if (!Object.values(DOWNTIME_PRESENTATION_EVENTS).includes(value.event)) return false;
@@ -629,7 +633,7 @@ function cardFieldsBounded(value, textKeys, numberKeys) {
   return textKeys.every(key => beatText(value[key])) && numberKeys.every(key => beatNumber(value[key]));
 }
 
-/** A card string: empty, or bounded and free of control characters. */
+/** A card string: empty, or within the length limit and free of control characters. */
 function beatText(value) {
   return value === '' || boundedText(value, MAX_BEAT_TEXT);
 }

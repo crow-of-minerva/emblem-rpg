@@ -15,11 +15,12 @@ export function menuShown(windowClass) {
 }
 
 /**
- * Show one downtime menu and settle when its window closes. The gathering, cooking, crafting, social, performance
- * and requisition menus open through here, each from ui/controls/interaction.mjs with a view from its api.downtime
- * inspect query. The window is a DialogV2 with a lone Close button and the board's shaped input capture, whose
- * keyboard confirm presses the `confirmAction` button. Each time the body is built, clicks on its `[data-action]`
- * elements go to `actions` in order and the confirm button goes to `confirm`, then `afterMount` wires the rest.
+ * Show one downtime menu; resolves when the window closes. The gathering, cooking, crafting, social, performance
+ * and requisition menus open through here, each with the view from its api.downtime inspect query. While the window
+ * is open it blocks canvas input, and the Confirm key presses the `confirmAction` button. DialogV2 needs at least
+ * one button, so the window has a Close button that the stylesheet hides. Each time the body is built, clicks on
+ * its `[data-action]` elements go to `actions` in order and the confirm button goes to `confirm`, then
+ * `afterMount` wires the rest.
  * @param {object} menu
  * @param {string} menu.title The window title.
  * @param {string[]} menu.classes The menu's own window classes, after the system's and `window-game-menu`.
@@ -73,6 +74,10 @@ export async function rerenderMenu(menu) {
   });
 }
 
+/**
+ * Send clicks on the body's `[data-action]` elements to the menu's handlers. Foundry's window also acts on
+ * `data-action` clicks, so a body button must not use a name it reserves: `close`, `tab` or `toggleControls`.
+ */
 function mountMenu(menu) {
   const root = menu.dialog.element?.querySelector(menu.body);
   if (!root) return;
@@ -139,9 +144,9 @@ export async function submitMenu(menu, send) {
 /*  Performer tiles                             */
 /* -------------------------------------------- */
 /**
- * The performer tiles a menu lists from its view's performer entries, the pickable ones first unless `sorted` is
- * false. Each tile carries the roll it would make with `skillLabel`, its die and bonus read by `dice` (the entry's
- * own `skillDie` and `skillBonus` by default), any `extra` fields, and whether it is the `active` performer.
+ * Build the performer tiles, eligible units first unless `sorted` is false. Each tile shows the roll it would make:
+ * `skillLabel` with the die and bonus that `dice` reads (by default the entry's own `skillDie` and `skillBonus`). It
+ * also carries any `extra` fields and whether it is the `active` performer.
  */
 export function performerRows(entries, active, { skillLabel, sorted = true, dice = entry => entry, extra = null }) {
   const rows = sorted ? pickableFirst(entries, entry => entry.eligible === true) : entries;

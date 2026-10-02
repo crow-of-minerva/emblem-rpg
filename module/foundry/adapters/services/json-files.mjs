@@ -31,6 +31,7 @@ export async function readSystemJson(fileName, { optional = false } = {}) {
 }
 
 async function fetchSystemFile(fileName, { optional = false } = {}) {
+  // Resolved against the page URL, so a Foundry route prefix (such as /foundry/) is kept.
   const origin = globalThis.location?.href ?? '';
   if (!origin) return null;
   const response = await fetch(new URL(`systems/${SYSTEM_ID}/${JSON_FOLDER}/${fileName}`, origin));
@@ -52,8 +53,9 @@ const WORLD_FILE_SEEDS = Object.freeze([
 const readyWorldFolders = new Map();
 
 /**
- * Give the world any `json/` file it lacks: blank recipes, songs and terrain, and copies of the shipped affinities
- * and activation XP table.
+ * On the host client, give the world any `json/` file it lacks: blank recipes, songs and terrain, and copies of the
+ * shipped affinities and activation XP table. Once copied, the world file is the one read, so later changes to the
+ * shipped affinities or XP table don't reach this world unless its copy is deleted.
  */
 export async function ensureWorldJsonFiles() {
   if (!isActiveGm() || !worldJsonFolder()) return [];
@@ -105,6 +107,7 @@ async function readWorldText(fileName) {
 }
 
 async function fetchWorldFile(fileName) {
+  // Resolved against the page URL, like fetchSystemFile, so a route prefix is kept.
   const origin = globalThis.location?.href ?? '';
   const folder = worldJsonFolder();
   if (!origin || !folder) return null;
@@ -202,10 +205,10 @@ async function readAffinityFile() {
 }
 
 /**
- * Read and parse one candidate file of a table that falls back file by file. A file that cannot be read or is
- * malformed is reported and returns null, so the caller moves on to the next one. A missing file returns null
- * quietly. The parsed table's validation warnings are shown here as warning notifications, and its `notices`, when
- * it has any, go to the console only.
+ * Read and parse one candidate file of a table that falls back file by file. A file that can't be fetched or isn't
+ * valid JSON is reported as unreadable, and one the table parser rejects as malformed. Either returns null, so the
+ * caller moves on to the next file. A missing file returns null quietly. The parsed table's validation warnings are
+ * shown here as warning notifications, and its `notices`, when it has any, go to the console only.
  */
 async function readTableSource({ label, fallback, read }, parse) {
   let payload = null;
@@ -249,7 +252,7 @@ export function currentActivationExperienceTable() {
 
 /**
  * The activation XP entry for an activated Item's name, matched trimmed and case-insensitive, or null when the Item
- * earns no activation XP. projections/items.mjs reads it into the item activation snapshot's `experience`.
+ * earns no activation XP.
  */
 export function activationExperienceEntry(itemName) {
   return activationExperienceCache.entries.get(activationExperienceKey(itemName)) ?? null;
@@ -465,8 +468,7 @@ function presetEntries(raw) {
 /* -------------------------------------------- */
 /**
  * The recipe library: the shipped cookbook `json/recipes.json` and the world's changes to it in its own
- * `json/recipes.json`. projections/downtime.mjs reads it, document-writes/downtime.mjs writes it, and init/hooks.mjs
- * reloads it when another client saves.
+ * `json/recipes.json`. It is reloaded when another client saves.
  */
 export const {
   bookReady: cookbookReady,

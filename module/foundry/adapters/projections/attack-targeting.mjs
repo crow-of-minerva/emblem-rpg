@@ -1,12 +1,14 @@
 /** @layer foundry/adapters/projections */
 /*
- * Reads the live board for attack targeting and hands the rules in game/ plain data.
+ * Reads tokens and Actors for attack targeting and hands the rules in game/ plain data.
  *
  * The first half serves the targeting controls in ui/controls/targeting.mjs while a player attacks from the
  * hotbar: which weapon is in use, the range grid, the clicked target, the local aim facing, and the Combat and
- * Destructible previews built from the exchange snapshot. The second half answers what-if questions without writing
- * anything. The threat overlay asks how hard each hostile could hit the selected unit, and the Enemy AI asks about
- * matchups, sight, flanking and usable items from squares it's considering (game.emblemRpg.api.combat).
+ * Destructible previews built from the attack data the exchange itself uses. Marking the active item and turning
+ * the aiming unit change in-memory state on this client only; nothing is saved. The second half answers questions
+ * about imagined attacks without saving anything. The threat overlay asks how hard each hostile could hit the
+ * selected unit, and the Enemy AI asks about matchups, sight, flanking and usable items from squares it's
+ * considering (game.emblemRpg.api.combat).
  */
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { DAMAGE_TYPES } from '../../../contracts/domains/damage.mjs';
@@ -73,7 +75,7 @@ import { reportFoundryError } from '../services/diagnostics.mjs';
 /*  Hotbar activation                           */
 /* -------------------------------------------- */
 /**
- * Collect what's needed to start an attack from a hotbar slot: the controlled token, the weapon, and the facts
+ * Collect what's needed to start an attack from a hotbar slot: the controlled token, the weapon, and the values
  * validateAttackActivation checks before the targeting grid opens. A Weapon Art attacks through the unit's
  * wielded weapon, or through the Armament it has borrowed. Called through projectAttackEntry in
  * ui/controls/targeting.mjs, for a hotbar press and for a weapon picked in the Combat Preview.
@@ -136,7 +138,7 @@ export async function projectHotbarAttackActivation(itemUuid, movementPlan, { we
 }
 
 /**
- * Look up the weapon the player picked from the Combat Preview's weapon list. Called by openPreviewForTarget
+ * Look up the weapon the player picked from the Combat Preview's weapon list, to swap to it or check it can be used
  * (ui/controls/targeting.mjs). Returns null if the actor doesn't own that item or it isn't an attack.
  */
 export async function projectFoundryAttackItem(actorUuid, itemId) {
@@ -185,11 +187,10 @@ export async function clearFoundryActiveItem(context) {
 const aimFacings = new Set();
 
 /**
- * Turn the aiming unit toward the unit it aims at, on this client only. Nothing is written. Once the attack or
- * activation is confirmed, the host turns both units for everyone through faceTokensTowardEachOther in
- * document-writes/tokens.mjs, which starts from the saved facing that this local turn leaves alone.
- * ui/controls/targeting.mjs turns the unit back with restoreFoundryAimFacing when targeting is left and when the host
- * answers, so this client ends on the facing every other client sees.
+ * Turn the aiming unit toward its target on this client only. Nothing is saved, though Foundry's animation leaves the
+ * new facing in this client's copy of the TokenDocument until restoreFoundryAimFacing turns it back. The host client
+ * saves the real facing for everyone when the attack is confirmed (faceTokensTowardEachOther in
+ * document-writes/tokens.mjs).
  * @param {string} sourceTokenUuid The aiming unit's Token.
  * @param {string} targetTokenUuid The Token it aims at.
  * @returns {Promise<boolean>} Whether the unit turned.
@@ -204,8 +205,8 @@ export async function turnFoundryAimFacing(sourceTokenUuid, targetTokenUuid) {
 }
 
 /**
- * Turn a unit this client turned while aiming back to the facing its Token is saved at. Once the host has answered,
- * that saved facing holds any turn the host wrote, so a unit the host turned the same way does not move again.
+ * Turn a unit this client turned while aiming back to its saved facing. If the host client has already saved a turn
+ * the same way, nothing moves.
  */
 export async function restoreFoundryAimFacing(tokenUuid) {
   if (!aimFacings.delete(tokenUuid)) return false;
@@ -213,7 +214,11 @@ export async function restoreFoundryAimFacing(tokenUuid) {
   return token ? animateLocalFacing(token, savedFacingScale(token)) : false;
 }
 
-/** Animate this client's copy of a placed Token's facing, as Foundry animates a written turn, and write nothing. */
+/**
+ * Animate a placed Token's facing on this client only, as Foundry animates a saved turn. Foundry copies each
+ * animation frame into the live TokenDocument, so `texture.scaleX` here is the facing on screen, while `_source`
+ * keeps the saved one.
+ */
 function animateLocalFacing(tokenDocument, scaleX) {
   const token = tokenDocument.object;
   if (!token || Math.abs((Number(tokenDocument.texture?.scaleX) || 1) - scaleX) < 1e-6) return false;
@@ -226,12 +231,12 @@ function animateLocalFacing(tokenDocument, scaleX) {
 /*  Targeting grid and clicked targets          */
 /* -------------------------------------------- */
 /**
- * Gather the range, shape and board facts buildAttackTargetingGrid needs to draw the attack grid for the active
+ * Gather the range, shape and map details buildAttackTargetingGrid needs to draw the attack grid for the active
  * weapon. The targeting controls call this when the grid opens, when other tokens move, and again just before a
  * preview to make sure the grid is still current.
  * @param {object} context The aimed token, actor and item UUIDs.
  * @param {object} movementSnapshot The unit's movement state from api.movement.getPlan.
- * @returns {Promise<object|null>} null if the aim has gone stale or the snapshot is for another token.
+ * @returns {Promise<object|null>} null if the aim has gone stale or the movement state is for another token.
  */
 export async function projectFoundryAttackGrid(context, movementSnapshot) {
   const live = await resolveContext(context);
@@ -251,6 +256,8 @@ export async function projectFoundryAttackGrid(context, movementSnapshot) {
       ? Object.freeze({ ...weapon.targetArea }) : null,
     elevations,
     losRule: resolveActionLosRule(effect.losRule, unitIgnoresLineOfSight(live.actor.flags?.[SYSTEM_ID])),
+    // A borrowed Armament at range 1 is not held to melee height reach on the grid. The clicked-target check below
+    // has no such exception.
     meleeOnly: !isArmamentWeapon(live.item) && String(weapon.rng ?? '').trim() === '1',
     sourceElevation: tokenTerrainElevation(live.token, Number(movementSnapshot.gridSize) || 0, elevations),
     gridColor: live.weaponArt ? 'Purple' : String(effect.gridColor ?? ''),
@@ -325,13 +332,11 @@ export async function projectFoundryAttackTarget(context, targetToken) {
 /*  Combat and Destructible previews            */
 /* -------------------------------------------- */
 /**
- * Work out what the Combat Preview window shows, from the exchange snapshot the targeting controls fetched, so the
- * numbers shown are the ones the exchange uses and the confirm's fingerprint covers. Nothing is rolled here. The
- * real exchange rolls damage types attack by attack. Only display facts come from the tokens, and they are the
- * snapshot's units, where a Guard bond may have swapped in a guarder for the unit clicked. The weapon switcher
- * offers a borrowed Armament alone, or the weapons projectWeaponChoicesAs lists with the reach each would have here.
- * A damage type picked for a weapon that rolls its type is shown as the one rolled. Called by openPreviewForTarget,
- * and again when the player picks another weapon or damage type.
+ * Build the Combat Preview from the attack data (`snapshot`) the exchange itself uses, so the player sees the
+ * numbers the attack will use. Nothing is rolled here; the real exchange rolls damage types attack by attack. Names
+ * and art come from the snapshot's tokens, which may be a guarder a Guard bond swapped in for the unit clicked. The
+ * weapon switcher offers a borrowed Armament alone, or every attack Item with the reach it would have here. A damage
+ * type picked for a weapon that rolls its type is shown as the one rolled.
  * @param {object|null} snapshot FoundryCombatStateRepository's snapshot of this attack.
  * @param {string|null} [damageType] The damage type picked in the preview, if any.
  * @returns {Promise<object|null>} null for a Destructible target or when either token is gone.
@@ -363,9 +368,9 @@ export async function projectFoundryCombatPreview(snapshot, damageType = null) {
 }
 
 /**
- * Work out what the Destructible preview shows when the player aims at an object, from the exchange snapshot: the
+ * Work out what the Destructible preview shows when the player aims at an object, from the attack data: the
  * attacker's break damage against its Integrity, the damage type and number of attacks, whether it's vulnerable,
- * resistant or immune, and the weapon's display facts. Called by openPreviewForTarget.
+ * resistant or immune, and the weapon's name, art and uses. Called by openPreviewForTarget.
  * @param {object|null} snapshot FoundryCombatStateRepository's snapshot of an attack on a Destructible.
  * @returns {Promise<object|null>} null unless the target is a Destructible whose token still exists.
  */
@@ -415,9 +420,9 @@ function projectPreviewDisplay(token) {
 }
 
 /**
- * One unit as a side of a what-if matchup, for hypotheticalSides: the rule facts projectCombatRuleFacts shares with
- * the exchange, the HP, stance, protections and damage types of its what-if `system`, and its display facts.
- * `conditionSelf` is the condition context projectMatchupCombatContexts built for the attack being measured.
+ * One unit's side of an imagined attack: its combat stats (projectCombatRuleFacts), its HP, stance, protections and
+ * damage types from the compiled `system`, and its name and art. `conditionSelf` is its condition data for this
+ * attack.
  */
 function projectCombatSide(token, actor, weapon, system, conditionSelf) {
   const facts = projectCombatRuleFacts(actor, weapon, null, system, conditionSelf);
@@ -449,10 +454,9 @@ function projectCombatSide(token, actor, weapon, system, conditionSelf) {
 /* -------------------------------------------- */
 /**
  * How hard each weapon a hostile carries would hit the selected unit, for the threat overlay. Each weapon is
- * measured as if the hostile had it in hand and had closed to its range. Called by grade() in
- * createThreatAssessment (engine/combat/threat.mjs), which turns the matchups into a threat level. The overlay grades
- * inside one animation frame and compiles both units several times, so the grade shares their unit facts and Item
- * copies (withSharedProjections in combat-context.mjs).
+ * measured as if the hostile had it in hand and had closed to its range. createThreatAssessment
+ * (engine/combat/threat.mjs) turns the matchups into a threat level. Both units are compiled several times per call,
+ * so their condition values and Item copies are cached for the call (withSharedProjections in combat-context.mjs).
  * @param {string} hostileTokenUuid The unit that might attack.
  * @param {string} targetTokenUuid The unit it would attack.
  * @returns {Readonly<object>|null} The target's HP, the hostile's stance and statuses, and one matchup per weapon.
@@ -562,7 +566,7 @@ function wieldingSystem(actor, item) {
   return compiledSystem(actor, compileCharacterAs(actor, { wieldedItemId: item.id }));
 }
 
-/** The actor's live system data with a what-if compile's stats, equipment and resources laid over it. */
+/** The actor's live system data with the stats, equipment and resources of an imagined compile laid over it. */
 function compiledSystem(actor, compiled) {
   const live = actor.system ?? {};
   return Object.freeze({
@@ -636,9 +640,9 @@ export function projectMeasuredMatchup(intent = {}) {
 }
 
 /**
- * Both sides of a what-if matchup, for projectThreatMatchups and projectMeasuredMatchup. Each unit is
- * `{token, actor, item, system}`, where `system` comes from a what-if compile. `blow` holds the distance,
- * engagement and melee reach, which projectMatchupCombatContexts turns into each side's condition context.
+ * Both sides of an imagined attack. Each unit is `{token, actor, item, system}`, where `system` was compiled for
+ * this matchup. `blow` is the attack's distance, engagement and whether the two are in melee reach;
+ * projectMatchupCombatContexts turns it into each side's condition data.
  */
 function hypotheticalSides(attacker, defender, blow) {
   const contexts = projectMatchupCombatContexts({ attacker, defender, ...blow });
@@ -650,11 +654,8 @@ function hypotheticalSides(attacker, defender, blow) {
 }
 
 /**
- * Run calculateAttackPreview and pick out the fields the planning API returns. Each side gets the damage type its
- * attacks carry (`damageType`, and `defender.damageType` for the counter, from the weapon the intent named), the
- * types it could pick from, whether it rolls one per attack instead, and how that type lands on the other side.
- * Both sides' protections, vulnerabilities and immunities are listed so the Enemy AI can weigh a counter's damage
- * type against its own.
+ * Run calculateAttackPreview and return only the fields the Enemy AI reads. Each side's damage types, protections,
+ * vulnerabilities and immunities are included so it can weigh a counter's damage type against its own.
  */
 function shapeMeasuredMatchup(weapon, attackerSide, defenderSide, compiled, previewInput) {
   const preview = calculateAttackPreview(previewInput);
@@ -709,10 +710,9 @@ function shapeMeasuredMatchup(weapon, attackerSide, defenderSide, compiled, prev
 }
 
 /**
- * Terrain and aura effects for the square the attacker is considering, or {} when it stays where it is. The
- * planner measures many matchups from the same few squares, and reading the scene's aura board for each one
- * costs more than the measurement, so values passed in on the intent are used as they are (an empty object
- * means none) and only missing ones are read here.
+ * Terrain and aura effects for the square the attacker is considering, or {} when it stays where it is. Values the
+ * caller already read are used as given, and only missing ones are read here, because reading the scene's auras
+ * costs more than the measurement itself.
  */
 function hypotheticalGround(intent) {
   if (!intent.standing) return {};
@@ -874,7 +874,7 @@ function projectLoadoutWeapon(actor, item, unit, usable) {
 }
 
 /**
- * One carried item as a planner reads it. `range` is {minRange, maxRange}, parsed by parseAttackRange from the
+ * One carried item as the Enemy AI reads it. `range` is {minRange, maxRange}, parsed by parseAttackRange from the
  * range evaluateActivationRange works out for this unit, or null when that range doesn't parse.
  * projectLoadoutWeapon gives a weapon's range the same way.
  */
@@ -1038,7 +1038,11 @@ function measuredRangeBand(range) {
   return parseAttackRange(`${minRange}-${maxRange}`);
 }
 
-/** The unit's footprint in grid cells, moved to the square it's considering, or where it stands if none is given. */
+/**
+ * The unit's footprint in grid cells, moved to the square it's considering, or where it stands if none is given.
+ * Dividing pixels by the grid size by hand is safe because hooks/scene.mjs keeps every Scene at padding 0 on a
+ * square or gridless grid; the size is the token's own Scene's (tokenGridSize), not canvas.grid.
+ */
 function standingFootprint(token, standing, gridSize) {
   const document = token?.document ?? token;
   const width = Math.max(1, Math.round(finite(document?.width) || 1));
@@ -1111,7 +1115,7 @@ function standsOn(token, placedToken) {
   return tokenCells(placedToken?.object ?? placedToken, gridSize).some(cell => mine.has(`${cell.x},${cell.y}`));
 }
 
-/** Weapon Art facts for validateAttackActivation: fits the weapon, has uses, is affordable, caster qualifies. */
+/** Weapon Art checks for validateAttackActivation: fits the weapon, has uses, is affordable, caster qualifies. */
 function projectWeaponArtFacts(art, weapon, token, actor) {
   if (!art) return Object.freeze({ weaponArtPresent: false });
   const data = art.system?.wepArtData ?? {};
@@ -1155,7 +1159,7 @@ async function resolveSource(context) {
   return { token, actor };
 }
 
-/** Distance, elevation and flight facts for resolveEngagement and isInMeleeRange, between two placed tokens. */
+/** Distance, elevation and flight details for resolveEngagement and isInMeleeRange, between two placed tokens. */
 function tokenReach(sourceToken, targetToken, distance, gridSize) {
   const elevations = readTerrainElevations(sourceToken.document?.parent ?? targetToken.document?.parent);
   return {

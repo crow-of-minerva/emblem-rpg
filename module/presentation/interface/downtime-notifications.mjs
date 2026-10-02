@@ -3,7 +3,7 @@ import { REQUISITION_KIND_LABELS } from '../../contracts/domains/downtime.mjs';
 import { NOTIFICATION_IDS } from './notification-ids.mjs';
 
 /* -------------------------------------------- */
-/*  Downtime notification copy                  */
+/*  Downtime notification text                  */
 /* -------------------------------------------- */
 /**
  * The text and level of every downtime notice: gathering, the workshop, the laboratory, cooking, performances,

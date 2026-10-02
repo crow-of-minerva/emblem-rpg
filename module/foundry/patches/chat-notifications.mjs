@@ -6,7 +6,7 @@ import { installWrapperGroup } from '../../external/host.mjs';
 /* -------------------------------------------- */
 const NOTIFICATION_GATE_GROUP = 'chat-notification-gate';
 
-/** Clear space demanded between the hotbar HUD's right edge and the floating messenger. */
+/** Clear space required between the hotbar HUD's right edge and the floating chat pane. */
 const CLEARANCE_GAP = 16;
 
 /** The sidebar animates its margin for 250 ms, so measure once that has settled, with slack. */
@@ -23,9 +23,9 @@ let settleTimer = null;
  * Core shows `#chat-notifications` over the canvas whenever the Chat tab is not the visible sidebar tab and the
  * viewport clears its own width test (`ChatLog#_shouldShowNotifications`). Core compensates by sliding its
  * `#hotbar` left, which this system never receives because the BG3 HUD replaces the macro bar. This wrapper adds
- * one condition: while the sidebar is expanded, the messenger appears only when the HUD actually leaves room for
- * it. Refusing it makes Core re-parent the chat input into the sidebar's own `.chat-form`, so the Chat tab stays
- * the way to read and type.
+ * one condition: while the sidebar is expanded, the floating chat pane appears only when the HUD actually leaves
+ * room for it. Refusing it makes Core re-parent the chat input into the sidebar's own `.chat-form`, so the Chat tab
+ * stays the way to read and type.
  */
 export function installChatNotificationGate() {
   installWrapperGroup({
@@ -63,7 +63,7 @@ export function onCollapseSidebarNotifications() {
 /* -------------------------------------------- */
 /*  Clearance measurement                       */
 /* -------------------------------------------- */
-/** Withhold the messenger from an expanded sidebar unless the HUD leaves room for it beside the hotbar. */
+/** Hide the floating chat pane while the sidebar is expanded, unless the HUD leaves room for it beside the hotbar. */
 function gateOnHudClearance(wrapped, ...args) {
   if (wrapped(...args) === false) return false;
   if (globalThis.ui?.sidebar?.expanded !== true) return true;
@@ -71,8 +71,8 @@ function gateOnHudClearance(wrapped, ...args) {
 }
 
 /**
- * Whether the messenger can sit beside the HUD rather than on top of it. An absent HUD, an absent messenger and an
- * unmeasurable one all leave Core's own answer standing.
+ * Whether the floating chat pane can sit beside the HUD rather than on top of it. With no HUD, or no pane that can
+ * be measured, Core's own answer stands.
  */
 function hudClearsMessenger() {
   const pane = messengerElement()?.getBoundingClientRect();

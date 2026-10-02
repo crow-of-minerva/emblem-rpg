@@ -51,9 +51,9 @@ const DOWNTIME_COMMITMENT_PATH = `flags.${SYSTEM_ID}.${DOWNTIME_FLAG}`;
  * Reads and writes for engine/economy: trades and thefts between units, Convoy deposits, withdrawals and
  * deliveries, coinpurses, and vendor shops with their haggles.
  *
- * Each settlement rechecks its facts from fresh state, records the before-images of everything it will change on
- * the command's operation, then writes. CommandDispatcher commits that record when the command succeeds and
- * restores the documents when it doesn't, so nothing here has to undo its own writes.
+ * Each write re-reads what it planned on and gives up as stale if it changed, saves the old values of everything it
+ * will change on the command's operation (its undo record), then writes. CommandDispatcher keeps the changes when
+ * the command succeeds and puts the documents back when it doesn't, so nothing here has to undo its own writes.
  */
 export class FoundryTradeRepository {
   constructor({ movements, parties = null }) {
@@ -99,7 +99,7 @@ export class FoundryTradeRepository {
     });
   }
 
-  /** The purses a unit or Convoy holds, for the coinpurse reconciliation. An inbound purse isn't the Convoy's yet. */
+  /** The purses a unit or Convoy holds, for the coinpurse tidy-up. An undelivered purse isn't the Convoy's yet. */
   async getCoinpurseSnapshot(actorUuid) {
     const actor = await resolveActor(actorUuid);
     if (!actor) return null;
@@ -179,15 +179,15 @@ export class FoundryTradeRepository {
 
   /**
    * Deliver a Convoy's inbound content for convoyDeliver in engine/economy/trade.mjs, planned by planConvoyDelivery
-   * from the Convoy's fresh state: the gold moves from `system.inboundGp` into `system.gp`, and each Item loses its
+   * from the Convoy as it is now: the gold moves from `system.inboundGp` into `system.gp`, and each Item loses its
    * inbound flag and joins the stored inventory. A Resource that matches a stored stack, or one delivered before it
-   * in the same batch (matchingResourceStack, vendor tags included), folds into that stack and is deleted. One
-   * capture names both gold fields, each kept Item's flag, each grown stack's amount and each folded Item before the
+   * in the same batch (matchingResourceStack, vendor tags included), folds into that stack and is deleted. Both gold
+   * fields, each kept Item's flag, each grown stack's amount and each folded Item are saved for undo before the
    * first write. A selection that finds nothing inbound returns CONVOY_DELIVERY_EMPTY and writes nothing.
    * @param {string} convoyUuid The Convoy.
    * @param {object} intent A normalizeConvoyDeliveryIntent result.
-   * @param {{operation?: object}} context The command context whose operation captures the writes.
-   * @returns {Promise<?object>} null if the UUID isn't a Convoy, otherwise the settlement.
+   * @param {{operation?: object}} context The command context whose operation saves the writes for undo.
+   * @returns {Promise<?object>} null if the UUID isn't a Convoy, otherwise the result.
    */
   async deliverInbound(convoyUuid, intent, context = {}) {
     const convoy = await resolveActor(convoyUuid);
@@ -268,7 +268,7 @@ export class FoundryTradeRepository {
     });
   }
 
-  /** Name the board, Scene, Tokens and Actors that the economy command may write. */
+  /** Lock keys: the shared movement lock (`movement:board`) and the Scenes, Tokens and Actors the command may write. */
   async resourceKeys(payload = {}) {
     const keys = ['movement:board'];
     for (const tokenUuid of [payload.sourceTokenUuid, payload.targetTokenUuid]) {
@@ -282,7 +282,7 @@ export class FoundryTradeRepository {
     return [...new Set(keys)].sort();
   }
 
-  /** Project the acting unit, whatever stands across from it, and the board facts that decide the exchange. */
+  /** The acting unit, whatever stands across from it, and the distance, elevation and factions the trade depends on. */
   async getTradeSnapshot(intent) {
     const sourceToken = await resolveToken(intent.sourceTokenUuid);
     const targetToken = await resolveToken(intent.targetTokenUuid);
@@ -315,8 +315,9 @@ export class FoundryTradeRepository {
   }
 
   /**
-   * Count one XP-granting theft on the thief's activation XP counter, under the steal command's operation; the
-   * counter is the one item activation keeps (recordActivationExperienceUse in document-writes/effect-execution.mjs).
+   * Count one XP-granting theft on the thief's activation XP counter, with undo through the steal command's
+   * operation; the counter is the one item activation keeps (recordActivationExperienceUse in
+   * document-writes/effect-execution.mjs).
    */
   recordExperienceUse(snapshot, use) {
     return recordActivationExperienceUse(snapshot.source.actorUuid, use, snapshot.operation ?? null);
@@ -325,7 +326,8 @@ export class FoundryTradeRepository {
   /**
    * Move items between units for a trade or a theft. Each move creates the item on the receiver, or adds to its
    * Resource stack, then deletes it from the giver. A counted Resource (`amounts[itemId]`) moves that many units
-   * and leaves the rest with the giver.
+   * and leaves the rest with the giver. The writes carry the combat marker (`emblemCombatSettlement`), so the
+   * item-arrival hook leaves each moved item's uses as they were.
    */
   async transferItems(from, to, itemIds, { amounts = null, operation = null } = {}) {
     const plan = await planTransfer(from, to, itemIds, amounts, false);
@@ -335,7 +337,7 @@ export class FoundryTradeRepository {
     return amounts ? { ...last } : true;
   }
 
-  /** Send a unit's items to a Convoy or a Vendor's shelf. Stale if an item no longer matches the snapshot. */
+  /** Send a unit's items to a Convoy or a Vendor's shelf. Gives up as stale if an item changed since it was read. */
   async storeItems(from, to, itemIds, { amounts = null } = {}, context = {}) {
     const plan = await planTransfer(from, to, itemIds, amounts, true);
     if (!plan) return stale('economy.transfer-stale');
@@ -378,7 +380,7 @@ export class FoundryTradeRepository {
   /**
    * Both sides of a shop as the two Tokens stand, with the buyer's Convoys, for inspectShop in
    * engine/economy/trade.mjs. `disposition` is what the buyer's party sees and pays after its haggle, beside the
-   * Vendor's own `baseDisposition`; `haggle` and the buyer's downtime facts decide the shop's Haggle button.
+   * Vendor's own `baseDisposition`; `haggle` and the buyer's downtime state decide the shop's Haggle button.
    */
   async getShopSnapshot(intent) {
     const counter = await this.#shopCounter(intent.buyerTokenUuid, intent.vendorTokenUuid);
@@ -447,8 +449,8 @@ export class FoundryTradeRepository {
   }
 
   /**
-   * The disposition a unit's party sees and pays at a Vendor, its haggle included. The shop snapshot, the purchase
-   * facts and the sale facts all read it here, so a settlement's fresh facts compare equal to the ones it planned on.
+   * The disposition a unit's party sees and pays at a Vendor, its haggle included. getShopSnapshot, getPurchaseFacts
+   * and getSaleFacts all read it here, so the values read again before a purchase or sale match the planned ones.
    */
   #dispositionFor(vendor, unit) {
     return effectiveDisposition(vendor.system?.disposition, haggleEntries(vendor.system?.haggles),
@@ -457,7 +459,7 @@ export class FoundryTradeRepository {
 
   /**
    * The Convoys a buyer may pool gold with and sell through, each with the goods it may offer. A Convoy's inbound
-   * items can't be sold until staff deliver them.
+   * items can't be sold until the GM delivers them.
    */
   async #shopConvoys(buyerUuid) {
     const convoys = [];
@@ -656,10 +658,10 @@ export class FoundryTradeRepository {
   }
 
   /**
-   * Everything a haggle is re-derived from, for haggle in engine/economy/trade.mjs: the unit at the counter with its
-   * Trading facts and downtime commitment, the Vendor with its own disposition and stored haggles, the key the
-   * unit's party haggles under, and the board facts between the two. Null when the pair no longer stands together
-   * as the intent names it.
+   * Everything a haggle is worked out from, for haggle in engine/economy/trade.mjs: the unit at the counter with its
+   * attributes, skills and downtime commitment, the Vendor with its own disposition and stored haggles, the key the
+   * unit's party haggles under, and how the two stand on the map. Null when the pair no longer stands together as
+   * the request names it.
    */
   async getHaggleFacts(intent) {
     const counter = await this.#shopCounter(intent.buyerTokenUuid, intent.vendorTokenUuid);
@@ -687,14 +689,14 @@ export class FoundryTradeRepository {
   }
 
   /**
-   * Settle a rolled haggle: spend the unit's Downtime Action and store the Vendor's haggles with the party's new
-   * entry. The facts are re-read first and a change refuses as stale before anything is written; one capture then
-   * names the unit's system flags and the Vendor's haggles.
+   * Save a rolled haggle: spend the unit's Downtime Action and store the Vendor's haggles with the party's new
+   * entry. Everything is read again first, and if anything changed it gives up as stale before writing; the unit's
+   * system flags and the Vendor's haggles are then saved for undo.
    * @param {object} facts The getHaggleFacts result the haggle was planned on.
-   * @param {{commitment: object, haggles: Array<{key: string, bonus: number}>}} settlement The Action-lane
+   * @param {{commitment: object, haggles: Array<{key: string, bonus: number}>}} settlement The downtime
    *   commitment (actionLaneSpend) and every haggle the Vendor keeps (planHaggleOutcome).
-   * @param {{operation?: object}} context The command context whose operation captures the writes.
-   * @returns {Promise<object>} The settlement result.
+   * @param {{operation?: object}} context The command context whose operation saves the writes for undo.
+   * @returns {Promise<object>} The settleWrites result.
    */
   async settleHaggle(facts, { commitment, haggles }, context = {}) {
     const buyer = await resolveActor(facts.buyer.uuid);
@@ -732,7 +734,9 @@ export class FoundryTradeRepository {
   /**
    * Remove a drop bag once it has been emptied. A world bag has its HUD state cleared and every placed Token
    * removed, then the Actor is deleted. An unlinked bag deletes only its own Token. If a removal is already running
-   * for the same bag, this does nothing.
+   * for the same bag, this does nothing. The deletes pass `noHook`, which skips the `preDeleteToken` and
+   * `preDeleteActor` hooks (the documents' own `_preDelete` still runs), so no module's hook can stop the bag
+   * being removed part-way.
    */
   async removeEmptiedContainer(actorUuid, operation = null) {
     const actor = await resolveActor(actorUuid);
@@ -774,14 +778,15 @@ const DROP_BAG_FLAG_SETTLE_MS = 50;
 const BG3_HUD_STATE_FLAG = 'hudState';
 
 /* -------------------------------------------- */
-/*  Settlement outcomes                         */
+/*  Write results                               */
 /* -------------------------------------------- */
 
 /**
- * Run one transaction's writes after its capture. A failed write refuses, and CommandDispatcher restores
- * everything the command wrote before engine/economy/trade.mjs turns the refusal into the caller's code.
+ * Run one command's writes, once the old values are saved for undo. A failed write returns REVERTED, and
+ * CommandDispatcher puts back everything the command wrote before engine/economy/trade.mjs turns it into the
+ * caller's code.
  * @param {Function} writes The ordered document writes, returning any extra result fields.
- * @returns {Promise<object>} The settlement result.
+ * @returns {Promise<object>} The write result.
  */
 async function settleWrites(writes) {
   try {
@@ -793,17 +798,17 @@ async function settleWrites(writes) {
   }
 }
 
-/** What an Actor holds that gameplay reaches: a Convoy's inbound Items stay out until staff deliver them. */
+/** What an Actor holds that play can use: a Convoy's undelivered Items stay out until the GM delivers them. */
 function storedItems(actor) {
   return collectionValues(actor?.items).filter(item => !isInboundItem(item));
 }
 
-/** Nothing was written: the facts the plan was built on no longer hold. */
+/** Nothing was written: what the plan was built on has changed. */
 function stale(reasonCode) {
   return { ok: false, code: ECONOMY_SETTLEMENT_OUTCOMES.STALE, reasonCode };
 }
 
-/** A new document id, made before the create so the operation can record what a rollback must remove. */
+/** A new document id, made before the create so the operation knows what to remove if the command is undone. */
 function claimedDocumentId() {
   return foundry.utils.randomID();
 }
@@ -890,9 +895,9 @@ function planInboundMerge(stored, delivered) {
 /* -------------------------------------------- */
 
 /**
- * Turn each moving item into one move. Returns null if an item has changed since the snapshot (checked when
- * `verify` is set) or is inbound, since inbound items never leave their Convoy. A Resource merges only into a
- * stored stack.
+ * Turn each moving item into one move. Returns null if an item has changed since it was read (checked when
+ * `verify` is set) or is undelivered (inbound), since undelivered items never leave their Convoy. A Resource merges
+ * only into a stored stack.
  */
 async function planTransfer(from, to, itemIds, amounts, verify) {
   const giver = await resolveActor(from.actorUuid);
@@ -919,8 +924,8 @@ async function planTransfer(from, to, itemIds, amounts, verify) {
 }
 
 /**
- * Reserve each arriving Item's identity and record both sides' before-images in one capture, so a command that
- * fails mid-transfer has exactly the arrivals to remove and the departures to put back.
+ * Choose each arriving Item's id ahead and save both sides' old values for undo in one call, so a command that
+ * fails mid-transfer knows exactly which new items to remove and which departed items to put back.
  */
 async function captureTransfer(moves, operation) {
   if (!operation) return;
@@ -966,7 +971,7 @@ function transferredItemData(move) {
   return data;
 }
 
-/** An Item's data as it arrives somewhere new: unequipped, under the id the settlement reserved for it, if any. */
+/** An Item's data as it arrives somewhere new: unequipped, under the id chosen for it ahead of the create, if any. */
 function detachedItemData(item, id = '') {
   const data = item.toObject();
   if (id) data._id = id;
@@ -1013,7 +1018,7 @@ function withVendorTags(data, tags) {
 /*  Vendor tag reset                            */
 /* -------------------------------------------- */
 
-/** The flag paths the vendor tags live at, which the Reset Downtime sweep captures and deletes. */
+/** The flag paths the vendor tags live at, which the GM's Reset Downtime saves for undo and deletes. */
 const VENDOR_TAG_PATHS = Object.freeze([VENDOR_SOLD_FLAG, VENDOR_BUYBACK_FLAG].map(key => `flags.${SYSTEM_ID}.${key}`));
 
 /**
@@ -1036,12 +1041,12 @@ export function vendorTagHolders() {
     .filter(holder => holder.items.length);
 }
 
-/** The capture entries for a vendor tag sweep: each tagged Item with the tag paths it holds. */
+/** The undo entries (for operation.capture) for a vendor tag reset: each tagged Item with the tag paths it holds. */
 export function vendorTagCaptures(holders) {
   return holders.flatMap(({ items }) => items.map(item => ({ document: item, paths: heldTagPaths(item) })));
 }
 
-/** Strip both vendor tags from every Item a sweep names, one embedded update per holder. */
+/** Strip both vendor tags from every Item listed, one embedded update per actor. */
 export async function stripVendorTags(holders, options = {}) {
   for (const { actor, items } of holders) {
     await actor.updateEmbeddedDocuments('Item', items.map(item => Object.assign({ _id: String(item.id) },
@@ -1062,8 +1067,9 @@ function wholeGold(value) {
 }
 
 /**
- * The downtime facts a haggle reads from the unit at the counter (actionLaneBlock in game/downtime/social.mjs): its
- * commitment, and whether it is down at 0 HP, read as projections/downtime.mjs reads them for an activity roster.
+ * What a haggle checks about the unit at the counter (actionLaneBlock in game/downtime/social.mjs): its downtime
+ * commitment, and whether it is down at 0 HP, read the way projections/downtime.mjs reads them for an activity
+ * roster.
  */
 function downtimeStanding(actor) {
   const flag = actor.getFlag?.(SYSTEM_ID, DOWNTIME_FLAG) ?? actor.flags?.[SYSTEM_ID]?.[DOWNTIME_FLAG];

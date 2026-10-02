@@ -90,8 +90,7 @@ async function _addModifierOfKind(itemSheet, kind) {
 
 /**
  * Copy a saved modifier into the Item sheet's hidden modifier inputs, so the sheet's next submit doesn't overwrite
- * the editor's changes. In practice the lookup finds no form and nothing is updated: the sheet element is itself the
- * form, and the browser drops the template's inner form.
+ * the editor's changes.
  */
 function updateModifierHiddenFields(itemSheet, index, modifierData) {
   const form = itemSheet.element?.querySelector('form');
@@ -109,7 +108,7 @@ function updateModifierHiddenFields(itemSheet, index, modifierData) {
   setField('targetType', modifierData.targetType || 'All');
 }
 
-/** Run updateModifierHiddenFields for every modifier. _addModifierOfKind calls it after appending a blank one. */
+/** Run updateModifierHiddenFields for every modifier. */
 function synchronizeModifierHiddenFields(itemSheet) {
   const modifiers = itemSheet.document.system.modifiers;
   modifiers.forEach((modifier, index) => updateModifierHiddenFields(itemSheet, index, modifier));
@@ -143,8 +142,8 @@ function buildModifierPayload(dialogEl, tree, original) {
 
 /**
  * Open the modifier editor. The modifier is validated before saving: errors block the save and warnings are shown.
- * The copy and paste buttons share the condition clipboard with the other editors, and pasting over a non-empty tree
- * asks first.
+ * The copy and paste buttons share the condition clipboard with the requirement editor, and pasting over a
+ * non-empty tree asks first.
  */
 async function openModifierDialog(itemSheet, index, modifier) {
   const sourceTree = modifier.conditionTree && typeof modifier.conditionTree === 'object'
@@ -177,6 +176,7 @@ async function openModifierDialog(itemSheet, index, modifier) {
       return payload;
     },
     apply: async (updated) => {
+      // The modifier is found by the index it had when the editor opened.
       const modifiers = [...itemSheet.document.system.modifiers];
       modifiers[index] = updated;
 
@@ -296,7 +296,7 @@ async function discardRequirementEntry(itemSheet, entryIndex) {
 /*  Requirement Markup                          */
 /* -------------------------------------------- */
 
-/** The editor's markup: the type and name row, then the list `paintRequirementBody` draws the predicate card into. */
+/** The editor's markup: the type and name row, then the box `paintRequirementBody` draws the panel into. */
 function requirementEditorHtml(entry) {
   const typeTip = escapeHtml(getTooltip('editor.requirement.type'));
   const nameTip = escapeHtml(getTooltip('editor.requirement.name'));
@@ -317,7 +317,7 @@ function requirementEditorHtml(entry) {
 }
 
 /**
- * The Condition predicate card: a header row naming the condition beside its one-line summary, then the tree
+ * The Condition requirement's panel: a header row naming the condition beside its one-line summary, then the tree
  * builder with its clipboard buttons, then the raw JSON. The `mod-*` classes keep the tree builder's own styling.
  */
 function conditionPanelHtml() {
@@ -349,9 +349,9 @@ function conditionPanelHtml() {
 /* -------------------------------------------- */
 
 /**
- * Draw the requirement's single predicate: the shared condition builder inside its card for a Condition requirement,
- * or the geometry panel from fields.mjs, which is the card itself, for a Placement one. The builder is mounted again
- * each time, since a repaint destroys the markup the old one was bound to.
+ * Draw the requirement's panel: the shared condition builder for a Condition requirement, or the placement panel
+ * from fields.mjs for a Placement one. The builder is mounted again each time, since a redraw destroys the markup
+ * the old one was bound to.
  */
 function paintRequirementBody(bodyEl, state) {
   const predicate = state.entry.predicates[0];
@@ -491,6 +491,7 @@ export async function openRequirementEditor(itemSheet, entryIndex, { isNew = fal
       return updated;
     },
     apply: async (updated) => {
+      // The requirement is found by the index it had when the editor opened.
       const all = [...itemSheet.document.system.requirements];
       all.splice(entryIndex, 1, updated);
       await itemSheet.document.update({ 'system.requirements': all });

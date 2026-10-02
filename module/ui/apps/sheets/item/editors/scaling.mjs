@@ -12,7 +12,9 @@ import { evaluateScaling, isScalingActive } from '../../../../../game/items/rule
 import { parseAttackRange } from '../../../../../game/targeting/attack-grid.mjs';
 import { capitalize } from '../../../../../lib/dom/html.mjs';
 
+/** The stats a Stat factor can measure. */
 const SAVE_TYPES = Object.freeze(['mgt', 'agi', 'tqn', 'wit', 'cha']);
+/** The skills a Skill factor can measure. */
 const SKILL_KEYS = Object.freeze([
   'athletics', 'finesse', 'trading', 'civics', 'handicraft',
   'sociability', 'command', 'nature', 'perception', 'performance', 'reason', 'esoteric'
@@ -333,10 +335,9 @@ function attachHandlers(dialogEl, state, item, actor, opts) {
 /* -------------------------------------------- */
 
 /**
- * The text the Range editor saves as `system.effectData.rng`. The base field shows one number taken from the start of
- * the range, so a range with a minimum, such as "2-3", is saved as stored while nothing scales and the author has not
- * edited the base field. Otherwise the field's number is saved: an edit replaces the range, and once a factor scales
- * it, `evaluateActivationRange` reads only the leading number. Text `parseAttackRange` cannot read is replaced too.
+ * The text the Range editor saves as `system.effectData.rng`. The base field shows only the range's first number, so
+ * a stored range such as "2-3" is kept as it is while nothing scales and the base field is untouched. Otherwise, or
+ * when the stored text isn't a range, the base field's number is saved.
  * @param {object} state          The working state.
  * @param {string} stored         The range as the Item stores it.
  * @param {boolean} edited        Whether the author edited the base field.

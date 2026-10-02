@@ -27,7 +27,7 @@ export class ItemAuthoringService {
 /*  Party configuration                        */
 /* -------------------------------------------- */
 
-/** Coordinate api.parties edits and their derived Foundry ownership state for GMs. */
+/** Run api.parties edits and the Foundry ownership changes they imply. Full GMs only, not Assistants. */
 export class PartyService {
   constructor({ parties }) {
     this.parties = parties;
@@ -90,7 +90,7 @@ export class PartyService {
 }
 
 /* -------------------------------------------- */
-/*  Settlement                                 */
+/*  Results                                    */
 /* -------------------------------------------- */
 
 function settlementResult(outcome, successCode) {
@@ -104,14 +104,14 @@ function settlementResult(outcome, successCode) {
 }
 
 /* -------------------------------------------- */
-/*  Terrain replacement settlement              */
+/*  Terrain replacement                         */
 /* -------------------------------------------- */
 
 /**
  * Replace terrain through the Foundry writer as one Scene update, so a failed write leaves the map exactly as it
- * was. The terrain builder authors outside CommandDispatcher, so there is no operation and nothing to put back.
+ * was. The Terrain Builder writes outside CommandDispatcher, so there is no undo record to restore.
  * @param {object} request
- * @param {object} request.repository         Bound outbound terrain persistence port.
+ * @param {object} request.repository         The scene's terrain writer.
  * @param {string[]} request.deletePaths      Complete entries the edit removes.
  * @param {Record<string, *>} request.replacements  Complete entries the edit writes in their place.
  */

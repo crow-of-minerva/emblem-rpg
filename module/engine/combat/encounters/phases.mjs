@@ -44,8 +44,8 @@ export async function createEncounter(snapshot, services) {
   if (!board) return { ok: false, code: RESULT_CODES.SCENE_NOT_FOUND };
   if (board.gridless) return { ok: false, code: RESULT_CODES.ENCOUNTER_GRID_REQUIRED };
   if (board.combatId) {
-    // This refusal exists to show the GM the encounter they already have, so the activation stays outside the
-    // operation. A refused command restores what it captured, and this activation should stay.
+    // This refusal is there to show the GM the encounter they already have, so the activation is kept out of the
+    // command's undo data and stays when the command refuses.
     await services.encounters.activateEncounter?.(snapshot.sceneUuid);
     return { ok: false, code: RESULT_CODES.ENCOUNTER_ALREADY_RUNNING };
   }
@@ -103,7 +103,7 @@ export async function beginEncounter(snapshot, services, { restore = null } = {}
 
 /**
  * Run the first Player Phase's onPhaseBegin passives, as `openIncomingPhase` runs them at every later opening, from
- * a board re-projected once the turns are armed. Phase-begin decay does not run here: no phase has passed inside the
+ * a fresh read of the map once the turns are set. Phase-begin decay does not run here: no phase has passed inside the
  * encounter yet, so a status a unit carried in keeps its full count.
  */
 async function openFirstPhase(sceneUuid, phase, services) {
@@ -146,7 +146,7 @@ export async function cancelEncounter(snapshot, services) {
 
 /**
  * Turn the phase over in one command. Every stage writes through `context.operation`, so a refusal or a host reload
- * before the command commits puts the board back where Advance found it and the GM simply advances again.
+ * before the command commits puts the map back where Advance found it and the GM simply advances again.
  */
 export async function advanceEncounterPhase(snapshot, services, intent = {}) {
   if (!snapshot.phase) return { ok: false, code: RESULT_CODES.ENCOUNTER_NOT_RUNNING };
@@ -160,7 +160,7 @@ export async function advanceEncounterPhase(snapshot, services, intent = {}) {
 /**
  * Refuse an advance named against an encounter, phase or round the map no longer shows.
  * @param {{combatId: string, phase: string, round: number}|null|undefined} expected What the caller saw.
- * @param {object|null} board The fresh objective board.
+ * @param {object|null} board The objective state as just read.
  * @returns {object|null} A stale refusal, or null when nothing was named or everything named still stands.
  */
 function staleAdvance(expected, board) {
@@ -236,9 +236,10 @@ export async function pauseEncounter(snapshot, services) {
 }
 
 /**
- * Open a paused map again where it stopped: its round, its target roster, its objective progress and its
- * auto-advance switch. beginEncounter creates a new Combat, which would read auto-advance as on, so the paused
- * record's switch is written onto it before the pause record is cleared.
+ * Open a paused map again with its round, its target roster, its objective progress and its auto-advance switch.
+ * The saved phase is not restored: it always reopens on the Player Phase of the saved round, and both sides' turns
+ * refill as at the start of an encounter. beginEncounter creates a new Combat, which would read auto-advance as on,
+ * so the paused record's switch is written onto it before the pause record is cleared.
  */
 export async function resumeEncounter(snapshot, services) {
   const board = await services.encounters.getObjectiveSnapshot(snapshot.sceneUuid);
@@ -324,7 +325,7 @@ const TRANSITION_OK = Object.freeze({ ok: true });
 const TRANSITION_FAILED = Object.freeze({ ok: false, code: RESULT_CODES.ENCOUNTER_SETTLEMENT_FAILED });
 const TRANSITION_STALE = Object.freeze({ ok: false, code: RESULT_CODES.ENCOUNTER_STALE });
 
-/** The working state one transition is driven from, which stages add their fresh projections to. */
+/** The working state of one phase change. Stages add their fresh reads of the map to it. */
 function openTransitionContext(snapshot, services) {
   const transition = nextEncounterPhase(snapshot.phase, snapshot.round);
   return {
@@ -355,7 +356,8 @@ const TRANSITION_STAGES = Object.freeze([
 ]);
 
 /**
- * Capture what the whole change will write, then run every stage in order, claiming newly placed actors before each.
+ * Finish any half-done defeats and save undo data for what the whole change will write, then run every stage in
+ * order, recording newly placed actors before each.
  * checkOutgoingObjectives may decide the encounter is over. Its writes stand, so the change accepts under
  * OBJECTIVES_END_QUEUED without writing the incoming phase, and foundry/hooks/scene.mjs resolves the queued end as
  * its own command.
@@ -419,9 +421,9 @@ async function finishStrandedDefeats(context) {
 }
 
 /**
- * Record the before-images of everything an ordinary phase change writes, in one save: the Scene's phase, round and
- * the terrain entries the expiry sweep will rewrite, plus each participant's turn state. Health, effect, spawn and
- * defeat writers, and the summon expiry, capture what they newly reach right before writing.
+ * Before writing anything, save undo data for the Scene's phase, round and the timed terrain the expiry will
+ * rewrite, plus every unit's turn. Health, effect, spawn and defeat writers, and the summon expiry, save their own
+ * undo data right before they write.
  */
 async function capturePhaseOpening(context) {
   const { services, sceneUuid, snapshot, outgoing } = context;
@@ -434,7 +436,7 @@ async function capturePhaseOpening(context) {
   }) !== false;
 }
 
-/** Re-project the board once the incoming phase is written. Every opening stage reads this one. */
+/** Read the map again once the incoming phase is written, and keep that read for every opening stage. */
 async function openingSnapshot(context) {
   context.opening ??= await context.services.encounters.getSnapshot(context.sceneUuid);
   return context.opening;
@@ -448,8 +450,8 @@ async function openingSnapshot(context) {
 const OUTGOING_DECAY_FLAGS = Object.freeze([ENCOUNTER_DECAY_FLAGS.PHASE_END, ENCOUNTER_DECAY_FLAGS.ANY_PHASE_END]);
 
 /**
- * Every unit outside the outgoing side first sheds the effects that end with any phase, read from the snapshot the
- * change opened on before any phase-end passive writes. The outgoing side then decays both kinds in one plan and runs
+ * Every unit outside the outgoing side first sheds the effects that end with any phase, read from the map as the
+ * change found it, before any phase-end passive writes. The outgoing side then decays both kinds in one plan and runs
  * its onPhaseEnd passives, unit by unit, each unit's decay planned from its effects as they stand after the passives
  * before it. An Actor standing behind several Tokens decays once.
  */
@@ -487,7 +489,7 @@ async function checkOutgoingObjectives(context) {
   return queued ? { ok: true, queued: true } : TRANSITION_OK;
 }
 
-/** Run TerrainPhaseService spawns under the outgoing round and claim each arrival's Actor before Token creation. */
+/** Fire the outgoing phase's terrain spawns, recording each arriving actor on the command before its Token exists. */
 async function fireOutgoingSpawns(context) {
   const { sceneUuid, services, outgoing, outgoingRound } = context;
   const fired = await services.terrain.firePhaseEndSpawns(sceneUuid, outgoing, outgoingRound, {
@@ -498,7 +500,7 @@ async function fireOutgoingSpawns(context) {
   return fired.ok === false ? TRANSITION_FAILED : TRANSITION_OK;
 }
 
-/** Expire the timed terrain edits the opening capture already protected. */
+/** Expire the timed terrain edits whose undo data was saved when the change began. */
 async function expireOutgoingTerrain(context) {
   const { sceneUuid, services, outgoing } = context;
   const swept = await services.terrain.expireTimedEdits(sceneUuid, outgoing, services.operation ?? null);
@@ -508,7 +510,7 @@ async function expireOutgoingTerrain(context) {
 /**
  * Count down the timed summons that tick on the outgoing phase and remove those whose time ran out. It runs after
  * the side's phase-end passives and the objective check, and before the incoming phase is written, so an expired
- * summon is never armed for the next phase. The writer captures the summons it reaches right before writing.
+ * summon is never armed for the next phase. The writer saves undo data for each summon right before it writes.
  */
 async function expireOutgoingSummons(context) {
   const { sceneUuid, services, outgoing } = context;
@@ -578,7 +580,7 @@ const EMPTY_ENEMY_PHASE_NOTICE = 'There are no enemies on the scene. Auto-Advanc
 async function stopAutoAdvanceOnEmptyEnemyPhase(context) {
   const { services, incoming, sceneUuid } = context;
   if (incoming !== ENCOUNTER_PHASES.ENEMY) return TRANSITION_OK;
-  // The objective board is the projection that carries both the roster and the stored auto-advance flag.
+  // The objective read is the one that carries both the roster and the saved auto-advance flag.
   const board = await services.encounters.getObjectiveSnapshot(sceneUuid);
   if (!board) return TRANSITION_FAILED;
   if (board.autoAdvance !== true) return TRANSITION_OK;
@@ -592,8 +594,8 @@ async function stopAutoAdvanceOnEmptyEnemyPhase(context) {
 }
 
 /**
- * Run ticks and hazards in camera clusters through the pacing and health ports.
- * Reproject after each pan so cures, healing, movement and removal during the delay affect the charge.
+ * Apply status ticks and terrain hazards one camera group at a time. The map is read again after each camera pan,
+ * so a cure, heal, move or removal during the pause changes what is charged.
  */
 async function runPhaseTicks(context) {
   const { services, incoming } = context;
@@ -615,13 +617,13 @@ async function runPhaseTicks(context) {
   return TRANSITION_OK;
 }
 
-/** Re-project the opening board, replacing the one earlier stages read. */
+/** Read the map again, replacing the read the earlier opening stages used. */
 async function currentOpening(context) {
   context.opening = await context.services.encounters.getSnapshot(context.sceneUuid);
   return context.opening;
 }
 
-/** One camera cluster's units as they stand now: those still on the board when the pan finished. */
+/** One camera group's units as they are now, leaving out any no longer on the map. */
 async function currentTickUnits(group, context) {
   const current = await currentOpening(context);
   if (!current) return null;
@@ -634,8 +636,8 @@ async function currentTickUnits(group, context) {
 /* -------------------------------------------- */
 
 /**
- * Decay one unit's effects under one decay flag or several through the encounter writer, which captures the effects
- * it changes or removes.
+ * Decay one unit's effects under one decay flag or several through the encounter writer, which saves undo data for
+ * the effects it changes or removes.
  */
 async function settleUnitDecay(unit, flagKeys, context) {
   const { services } = context;
@@ -710,7 +712,10 @@ async function runUnitPassive(unit, trigger, snapshot, services) {
   }
 }
 
-/** Finish the defeats a phase passive's steps claimed, the way a tick or an attack finishes them. */
+/**
+ * Finish the defeats a phase passive's steps claimed, the way a tick or an attack finishes them. A failure is
+ * recorded and the phase change goes on; the next phase change finishes the unit.
+ */
 async function settlePassiveDefeats(unit, snapshot, outcomes, context) {
   const { services } = context;
   const units = new Map((snapshot.units ?? []).map(entry => [entry.actorUuid, entry]));
@@ -788,7 +793,7 @@ async function settleUnitTicks(unit, ticks, context) {
   return true;
 }
 
-/** Roll one tick and charge it through the health port, which captures the unit before it writes. */
+/** Roll one tick and apply it with the damage command, which saves undo data for the unit before it writes. */
 async function chargeUnitTick(unit, tick, remaining, context) {
   const { services } = context;
   const rolled = Number(await services.dice.roll(tick.formula)) || 0;

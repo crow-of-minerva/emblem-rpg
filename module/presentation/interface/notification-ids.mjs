@@ -8,9 +8,10 @@ import { GUARD_BOND_REFUSALS } from '../../contracts/domains/combat.mjs';
 /**
  * Every notification the system can show, by id. The text for each lives in notification-catalog.mjs, which takes
  * the downtime notices from downtime-notifications.mjs. Command result codes are notification ids too, because
- * NotificationService.showResult looks the catalog up by `result.code`. The ids added below are notices that no
- * command result carries. Sheets, menus and controls in ui/ raise most of them. The rest come from the BG3 HUD, the
- * Guard bond and class-feature presentations, init/system.mjs, and the notifier factories in notifications.mjs.
+ * NotificationService.showResult looks the catalog up by `result.code`. The ids added below are the system's other
+ * notices. Sheets, menus and controls in ui/ raise most of them. The rest come from the BG3 HUD, the Guard bond and
+ * class-feature presentations, init/system.mjs, the notifier factories in notifications.mjs, and the party and
+ * authoring results, which return some of these ids as plain strings.
  */
 export const NOTIFICATION_IDS = Object.freeze({
   ...RESULT_CODES,

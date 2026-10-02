@@ -27,7 +27,10 @@ export class EmblemActor extends Actor {
     }
   }
 
-  /** Foundry's temporary effects (the token's status icons), plus the flight marker when no effect already shows it. */
+  /**
+   * The active temporary and status effects, plus the flight marker when no effect already shows it. The system's
+   * token icons (projections/tokens.mjs) are drawn from this list; v14 core draws its own from appliedEffects.
+   */
   get temporaryEffects() {
     const effects = [];
     for (const effect of this.allApplicableEffects()) {
@@ -67,20 +70,20 @@ export class EmblemActor extends Actor {
     evaluateConditionalItemUses(this);
   }
 
-  /** Staff create units, and a Trusted Player creates one they will own. A Player never creates one. */
+  /** A GM or Assistant GM may create units, and a Trusted player one they will own. A player's create is refused. */
   async _preCreate(data, options, user) {
     if (!admitNativeWrite(user, this, 'create')) return false;
     return super._preCreate(data, options, user);
   }
 
-  /** Staff and a Trusted owner delete natively. A Player's delete is refused before Foundry sends it. */
+  /** A GM, Assistant GM or Trusted owner may delete directly. A player's delete is refused before Foundry sends it. */
   async _preDelete(options, user) {
     if (!admitNativeWrite(user, this, 'delete')) return false;
     return super._preDelete(options, user);
   }
 
   /**
-   * Refuse a Player's direct edit. Then, while an effect levitates the unit, clear its saved Grounded status so the
+   * Refuse a player's direct edit. Then, while an effect levitates the unit, clear its saved Grounded status so the
    * two don't conflict.
    */
   async _preUpdate(changes, options, user) {

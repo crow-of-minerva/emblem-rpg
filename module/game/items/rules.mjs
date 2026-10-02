@@ -101,7 +101,10 @@ export function baseDurability(system) {
   return (system?.itemType === 'Armor' && ARMOR_DURABILITY_DEFAULTS[system?.armor?.req]) || DEFAULT_DURABILITY;
 }
 
-/** The forgingXP a tier at this index requires when nothing was authored: one full repair per tier. */
+/**
+ * A default forgingXP for the tier at this index: one full repair per tier. Tiers don't use it yet, so a tier with
+ * no XP requirement set is reached at 0.
+ */
 export function seedTierXpRequirement(index, durability) {
   return (index + 1) * (numeric(durability) > 0 ? numeric(durability) : DEFAULT_DURABILITY);
 }
@@ -199,6 +202,7 @@ export function prepareItemBaseData(documentType, source) {
   return prepared;
 }
 
+/** The owner's number a scaling rule reads. For a Stat it is the stat's base plus class part, not its total. */
 function scaleFactor(ownerSystem, scaling) {
   const system = ownerSystem ?? {};
   switch (scaling?.factor) {
@@ -245,7 +249,7 @@ export function evaluateScaling(ownerSystem, base, scaling, item = null) {
   return base;
 }
 
-/** Run an authored scaling formula over the owner's and the item's facts, or null when it's blank or fails. */
+/** Run an authored scaling formula over the owner's and the item's data, or null when it's blank or fails. */
 function evaluateFormula(formula, ownerSystem, item, scaleFactor) {
   const expression = String(formula ?? '').trim();
   if (!expression) return null;
@@ -369,6 +373,7 @@ function applyRefinementAndBreakage(documentType, system) {
     } else if (system.weapon) {
       if (modifiers.atk !== null && modifiers.atk !== undefined) system.weapon.atk = addAttackBonus(system.weapon.atk, modifiers.atk);
       for (const key of ['acc', 'brk', 'crit']) if (modifiers[key] !== null && modifiers[key] !== undefined) system.weapon[key] = numeric(system.weapon[key]) + numeric(modifiers[key]);
+      // A weapon tier's `wgt` lowers the weapon's weight, as `wgtRed` does for armor.
       if (modifiers.wgt !== null && modifiers.wgt !== undefined) system.wgt = Math.max(0, numeric(system.wgt) - numeric(modifiers.wgt));
       for (const type of DAMAGE_TYPES) if (modifiers.dmgTypes?.[type] && system.weapon.dmgTypes) system.weapon.dmgTypes[type] = true;
     }

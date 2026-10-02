@@ -173,7 +173,7 @@ const localImpacts = new Map();
 let localFilterSequence = 0;
 
 /**
- * Play hit filters for HealthPresentation (its `impacts` port, wired in init/system.mjs). Each client builds the
+ * Play hit filters for HealthPresentation (its `impacts` option, wired in init/system.mjs). Each client builds the
  * filters on its own copy of the token.
  */
 export class TokenMagicCombatImpacts {
@@ -198,6 +198,7 @@ export class TokenMagicCombatImpacts {
 /**
  * Build the filters from Token Magic's filter classes and add them to the token's mesh, with no document write.
  * They're removed when their animation ends, when the token is destroyed (destroyToken) or on canvasTearDown.
+ * They carry no Token Magic rank, and Token Magic may destroy them early when it redraws the token's own filters.
  */
 function applyLocalImpact(token, filters) {
   const registry = globalThis.TokenMagic?.filterTypes;
@@ -474,8 +475,9 @@ function carriesOwnTokenFx(token) {
 
 /**
  * Run one sync at a time per Token, keeping only the newest filters that arrive meanwhile. Token Magic reads a
- * Token's filter flag when called and writes the whole list back, so overlapping calls write each other's stale
- * lists; each sync here starts after the previous one's writes have landed.
+ * Token's filter flag when called and writes the whole list back, so overlapping calls would overwrite each other.
+ * When Token Magic sends a player's write to the GM instead, the call returns before the write lands, so those
+ * syncs can still overlap.
  */
 function queueTokenFxSync(token, filters) {
   const pending = tokenFxSyncs.get(token.uuid);

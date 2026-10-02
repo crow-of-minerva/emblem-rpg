@@ -24,10 +24,10 @@ const RESTORE_INTENT_KEYS = new Set(['scope', 'sceneUuid', 'actorUuids', 'exclud
 const REPAIR_INTENT_KEYS = new Set(['scope', 'sceneUuid', 'actorUuids']);
 
 /**
- * Validate and detach a full-restore request raised through `api.development.restoreUnits`.
- * `createDevelopmentCommandContribution` re-reads every unit from fresh state, so this only bounds the reach.
+ * Check a full-restore request raised through `api.development.restoreUnits`.
+ * `createDevelopmentCommandContribution` reads every unit again when it runs, so this only checks the reach.
  * @param {object} payload The caller's intent.
- * @returns {Readonly<object>|null} The detached intent, or null when the payload is malformed.
+ * @returns {Readonly<object>|null} A frozen copy of the request, or null when the payload is malformed.
  */
 export function normalizeRestoreUnitsIntent(payload = {}) {
   const base = normalizeScope(payload, RESTORE_INTENT_KEYS);
@@ -38,10 +38,10 @@ export function normalizeRestoreUnitsIntent(payload = {}) {
 }
 
 /**
- * Validate and detach an item-repair request raised through `api.development.repairItems`. Repair carries no role
- * filter: every Character unit in reach comes back to full uses.
+ * Check an item-repair request raised through `api.development.repairItems`. Repair carries no role filter: every
+ * Character unit in reach comes back to full uses.
  * @param {object} payload The caller's intent.
- * @returns {Readonly<object>|null} The detached intent, or null when the payload is malformed.
+ * @returns {Readonly<object>|null} A frozen copy of the request, or null when the payload is malformed.
  */
 export function normalizeRepairItemsIntent(payload = {}) {
   const base = normalizeScope(payload, REPAIR_INTENT_KEYS);
@@ -49,10 +49,10 @@ export function normalizeRepairItemsIntent(payload = {}) {
 }
 
 /**
- * Validate and detach a terrain-clearing request raised through `api.development.clearTerrainEffects`. Terrain
- * belongs to one map, so this intent names a Scene and nothing else.
+ * Check a terrain-clearing request raised through `api.development.clearTerrainEffects`. Terrain belongs to one
+ * map, so this request names a Scene and nothing else.
  * @param {object} payload The caller's intent.
- * @returns {Readonly<object>|null} The detached intent, or null when the payload is malformed.
+ * @returns {Readonly<object>|null} A frozen copy of the request, or null when the payload is malformed.
  */
 export function normalizeClearTerrainIntent(payload = {}) {
   if (!plainRecord(payload) || Object.keys(payload).some(key => key !== 'sceneUuid')) return null;

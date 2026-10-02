@@ -2,7 +2,7 @@
 import { BLOCKER_ENGAGE_MS, executionMessage } from '../contracts/domains/execution.mjs';
 import { recordDiagnostic } from '../contracts/protocol.mjs';
 
-/** Turn CommandDispatcher execution snapshots into ordered processing-blocker messages for clients. */
+/** Tell every client when the host is busy running a command, so they show or hide the processing blocker. */
 export class ExecutionAnnouncer {
   #view = null;
   #pending = false;
@@ -13,9 +13,9 @@ export class ExecutionAnnouncer {
   }
 
   /**
-   * CommandDispatcher calls this on every execution change. A new hold is announced only after BLOCKER_ENGAGE_MS,
-   * so quick commands don't flash the processing blocker. A release is always sent at once, because another client
-   * may still show a blocker this announcer never announced.
+   * CommandDispatcher calls this whenever what it is running changes. A new busy state is announced only after
+   * BLOCKER_ENGAGE_MS, so quick commands don't flash the processing blocker. The end of one is always sent at once,
+   * because another client may still show a blocker this announcer never announced.
    */
   onExecutionChanged(snapshot) {
     const version = ++this.#version;
@@ -44,7 +44,7 @@ export class ExecutionAnnouncer {
 
   pending() { return this.#pending; }
 
-  /** Republish the current execution snapshot so client processing blockers recover from missed messages. */
+  /** Send the current busy state again, so a client that missed a message can correct its processing blocker. */
   async republish() {
     try { return await this.broadcast(executionMessage(this.view())) === true; }
     catch (error) { this.#record(error, 'execution-republish'); return false; }

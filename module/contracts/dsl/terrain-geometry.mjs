@@ -190,8 +190,8 @@ export function validateGeometry(raw, { context = 'requirement', path = 'geometr
 
 /**
  * Find the step whose placement promptGeometryPlacement (ui/controls/targeting.mjs) asks for before the item is
- * confirmed: the first top-level moveToken step using terrainGeometry with the `prompt` pick. Steps inside `if`
- * branches are skipped, because effect execution hasn't evaluated their conditions yet.
+ * confirmed: the first top-level moveToken step using terrainGeometry with the `prompt` pick, in an `onActivation`
+ * entry. Steps inside `if` branches are skipped, because effect execution hasn't evaluated their conditions yet.
  * @param {any[]} entries The Item's authored `effects`.
  * @returns {{entryIndex: number, stepIndex: number, step: object}|null}
  */

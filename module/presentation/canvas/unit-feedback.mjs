@@ -203,7 +203,7 @@ export class HealthPresentation {
     return outcomes.some(outcome => outcome.status === 'fulfilled' && outcome.value !== false);
   }
 
-  /** The fade is this client's own mesh effect, so the beat is paced by the clock and never waits on the animation. */
+  /** The fade only happens on this client, so this waits a fixed time instead of waiting for the animation. */
   async #showDefeat(token) {
     await this.wait(DEFEAT_PRESENTATION_TIMING.fadeLeadIn);
     void animateTokenDefeatFade(token);

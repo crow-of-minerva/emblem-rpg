@@ -29,20 +29,19 @@ import { reportFoundryError } from '../services/diagnostics.mjs';
 import { worldClassicFlyerTargeting } from '../services/settings-policy.mjs';
 
 /* -------------------------------------------- */
-/*  Movement snapshot                           */
+/*  Movement data                               */
 /* -------------------------------------------- */
 /**
- * Everything pathfinding and the movement overlays need about one unit and its board, as plain data: position and
- * anchor, allowance, occupancy, terrain, walls, attack ranges and turn state. FoundryMovementRepository.getSnapshot
- * serves it as api.movement.getPlan, and the movement writer compares it with the live documents before committing.
- * The attack targeting, exchange and threat projections read it too.
+ * Everything pathfinding and the movement overlays need about one unit and its map, as plain data: its position
+ * and where its planned move started (`anchorPosition`), allowance, occupied squares, terrain, walls, attack ranges
+ * and turn state. FoundryMovementRepository.getSnapshot serves it to companion modules as api.movement.getPlan,
+ * and the movement writer checks it against the live documents before saving.
  * @param {TokenDocument} token The unit's placed Token.
- * @param {object} [options] `ignoreTokenIds` leaves those Tokens out of the occupancy, for a unit about to move.
- *   `nextTurn` gives the whole movement allowance rather than what is left this turn, which counts the square an
- *   Extra Action adds (`system.turn.movementBonus`). `hints: false` leaves the
- *   hostile-hint facts empty for a reader that never draws them, such as the threat projections below: they read
- *   every other unit's Items, once for each hostile the threat overlay measures.
- * @returns {Readonly<object>} Frozen movement snapshot.
+ * @param {object} [options] `ignoreTokenIds` leaves those tokens out of the occupied squares, for a unit about to
+ *   move. `nextTurn` gives the whole movement allowance rather than what is left this turn, which counts the square
+ *   an Extra Action adds (`system.turn.movementBonus`). `hints: false` skips the hostile markers (they read every
+ *   unit's items) for callers like the threat overlay that never draw them.
+ * @returns {Readonly<object>} Frozen movement data.
  */
 export function projectMovementSnapshot(token, { ignoreTokenIds = [], nextTurn = false, hints = true } = {}) {
   const scene = token.parent;
@@ -89,6 +88,7 @@ export function projectMovementSnapshot(token, { ignoreTokenIds = [], nextTurn =
     actorType: actor?.type ?? '',
     sceneUuid: scene?.uuid ?? '',
     supportedGrid,
+    // Scene padding is always 0 (hooks/scene.mjs), so the map's size in squares is its pixel size over the grid size.
     columns: supportedGrid ? Math.ceil(width / gridSize) : 0,
     rows: supportedGrid ? Math.ceil(height / gridSize) : 0,
     gridSize: supportedGrid ? gridSize : 0,
@@ -149,11 +149,10 @@ export function projectMovementSnapshot(token, { ignoreTokenIds = [], nextTurn =
 }
 
 /**
- * The placement resolver an authored geometry requirement reads. Each mover's board is measured on the live Scene
- * the first time it is asked for. Item activation gets it through FoundryMovementRepository.geometryResolver, and
- * the targeting controls build one directly.
+ * Builds the checker that counts where a unit could stand, for items whose effects have placement requirements.
+ * Each unit's movement data is read from the live scene the first time it is needed.
  * @param {object} [request]
- * @param {string} [request.sourceTokenUuid] The caster, whose board a self or hypothetical mover stands on.
+ * @param {string} [request.sourceTokenUuid] The caster, whose movement data a self or hypothetical mover uses.
  * @param {string|number} [request.effectRange] The range a caster-moving path budget is priced from.
  * @param {string|number} [request.targetEffectRange] The range a target-moving path budget is priced from.
  * @returns {(request: {anchor: object, mover: object, spec: object}) => {count: number}}
@@ -191,13 +190,13 @@ function actorIsMounted(actor) {
 }
 
 /* -------------------------------------------- */
-/*  Traversal fields                            */
+/*  Reachable squares for Enemy AI              */
 /* -------------------------------------------- */
 /**
- * One unit's reachable board for a planner, measured without writing anything. `start` and `maxCost` override the
- * origin and budget, and `cellPenalties` bias routes. `stationary` spends no allowance, and `attackReach: false`
- * skips attack coverage. `reverse` measures every square's way to `start` instead of from it (buildMovementGraph's
- * option). The Enemy AI reads it as game.emblemRpg.api.movement.getField.
+ * One unit's reachable squares for the Enemy AI planner, measured without writing anything. `start` and `maxCost`
+ * override the origin and budget, and `cellPenalties` bias routes. `stationary` spends no allowance, and
+ * `attackReach: false` skips attack coverage. `reverse` measures every square's way to `start` instead of from it
+ * (buildMovementGraph's option). The Enemy AI reads it as game.emblemRpg.api.movement.getField.
  * @param {string} tokenUuid The unit being measured.
  * @param {object} [options] Search options, all optional and all additive.
  * @returns {Readonly<object>|null} Frozen `{graph, snapshot}`, or null when the uuid isn't a Token with an Actor.
@@ -250,9 +249,8 @@ export function projectMovementCrossings(tokenUuid) {
 }
 
 /**
- * The two boards a Shove or Retrieve is judged on: the caster's, and the moved unit's with the caster left out of
- * the occupancy, so Retrieve can use the square the caster vacates. Read by the item projection in items.mjs
- * (through FoundryMovementRepository) and by the targeting controls.
+ * The two sets of movement data a Shove or Retrieve is checked against: the caster's, and the moved unit's with the
+ * caster left out of the occupied squares, so Retrieve can use the square the caster vacates.
  * @param {string} sourceTokenUuid The caster.
  * @param {string} targetTokenUuid The unit the ability moves.
  * @returns {Readonly<{source: object, target: object}>|null} Null when either is off a supported Scene.
@@ -270,13 +268,13 @@ export function projectForcedMovementBoards(sourceTokenUuid, targetTokenUuid) {
 }
 
 /* -------------------------------------------- */
-/*  Token projection                            */
+/*  Token footprints                            */
 /* -------------------------------------------- */
 
 /**
  * Footprint in squares. A unit fills 1, 2 or 3 squares by rule, so any other size falls back to one square. A
- * fixture Token, such as a Destructible, covers exactly the squares the Scene gives it, so projectTokenOccupancy
- * blocks all five squares of a 5x1 wall rather than only its anchor.
+ * fixture token, such as a Destructible, covers exactly the squares the scene gives it, so projectTokenOccupancy
+ * blocks all five squares of a 5x1 wall rather than only its top-left square.
  */
 function tokenFootprint(token, { unit = true } = {}) {
   return {
@@ -333,9 +331,12 @@ function projectTokenOccupancy(scene, movingToken, gridSize, ignored = new Set()
 }
 
 /* -------------------------------------------- */
-/*  Hint projection                             */
+/*  Hostile markers                             */
 /* -------------------------------------------- */
-/** The facts the plan's hostile hints read: this unit's active types and ability, and what each other unit carries. */
+/**
+ * What the movement overlay's hostile markers read: this unit's active types and steal ability, and each other
+ * Character's top-left square, width (not height) and what it carries.
+ */
 function projectHintFacts(scene, movingToken, gridSize) {
   const actor = movingToken.actor;
   const units = [];
@@ -406,7 +407,7 @@ function projectMovementUnit(actor, token = null) {
 }
 
 /* -------------------------------------------- */
-/*  Attack range projection                     */
+/*  Attack ranges                               */
 /* -------------------------------------------- */
 /**
  * The attack ranges pathfinding marks around each reachable square, from the weapons the unit carries. A borrowed
@@ -498,7 +499,7 @@ function emptyOccupancy() {
 }
 
 /* -------------------------------------------- */
-/*  Wall projection                             */
+/*  Walls                                       */
 /* -------------------------------------------- */
 function projectMovementWalls(scene, gridSize) {
   return collectionValues(scene.walls)
@@ -534,14 +535,14 @@ function footprintKeys(anchor, footprint) {
 }
 
 /* -------------------------------------------- */
-/*  Threat board projection                     */
+/*  Threat overlay                              */
 /* -------------------------------------------- */
 /**
- * The board the threat overlay grades a selected unit's danger on: the unit itself, and every other token's
+ * What the threat overlay grades a selected unit's danger from: the unit itself, and every other token's
  * position, faction, reach and taunt, from saved positions and this client's visibility. Hidden units get no threat
  * line. createThreatAssessment (engine/combat/threat.mjs) reads it.
  * @param {string} selectedTokenUuid The unit whose incoming threats are asked for.
- * @returns {Readonly<object>|null} Frozen threat board, or null when the uuid isn't a Token with an Actor.
+ * @returns {Readonly<object>|null} Frozen threat data, or null when the uuid isn't a Token with an Actor.
  */
 export function projectThreatBoard(selectedTokenUuid) {
   const selectedDocument = resolveTokenDocument(selectedTokenUuid);
@@ -581,11 +582,11 @@ export function projectThreatBoard(selectedTokenUuid) {
 }
 
 /**
- * One hostile's movement snapshot for the threat overlay. The selected unit is left out of the occupancy, since it
- * is about to move, and the hostile gets its whole allowance, since the threat line is about its next turn.
+ * One hostile's movement data for the threat overlay. The selected unit is left out of the occupied squares, since
+ * it is about to move, and the hostile gets its whole allowance, since the threat line is about its next turn.
  * @param {string} hostileTokenUuid The hostile.
  * @param {string} selectedTokenUuid The unit it might reach.
- * @returns {Readonly<object>|null} A movement snapshot, or null when either Token is gone.
+ * @returns {Readonly<object>|null} Its movement data (projectMovementSnapshot), or null when either Token is gone.
  */
 export function projectThreatReach(hostileTokenUuid, selectedTokenUuid) {
   const hostile = resolveTokenDocument(hostileTokenUuid);
@@ -626,7 +627,7 @@ function projectThreatUnit(tokenDocument, gridSize, scene) {
 const ABSENT_TAUNTOR = Object.freeze({ present: false, guardedByActorUuid: '' });
 
 /**
- * Whether the unit that taunted is still on the board to hold its taunt, and, when a Guard bond covers it, the
+ * Whether the unit that taunted is still on the map, so its taunt holds, and, when a Guard bond covers it, the
  * guarder who would take attacks aimed at it.
  */
 function tauntCompulsion(scene, actorUuid) {
@@ -642,7 +643,7 @@ function tauntCompulsion(scene, actorUuid) {
   return ABSENT_TAUNTOR;
 }
 
-/** Whether a unit is standing where a mark can still reach it: alive, on the board, unhidden and outside Sanctuary. */
+/** Whether a unit is standing where a mark can still reach it: alive, on the map, not hidden and outside Sanctuary. */
 function unitAnswersMarks(tokenDocument) {
   const actor = tokenDocument?.actor;
   if (!actor || tokenDocument.hidden === true) return false;

@@ -34,7 +34,7 @@ import {
 /*  Blow sequence                               */
 /* -------------------------------------------- */
 
-/** Run resolveExchange's ordered strikes, refreshing both combat projections before each one. */
+/** Run the attack's blows in order, reading both units fresh from the map before each one. */
 export async function runCombatSequence(services, exchange) {
   const { intent, context } = exchange;
   const reads = drawnExchangeReads(
@@ -45,6 +45,8 @@ export async function runCombatSequence(services, exchange) {
   // No blows when a pre-combat effect ended the exchange or left the attacker out of range.
   let remaining = effectEndedExchange(exchange.effectHealth, exchange.preCombatEffectIndex) || !snapshot.sourceInRange
     ? [] : [...buildCombatSequence(snapshot.source, snapshot.target, snapshot.defenderCanRespond)];
+  // Blows are labelled A1, A2... for the attacker and D1, D2... for the defender. `completed` holds the highest
+  // number each side has reached, so a rebuilt sequence skips blows already taken.
   const completed = { A: 0, D: 0 };
   while (remaining.length) {
     const label = remaining.shift();
@@ -76,10 +78,9 @@ export async function runCombatSequence(services, exchange) {
 }
 
 /**
- * Wrap the Foundry combat projection with the action's modifier-chance scope and the command's operation.
- * Exchange validation and strike reads then reuse the same draws, and every settlement reached through a snapshot
- * captures into the operation it carries.
- * @param {object} combatState The combat projection port.
+ * Read the attack's state using the chance modifiers already rolled for it, so every check and blow sees the same
+ * rolls. Each read also carries the command's operation, so writes made from it save undo data there.
+ * @param {object} combatState The combat state reader.
  * @param {object|null} modifierChances The exchange's drawn rolls, by Actor uuid.
  * @param {object|null} operation The dispatcher operation the exchange writes under.
  * @param {string} [requesterUserId] The user who started the exchange, the audience for its effect notices.
@@ -127,7 +128,7 @@ async function rollBlow(services, snapshot, label, intent) {
 
 /**
  * Count the attacker's Weapon Art use, spend the Marked effect empowering the blow and one of the defender's
- * Dexterity points, then roll the attack, present the swing and settle it as a miss or a hit.
+ * Dexterity points, then roll the attack, show the swing and resolve it as a miss or a hit.
  */
 async function settleBlow(services, exchange, snapshot, rolled) {
   const { label, side, acting, defending, combat, attackingSource, rolledCombat } = rolled;
@@ -153,8 +154,8 @@ async function settleBlow(services, exchange, snapshot, rolled) {
 /* -------------------------------------------- */
 
 /**
- * A miss still spends a use of a weapon that needs a magic school, and teaches the weapon, before its miss triggers
- * run. The school alone decides it: a Spell that needs none is magic for Silence, but spends nothing on a miss.
+ * A miss still earns weapon XP, and spends a use when the weapon needs a magic school, before its miss triggers
+ * run. The school alone decides the use: a Spell that needs none is magic for Silence, but spends nothing on a miss.
  */
 async function settleMissedBlow(services, exchange, snapshot, rolled, blow) {
   const { acting, defending } = rolled;
@@ -172,8 +173,7 @@ async function settleMissedBlow(services, exchange, snapshot, rolled, blow) {
 /* -------------------------------------------- */
 
 /**
- * Settle a hit for runCombatSequence: roll damage, write health and Stance Break, present the impact, then run the
- * hit and kill effects.
+ * Resolve a hit: roll damage, write health and Stance Break, show the impact, then run the hit and kill effects.
  */
 async function settleLandedBlow(services, exchange, snapshot, rolled, blow) {
   const { label, side, acting, defending } = rolled;
@@ -311,9 +311,9 @@ function addProficiencyAward(ledger, side, hit) {
 }
 
 /**
- * Turn the exchange's hits and misses into weapon proficiency XP and rank-ups, one swing at a time through
- * resolveWeaponExperience. A rank-up raises the stored base rank, while each swing's XP threshold comes from the
- * unit's total rank (base plus bonuses).
+ * Turn the attack's hits and misses into weapon proficiency XP and rank-ups, feeding resolveWeaponExperience one
+ * swing at a time: all hits first, then all misses. A rank-up raises the stored base rank, while each swing's XP
+ * threshold comes from the unit's total rank (base plus bonuses). Only the last rank-up per proficiency is reported.
  */
 export function proficiencyUpdates(ledger) {
   const updates = {};
@@ -350,7 +350,7 @@ export function proficiencyUpdates(ledger) {
   return { updates, rankUps };
 }
 
-/** Whether either side of the exchange is a Destructible, which uses its own pacing and skips some beats. */
+/** Whether either side of the attack is a Destructible, which uses its own timing and skips some animations. */
 export function objectDelay(snapshot) {
   return snapshot.source.destructible || snapshot.target.destructible;
 }

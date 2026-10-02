@@ -14,7 +14,8 @@ let enforcing = null;
  * Turn on Dice So Nice's skipAnimationOnInactiveTab option, so rolls made while this tab is hidden aren't animated
  * one after another when the player comes back. The option lives in the user's Dice So Nice flag. It is set on
  * ready, whenever this user's User document is updated (init/hooks.mjs), and at the start of every roll
- * (faction-dice.mjs). Overlapping calls share one write.
+ * (faction-dice.mjs). This overrides the user's own choice on purpose: turning the option off in Dice So Nice
+ * doesn't last. Overlapping calls share one write.
  * @param {object} [user] The user this client is running as.
  * @returns {Promise<boolean>} Whether a preference was written.
  */

@@ -65,15 +65,18 @@ const EFFECT_PRESETS = Object.freeze([...REGISTERED_STATUS_KEYS, 'custom']);
 /*  Trigger vocabulary                          */
 /* -------------------------------------------- */
 
+/** Group A: triggers for items that attack, firing around an exchange (see triggerGroupForItem). */
 export const ATTACK_EFFECT_TRIGGERS = Object.freeze([
   'preCombat', 'onHit', 'onCrit', 'onHitOrCrit', 'onMiss',
   'onStruck', 'onEvade', 'postCombat', 'onKill'
 ]);
 
+/** Group B: triggers for items that are used, including the outcome of the item's save or check. */
 export const ACTIVATION_EFFECT_TRIGGERS = Object.freeze([
   'onActivation', 'onFailedSave', 'onSucceedSave', 'onFailedCheck', 'onSucceedCheck'
 ]);
 
+/** Group C: triggers for passive Abilities, firing on phases, a death, a kill, an evade or another item's use. */
 export const PASSIVE_EFFECT_TRIGGERS = Object.freeze([
   'onPhaseBegin', 'onPhaseEnd', 'onDeath', 'onKill', 'onEvade', 'onUseItem'
 ]);
@@ -107,8 +110,15 @@ const EFFECT_TRIGGER_KEYS = Object.freeze([
   ])
 ]);
 
+/** Item subtypes a unit uses rather than attacks with, so they take activation triggers. */
 const ACTIVATION_ITEM_SUBTYPES = new Set(['Active', 'Utility', 'Staff (U)', 'Mount']);
 
+/**
+ * Which trigger group fires on an item: 'A' (attack triggers) for items that attack, 'B' (activation triggers) for
+ * Consumables and the subtypes above, and 'C' (passive triggers) for passive Abilities.
+ * @param {{type?: string, itemType?: string}} item The Item's document type and subtype.
+ * @returns {'A'|'B'|'C'}
+ */
 export function triggerGroupForItem({ type, itemType } = {}) {
   if (type === 'Ability' && itemType === 'Passive') return 'C';
   if (type === 'Consumable') return 'B';
@@ -116,6 +126,7 @@ export function triggerGroupForItem({ type, itemType } = {}) {
   return 'A';
 }
 
+/** The groups whose items a trigger fires on. `onKill` and `onEvade` are both attack and passive triggers. */
 function triggerGroups(trigger) {
   const groups = [];
   if (ATTACK_EFFECT_TRIGGERS.includes(trigger)) groups.push('A');
@@ -124,6 +135,7 @@ function triggerGroups(trigger) {
   return Object.freeze(groups);
 }
 
+// What each kind of trigger gives its steps. The fields are described on TRIGGER_CAPABILITIES.
 const ACTIVATION_CAPABILITIES = {
   target: 'eachTarget', location: 'aimed', castArea: 'aimed', midExchange: false,
   targetMayBeSlain: false, selfMayBeSlain: false, repeats: 'perTarget'
@@ -157,13 +169,33 @@ const CAPABILITIES_BY_TRIGGER = {
   onUseItem: { ...PHASE_CAPABILITIES, location: 'usedItem', castArea: 'usedItem', repeats: 'once' }
 };
 
+/**
+ * What each trigger gives its steps, read by the item checks in validateEffectEntry. `group`: the trigger groups it
+ * fires in. `target`: the other unit a step may name (each target of the use, the opponent in the exchange, or none).
+ * `location` and `castArea`: whether there is a clicked square and cast area (aimed, borrowed from the item being
+ * used, or none). `midExchange`: the steps run while the exchange is still going, so steps that move units or
+ * change sides are refused.
+ * `targetMayBeSlain` and `selfMayBeSlain`: the other unit or the acting unit may already be dead. `repeats`: how
+ * often the entry runs (per target, per blow, per phase, or once).
+ */
 export const TRIGGER_CAPABILITIES = Object.freeze(Object.fromEntries(EFFECT_TRIGGER_KEYS.map(trigger => [
   trigger,
   Object.freeze({ group: triggerGroups(trigger), ...CAPABILITIES_BY_TRIGGER[trigger] })
 ])));
 
 /**
- * The carrier facts of an Item, or of anything shaped like one (`{type, system}`), for validateEffectEntry.
+ * @typedef {object} EffectCarrier The item details validateEffectEntry checks an entry against.
+ * @property {string} type The Item's document type.
+ * @property {string} itemType Its subtype.
+ * @property {string} [targetType] Who it targets: Any, Ground or Self.
+ * @property {string} [rngType] Its range shape.
+ * @property {number} [targets] How many units it may target.
+ * @property {object|null} [save] Its saving throw settings.
+ * @property {object|null} [check] Its skill check settings.
+ */
+/**
+ * The details of an Item, or of anything shaped like one (`{type, system}`), that decide which triggers and steps
+ * its effect entries may use, for validateEffectEntry's `carrier` option.
  * @param {{type?: string, system?: object}} item
  * @returns {EffectCarrier}
  */

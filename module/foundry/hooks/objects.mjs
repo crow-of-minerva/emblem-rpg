@@ -30,10 +30,11 @@ const PARAMETER_PATHS = Object.freeze([
   'prototypeToken.texture.scaleX', 'prototypeToken.texture.scaleY', 'prototypeToken.texture.tint'
 ]);
 /**
- * Route Object changes to prototype and Token-art writers, and seed a Convoy's shipped portrait. Conceal
- * gameplay destruction behind smoke, skip that presentation for sheet edits, and play lock cues on the
- * writing client.
- * @param {{present?: Function, cue?: Function}} [ports] The presentation broadcast and the lock cue player.
+ * Keep an Object's token art and size in step with its sheet, and give a new Convoy its default art. An Object
+ * destroyed in play (not by a sheet edit) is hidden behind a smoke effect, and a lock change plays its sound on the
+ * client that made it.
+ * @param {{present?: Function, cue?: Function}} [options] Shows the smoke effect on every client, and plays the lock
+ *   sound.
  * @returns {object} The handlers `init/hooks.mjs` composes onto the Actor and Token lifecycle.
  */
 export function createObjectLifecycleHandlers({ present = null, cue = null } = {}) {
@@ -75,7 +76,7 @@ export function createObjectLifecycleHandlers({ present = null, cue = null } = {
 }
 
 /**
- * The Convoy's shipped portrait and token art, for the fixture Actor handlers above. `convoyArtDefaults` in
+ * The Convoy's default portrait and token art, for the pre-create and pre-update handlers above. `convoyArtDefaults` in
  * `game/objects/rules.mjs` seeds only the fields still holding Foundry's placeholder, and a pending edit that
  * already carries art of its own is left alone.
  */
@@ -99,8 +100,9 @@ function convoyArtSeeds(actor, changes = null) {
 
 /**
  * Build the hook that hands a borrowed Armament back the moment its wielder's Token leaves the rack, whatever
- * moved it: a plan step, a displacement, a teleport or a drag. The active GM performs the release.
- * @param {{objects: object}} ports The Object repository that judges the overlap and writes the release.
+ * moved it: a planned move, being pushed, a teleport or a drag. The host client hands it back.
+ * @param {{objects: object}} options The Object writer that checks whether the token left the rack and hands the
+ *   Armament back.
  * @returns {object} The handler `init/hooks.mjs` composes onto the Token lifecycle.
  */
 export function createArmamentReleaseHandlers({ objects }) {
@@ -115,7 +117,7 @@ export function createArmamentReleaseHandlers({ objects }) {
   });
 }
 
-/** Sound a lock write on the client that made it, through the presentation that owns the object cues. */
+/** Play the lock or unlock sound on the client that changed the lock. */
 function playLockCue(actor, cue) {
   const objectType = String(actor.system?.objectType ?? '');
   if (!LOCKABLE_OBJECT_TYPES.includes(objectType) || typeof cue !== 'function') return;

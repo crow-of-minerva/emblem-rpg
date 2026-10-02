@@ -14,8 +14,9 @@ const WORKER_SOURCE = [
 ].join('\n');
 
 /**
- * The clock behind presentation delivery's `wait` (presentation/interface/delivery.mjs), which paces engine holds
- * and retries as well as presentation. Its timers run in a worker, because a hidden page throttles its own timers.
+ * A timer that keeps time in a background tab. It is presentation delivery's `wait`
+ * (presentation/interface/delivery.mjs), which also times the rules' pauses and retries. Its timers run in a
+ * worker, because the browser throttles a hidden tab's own timers.
  * If the worker can't start or fails, pending and later waits move to ordinary timers, so every wait still resolves.
  * @returns {{wait: Function}}
  */

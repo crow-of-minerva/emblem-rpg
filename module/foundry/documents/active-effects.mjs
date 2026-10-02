@@ -7,8 +7,8 @@ import { admitNativeWrite } from '../adapters/services/authority.mjs';
 
 /**
  * The system's ActiveEffect class (CONFIG.ActiveEffect.documentClass, set in init/registrations.mjs). Every native
- * create, update and delete passes admitNativeWrite (services/authority.mjs) first. Staff and Trusted owners may
- * edit effects. A Player's effects come from host commands.
+ * create, update and delete passes admitNativeWrite (services/authority.mjs) first. GMs, Assistant GMs and Trusted
+ * owners may edit effects directly; a player's changes go through the host.
  */
 export class EmblemActiveEffect extends ActiveEffect {
   async _preCreate(data, options, user) {

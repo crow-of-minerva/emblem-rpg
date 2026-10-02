@@ -86,7 +86,10 @@ export function onRenderSceneConfigMapVisible(app, element) {
   app.setPosition({ height: 'auto' });
 }
 
-/** Put the Movement Type Permissions select under Map Visible, where the map's own rules sit. */
+/**
+ * Put the Movement Type Permissions select under Map Visible, where the map's own rules sit. init/hooks.mjs runs
+ * this after onRenderSceneConfigMapVisible; without Map Visible it falls back to under Token Vision.
+ */
 export function onRenderSceneConfigMovementPermission(app, element) {
   const scene = app.document;
   const root = element instanceof globalThis.HTMLElement ? element : element?.[0];
@@ -129,7 +132,10 @@ export function onRenderSceneConfigPadding(app, element) {
   return true;
 }
 
-/** Strip the unsupported grid types from the selector and correct a value the map already carries. */
+/**
+ * Strip the unsupported grid types from the Grid tab's selector and correct a value the map already carries. The
+ * Basics tab's grid-type select has no name attribute, so it is not matched here and keeps every type.
+ */
 export function onRenderSceneConfigGridTypes(_app, element) {
   const root = element instanceof globalThis.HTMLElement ? element : element?.[0];
   const select = root?.querySelector('select[name="grid.type"]');

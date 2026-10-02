@@ -40,6 +40,8 @@ export function installTokenDragPatches(handlers) {
 
 /** Control, click, marquee and HUD binding: who may pick a unit up, and what picking it up means. */
 function registerSelectionPatches(handlers) {
+  // `bypassBlock` is the system's own option, passed when the movement controls pick a unit up for a planned move.
+  // A player controls a token only that way: Foundry's own control calls for a player are refused.
   register('foundry.canvas.placeables.Token.prototype.control', function (wrapped, options = {}) {
     if (!handlers.tokenControlAllowed(this, { restore: options.bypassBlock === true })) return false;
     if (game.user.isGM) {
@@ -51,6 +53,9 @@ function registerSelectionPatches(handlers) {
     return wrapped({ ...options, releaseOthers: true });
   }, 'MIXED');
 
+  // Foundry's hover and control border and its target arrows are never drawn, for any token or user: the system
+  // draws its own selection markers and target reticle (presentation/token/rendering.mjs). These are OVERRIDEs, so
+  // if another module also overrides either method, whichever registers second is refused by libWrapper.
   register('foundry.canvas.placeables.Token.prototype._refreshBorder', function () {
     if (!this.border) return;
     this.border.clear?.();
@@ -137,7 +142,10 @@ function registerSelectionPatches(handlers) {
 /*  Airborne wall exemption                     */
 /* -------------------------------------------- */
 
-/** A unit in the air is over the walls, so Foundry's own collision and path constraint stop applying to it. */
+/**
+ * A unit in the air is over the walls, so Foundry's own collision and path constraint stop applying to it. The
+ * collision answer is `false` for every collision type (sight and sound as well as movement) and every mode.
+ */
 function registerAirbornePatches() {
   register('foundry.canvas.placeables.Token.prototype.checkCollision', function (wrapped, destination, options = {}) {
     if (isAirborneActor((this.document ?? this).actor)) return false;

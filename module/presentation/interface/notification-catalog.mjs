@@ -9,12 +9,13 @@ import { NOTIFICATION_IDS } from './notification-ids.mjs';
 const GUARD_HELD = { level: 'warn', text: ({ actorName = '' } = {}) => `${actorName} is already in a Guard bond.` };
 
 /* -------------------------------------------- */
-/*  Notification copy                           */
+/*  Notification text                           */
 /* -------------------------------------------- */
 /**
  * The text and level NotificationService (notifications.mjs) shows for each notification id.
- * An entry with a `backend` goes to the diagnostic sink under that source path instead of a notification. A `silent`
- * entry, or a result code with no entry, shows nothing. A `permanent` notice stays until the reader dismisses it.
+ * An entry with a `backend` is logged as a diagnostic under that source path instead: its text goes to the console,
+ * and the diagnostics service shows its own generic error notification. A `silent` entry, or a result code with no
+ * entry, shows nothing. A `permanent` notice stays until the reader dismisses it.
  * The downtime notices are defined in downtime-notifications.mjs and spread in with the other gameplay notices.
  */
 export const NOTIFICATIONS = Object.freeze({
@@ -657,7 +658,7 @@ export const NOTIFICATIONS = Object.freeze({
     text: () => 'Automatic world content migration failed. Details are in the console. It runs again on the next '
       + 'load, or run the Migrate World Content macro from the Emblem RPG | Macros compendium.'
   },
-  // Table commands. Recovery itself says nothing: its result codes carry no copy and show no notification.
+  // Table commands. Recovery itself shows nothing: its results have no entry here.
   [NOTIFICATION_IDS.TABLE_COMMAND_GM_ONLY]: { level: 'warn', text: ({ label }) => `${label} is GM-only.` },
   [NOTIFICATION_IDS.TABLE_COMMAND_USAGE]: { level: 'warn', text: ({ message }) => message },
   [NOTIFICATION_IDS.TABLE_COMMAND_INFO]: { level: 'info', text: ({ message }) => message },
@@ -1008,7 +1009,7 @@ export const NOTIFICATIONS = Object.freeze({
 });
 
 /* -------------------------------------------- */
-/*  Requirement and equipment copy              */
+/*  Requirement and equipment text              */
 /* -------------------------------------------- */
 /** Format item caster-requirement failures: Silenced first, then failed requirements by name. */
 function casterRequirementText(data = {}) {
@@ -1069,7 +1070,7 @@ function capitalizeWord(word) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** Format the combat contract’s Guard-bond break reasons. */
+/** The text for each reason a Guard bond breaks. */
 function guardBondBreakReason(reason, actorName) {
   if (reason === GUARD_BOND_BREAKS.FELL) return `${actorName} fell`;
   if (reason === GUARD_BOND_BREAKS.LEFT) return `${actorName} left the bond`;

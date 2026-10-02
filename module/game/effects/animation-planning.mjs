@@ -9,7 +9,7 @@ import { evaluateScaling, isScalingActive } from '../items/rules.mjs';
 /* -------------------------------------------- */
 /**
  * Pick which variant of an authored animation slot plays: self, melee or ranged, falling back to the other filled-in
- * variants. Called by the combat exchange and item projections, and by the downtime writer for training spars.
+ * variants.
  */
 export function selectAnimationRange(slot, engagement, { self = false } = {}) {
   if (!slot || typeof slot !== 'object' || Array.isArray(slot)) return null;
@@ -40,6 +40,7 @@ export function planAnimationSteps(steps, context, randomValues = []) {
     if (step.kind === 'effect' || step.kind === 'sound') {
       step.file = chooseAnimationFile(step.file, randomValues[index]);
     }
+    // Sequencer's scaleToObject sizes cone art against the caster's token: 1.2 times the range, never below 1.5.
     if (step.kind === 'effect' && isConeFile(step.file)) {
       step.coneScaleToObject = Math.max(1.5, animationConeDepth(context) * 1.2);
     }

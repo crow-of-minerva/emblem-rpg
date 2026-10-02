@@ -153,7 +153,7 @@ function prepareAltarData(altar) {
 
 /**
  * A Stationary's faction rows through normalizeFactions in contracts/domains/downtime.mjs: a bounded name, a known
- * relation and wealth, an id on every row, and the table held to its size, as the requisition snapshot reads them.
+ * relation and wealth, an id on every row, and the table held to its size.
  */
 function prepareRequisitionData(requisition) {
   requisition.factions = normalizeFactions(requisition.factions);

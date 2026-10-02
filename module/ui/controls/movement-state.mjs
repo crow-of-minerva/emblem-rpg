@@ -7,11 +7,11 @@
 /**
  * The states of this client's movement plan. ui/controls/movement.mjs moves the plan between them through
  * {@link advanceMovement}, and drag-route.mjs, inspect-click.mjs and unit-access.mjs read the plan and its state
- * through the functions below. A suspended plan has its own settling and released states, because targeting can
+ * through the functions below. A suspended plan has its own waiting and released states, because targeting can
  * hand the plan back from any of them.
  */
 export const MOVEMENT_STATES = Object.freeze({
-  /** No plan on this client, so the board is free for a selection. */
+  /** No plan on this client, so the map is free for selecting. */
   IDLE: 'idle',
   /** `movement.begin` is in flight and no plan is installed yet. */
   OPENING: 'opening',
@@ -23,16 +23,16 @@ export const MOVEMENT_STATES = Object.freeze({
   CROSSING: 'crossing',
   /** The crossing the player confirmed is in flight. */
   CROSSING_SETTLING: 'crossing-settling',
-  /** A plan command (commit, cancel, transition, flight) is in flight. */
+  /** A plan command (commit, cancel, transition, flight) is waiting for the host's answer, called settling here. */
   SETTLING: 'settling',
-  /** Targeting or an interaction pick owns the unit and the movement field is down. */
+  /** Targeting or an interaction pick owns the unit and the movement grid is hidden. */
   SUSPENDED: 'suspended',
   /** A plan command is in flight on a plan targeting still holds. */
   SUSPENDED_SETTLING: 'suspended-settling',
   /**
-   * A settlement on a suspended plan was refused, so the plan still stands and takes input again while its field
-   * is still down. After a refused cancel, `cancelSuspendedMovement` calls resumeMovementAfterTargeting, which
-   * moves on to PLANNING at once and redraws the field when getPlan answers.
+   * The host refused a command on a suspended plan: the plan still stands and takes input, but its grid isn't
+   * redrawn yet. After a refused cancel, `cancelSuspendedMovement` calls resumeMovementAfterTargeting, which moves
+   * on to PLANNING at once and redraws the grid when getPlan answers.
    */
   SUSPENDED_RELEASED: 'suspended-released'
 });
@@ -61,7 +61,8 @@ const E = MOVEMENT_EVENTS;
 
 /**
  * Every legal transition, state by state. An event a state does not list leaves that state untouched, which is how
- * a press that arrives during a settlement or a suspension is dropped rather than half-applied.
+ * a press that arrives while a command waits for the host, or while the plan is suspended, is dropped rather than
+ * half-applied.
  */
 export const MOVEMENT_TRANSITIONS = Object.freeze({
   [S.IDLE]: Object.freeze({ [E.OPEN]: S.OPENING, [E.INSTALL]: S.PLANNING }),
@@ -177,7 +178,10 @@ export function advanceMovement(event, plan = null) {
   return control;
 }
 
-/** Build the plan record that INSTALL stores: the unit, its movement snapshot and graph, and any drag in progress. */
+/**
+ * Build the plan record that INSTALL stores: the unit, the host's movement data for it (`snapshot`), its movement
+ * graph, and any drag in progress.
+ */
 export function createMovementPlan({ token, snapshot, graph, kind }) {
   return {
     tokenId: token.id,

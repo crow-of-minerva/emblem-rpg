@@ -23,9 +23,8 @@ export const SKILL_RANK_XP = Object.freeze([40, 60, 80, 100]);
 export const PROFICIENCY_RANK_MAX = 6;
 
 /**
- * Whether a unit holds the rank an Item asks for in one proficiency. Equipping a weapon, the attack grid and its
- * activation check, the threat lines, the Combat Preview's weapon switch, a Spell's rank and an Armament all ask
- * here. No proficiency, "None" or a rank of zero or less always passes. `totals` holds the unit's total for each
+ * Whether a unit holds the rank an Item asks for in one proficiency, for weapons, Spells and Armaments alike.
+ * No proficiency, "None" or a rank of zero or less always passes. `totals` holds the unit's total for each
  * proficiency the caller knows about. A proficiency missing from it returns `unknown`, which the caller supplies.
  * @param {Readonly<Record<string, number>>} totals The unit's totals by lowercase proficiency key.
  * @param {unknown} required The proficiency the Item asks for, as authored.
@@ -40,6 +39,7 @@ export function holdsProficiencyRank(totals, required, rank, unknown = false) {
   return (Number(totals[key]) || 0) >= rank;
 }
 
+/** A skill rank as a whole number from 0 to SKILL_RANK_MAX; anything that isn't a number reads as 0. */
 export function clampSkillRank(value) {
   return Math.max(0, Math.min(SKILL_RANK_MAX, Math.floor(Number(value) || 0)));
 }
@@ -56,7 +56,7 @@ export const SKILL_EXPERIENCE_PER_ROLL = 1;
 
 /**
  * Add skill XP and climb every rank it pays for. XP left over at the top rank is dropped.
- * @param {object} skill Detached `{base, total, xp}` facts. `base` is the earned rank the world stores, without
+ * @param {object} skill Detached `{base, total, xp}` values. `base` is the earned rank the world stores, without
  *   class and passive bonuses.
  * @param {number} [amount] Points granted.
  * @returns {Readonly<{base: number, total: number, xp: number, ranksGained: number}>|null} Null at the top rank,
@@ -81,7 +81,7 @@ export function planSkillExperienceGrant(skill = {}, amount = SKILL_EXPERIENCE_P
 /**
  * A fraction of the skill's current rank bar, in points, so a caller can award "a quarter of a rank" without
  * knowing the curve. At least 1 while the skill can still advance, and 0 at the top rank.
- * @param {object} skill Detached `{total}` facts.
+ * @param {object} skill Detached `{total}` values.
  * @param {number} fraction Fraction of the bar.
  * @returns {number}
  */
@@ -115,7 +115,7 @@ export function resolveWeaponExperience({ proficiency, hit, multiplier = 1 }) {
  * (never below 1). The threshold comes from the displayed total rank. Crossing it climbs one rank at most, raises
  * only the earned base rank, empties the bar and drops the overflow. At total rank 5 the points keep adding up
  * without a rank-up. A missing or zero threshold earns nothing.
- * @param {object} proficiency Detached `{key, base, total, xp, multiplier, maxE..maxS}` facts, as projected.
+ * @param {object} proficiency Detached `{key, base, total, xp, multiplier, maxE..maxS}` values.
  * @param {number} amount Points before the multiplier.
  * @returns {Readonly<object>|null} Null when nothing is awarded.
  */
@@ -131,6 +131,7 @@ export function planProficiencyExperienceGrant(proficiency, amount) {
   const threshold = Math.floor(Number(proficiency[THRESHOLDS[rank]]) || 0);
   if (threshold <= 0) return null;
   const total = current + awarded;
+  // Weapon XP never ranks a unit up past A (rank 5).
   const rankedUp = total >= threshold && rank < 5;
   return Object.freeze({
     key,
@@ -217,7 +218,7 @@ export function computeSparExperience(actorLevel, opponentLevel) {
 }
 
 /**
- * XP for one attack on one opponent, for the exchange settlement and activation XP's kill bonus: the
+ * XP for one attack on one opponent, for the end of a combat exchange and activation XP's kill bonus: the
  * computeKillExperience amount, doubled up to 100 for slaying a boss. An attacker who started the exchange against
  * an opponent that survived and could not counter gets 5 at most.
  */

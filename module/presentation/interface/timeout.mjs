@@ -3,10 +3,9 @@ import { recordDiagnostic } from '../../contracts/protocol.mjs';
 import { escapeHtml } from '../../lib/dom/html.mjs';
 
 /**
- * Announce the table-management timeout the GM calls with `/release`.
- * `engine/recovery/commands.mjs` posts this from the host after RECOVERY.CLEAR_LOCK settles, so the table sees
- * who called time and whether any control was actually released. The chat command shows its own notice when the
- * announcement could not be posted.
+ * Post a chat notice saying who called `/release` and whether any token control was freed. The host posts it from
+ * engine/recovery/commands.mjs once the locks are cleared. The chat command shows its own notice if this can't be
+ * posted.
  */
 export function createTimeoutPresenter({ chat, diagnostics = null }) {
   return Object.freeze({

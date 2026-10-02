@@ -6,10 +6,12 @@ import { SOCKET_OPERATIONS } from '../../socket/protocol.mjs';
 /*  Socket transport                            */
 /* -------------------------------------------- */
 /**
- * The system's socket connection, through socketlib. It carries commands to the host, status and segment-stop
- * requests, host page presence and presentation messages. init/system.mjs creates it, CommandGateway registers
- * the handlers (initializeTransport), and HostPagePresence and UnitPresentationGateway also send through it.
- * socketlib passes each handler the id of the user who sent the message.
+ * The system's socket connection, through socketlib. It carries commands to the host, status and stop requests,
+ * host tab presence and presentation messages. init/system.mjs creates it, CommandGateway registers the handlers
+ * (initializeTransport), and HostPagePresence and UnitPresentationGateway also send through it.
+ * socketlib passes each handler the sender's user id, which the Foundry server sets, so it can't be forged.
+ * socketlib sends every message, replies included, to every client and filters on arrival, so never put secret
+ * data in commands, replies or audience messages.
  */
 export class SocketlibSystemTransport {
   #socket = null;
@@ -51,10 +53,10 @@ export class SocketlibSystemTransport {
   }
 
   /**
-   * Send a HostPagePresence message to every other connected page. It isn't addressed to this user, because
-   * socketlib runs a call addressed to the caller's own user on the calling page only. HostPagePresence.receive
-   * keeps only messages from its own user's other pages. The message is emitted before this returns, so the goodbye
-   * sent when a page closes still leaves.
+   * Send a HostPagePresence message to every other connected client. It isn't addressed to this user, because
+   * socketlib runs a call addressed to the caller's own user on the calling tab only. HostPagePresence.receive
+   * keeps only messages from its own user's other tabs. The message is emitted before this returns, so the goodbye
+   * sent when a tab closes still leaves.
    */
   async sendHostPresence(message) {
     if (!this.#socket) throw new Error('socketlib is not ready.');
@@ -73,7 +75,7 @@ export class SocketlibSystemTransport {
     return this.#socket.executeAsUser(SOCKET_OPERATIONS.COMMAND_STATUS, userId, request);
   }
 
-  /** Ask the host's client to stop an open execution segment, such as an Enemy AI turn, before its next action. */
+  /** Ask the host's client to stop a running series of actions, such as an Enemy AI turn, before its next action. */
   async requestSegmentStop(userId, request) {
     if (!this.#socket) throw new Error('socketlib is not ready.');
     return this.#socket.executeAsUser(SOCKET_OPERATIONS.SEGMENT_STOP, userId, request);
@@ -85,7 +87,10 @@ export class SocketlibSystemTransport {
     return this.#socket.executeForOthers(SOCKET_OPERATIONS.UNIT_PRESENTATION, message);
   }
 
-  /** Send a presentation message to the named users' clients only. The promise settles once it's sent. */
+  /**
+   * Send a presentation message addressed to the named users. socketlib still sends it to every client, and the
+   * others drop it on arrival. The promise settles once it's sent.
+   */
   async executeForUsers(userIds, message) {
     if (!this.#socket) throw new Error('socketlib is not ready.');
     return this.#socket.executeForUsers(SOCKET_OPERATIONS.UNIT_PRESENTATION, userIds, message);

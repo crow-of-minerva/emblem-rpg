@@ -5,8 +5,8 @@
 /* -------------------------------------------- */
 
 /**
- * How many times an engine command handler tries to settle against freshly projected state. A stale settlement is
- * retried once, and the command refuses if the second attempt is also stale.
+ * How many times a command reads the documents and tries its write. If the documents changed in between, it reads
+ * them again and retries once, then refuses.
  */
 export const MAX_SETTLEMENT_ATTEMPTS = 2;
 export const COMMAND_IDS = Object.freeze({
@@ -117,7 +117,7 @@ export const COMMAND_IDS = Object.freeze({
   })
 });
 
-/** Commands raised by trusted lifecycle adapters rather than exposed to ordinary callers. */
+/** Commands the system raises itself from Foundry hooks on the host client. The API doesn't offer them. */
 export const INTERNAL_COMMAND_IDS = Object.freeze({
   CHARACTER: Object.freeze({
     CLASSES: Object.freeze({ RECONCILE_FEATURES: 'character.classes.reconcile-features' }),
@@ -149,10 +149,10 @@ export const INTERNAL_COMMAND_IDS = Object.freeze({
 /* -------------------------------------------- */
 
 /**
- * How CommandDispatcher admits a command. While execution is held, a command is refused as busy, but a gameplay
- * command first waits up to maintenanceYieldMs behind maintenance, startup or recovery work. MaintenanceScheduler
- * and the startup sweeps in init/system.mjs retry a busy refusal. Inspection runs without taking execution, and a
- * child command must run inside its parent's execution.
+ * How the host client queues a command. Commands run one at a time; one that arrives while another runs is refused
+ * as busy, except that a gameplay command waits up to maintenanceYieldMs behind upkeep, start-up or recovery work.
+ * Upkeep and start-up work retry when refused. Inspect commands skip the queue and run straight away, and a child
+ * command is a step that runs inside its parent command.
  */
 export const COMMAND_LANES = Object.freeze({
   GAMEPLAY: 'gameplay',
@@ -165,7 +165,7 @@ export const COMMAND_LANES = Object.freeze({
 
 /**
  * Commands that don't use the default gameplay lane. Hotbar saves use the inspect lane because they change only HUD
- * layout flags, and the layout's revision number guards against two saves racing without blocking gameplay.
+ * layout flags, and the layout's revision number stops two saves overwriting each other without blocking gameplay.
  */
 const LANE_BY_COMMAND = Object.freeze({
   [COMMAND_IDS.RECOVERY.CLEAR_LOCK]: COMMAND_LANES.RECOVERY,
@@ -189,7 +189,7 @@ const LANE_BY_COMMAND = Object.freeze({
 });
 
 /**
- * The admission lane of one command id. Any command not listed above is gameplay.
+ * The lane of one command id. Any command not listed above is gameplay.
  * @param {string} commandId A command id from {@link COMMAND_IDS} or {@link INTERNAL_COMMAND_IDS}.
  * @returns {string} One of {@link COMMAND_LANES}.
  */
@@ -198,9 +198,9 @@ export function commandLane(commandId) {
 }
 
 /**
- * Whether CommandDispatcher shows the processing blocker while this command runs. Inspect and maintenance commands,
- * movement planning (begin, cancel, rollback and the flight toggles) and the counterattack mode toggle, a one-field
- * write, leave the interface open. A movement commit blocks only when it doesn't go back to planning.
+ * Whether players see the "please wait" overlay while this command runs. Inspect and upkeep commands, movement
+ * planning (begin, cancel, rollback and the flight toggles) and the counterattack mode toggle leave the interface
+ * open. A movement commit shows it only when the unit doesn't go back to planning more movement.
  */
 export function commandBlocks(commandId, payload = {}) {
   if ([COMMAND_LANES.INSPECT, COMMAND_LANES.MAINTENANCE].includes(commandLane(commandId))) return false;

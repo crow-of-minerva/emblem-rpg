@@ -46,7 +46,7 @@ export class FoundryClassFeatureRepository {
     const actor = classItem?.parent;
     if (!classItem || classItem.documentName !== 'Item' || classItem.type !== 'Class') return null;
     if (!actor || actor.documentName !== 'Actor' || actor.type !== 'Character') return null;
-    // Actors in compendiums are authoring stock, so only the world's units are reconciled.
+    // Actors in compendiums are authoring stock, so only the world's units get automatic features.
     if (actor.pack) return null;
     return Object.freeze({
       actorUuid: actor.uuid,
@@ -87,7 +87,7 @@ export class FoundryClassFeatureRepository {
     });
   }
 
-  /** The unit's promotion facts, from projectPromotionPreview, which the Promotion window also uses. */
+  /** What the unit's promotion depends on, from projectPromotionPreview, which the Promotion window also uses. */
   async getPromotionSnapshot(actorUuid, options = {}) {
     return projectPromotionPreview(actorUuid, options);
   }
@@ -116,8 +116,8 @@ export class FoundryClassFeatureRepository {
 
   /**
    * Swap a unit's Class: remove the old Class and the features it granted, then create the new Class under an id
-   * made here. Every removal and the new id are captured on `plan.operation` before the first write. Returns
-   * `stale: true` if the unit's class state changed since the snapshot.
+   * made here. Every removed item and the new id are saved on `plan.operation` (the command's undo record) before
+   * the first write. Returns `stale: true` if the unit's class state changed since it was read.
    */
   async commitClassReplacement(plan) {
     const actor = await fromUuid(plan.actorUuid).catch((diagnosticError) => { reportFoundryError(import.meta.url, diagnosticError, 'actor'); return null; });
@@ -244,7 +244,7 @@ export class FoundryClassFeatureRepository {
 
 /**
  * Grant a Class bundle's features: create the new items, remove the items they replace, then record the resolved
- * bundles under `classChoices`. All three are captured on `plan.operation` before the first write.
+ * bundles under `classChoices`. All three are saved on `plan.operation` for undo before the first write.
  */
 async function commitGrant(plan, { featureRefs, recordBundles, requireCreated }) {
   const classItem = await fromUuid(plan.classUuid).catch((diagnosticError) => { reportFoundryError(import.meta.url, diagnosticError, 'classItem'); return null; });
@@ -312,8 +312,9 @@ async function commitGrant(plan, { featureRefs, recordBundles, requireCreated })
 }
 
 /**
- * Item data for each feature the unit doesn't already have, filled to full uses, with at most one Mount in total.
- * Features that can't be found are returned as unresolved.
+ * Item data for each feature the unit doesn't already have, with at most one Mount in total. Current uses start at
+ * the stored maximum, or 100 when the maximum is 0; the GM's item-arrival hook then sets them to the effective
+ * maximum. Features that can't be found are returned as unresolved.
  */
 async function prepareFeatures(actor, refs) {
   const data = [];

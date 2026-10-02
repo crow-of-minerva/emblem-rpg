@@ -103,7 +103,7 @@ async function packCatalogEntries(fields) {
   return PACK_INDEXES.get(key);
 }
 
-/** Drop the memoized compendium indexes, so the next catalog read sees a pack that has been authored in. */
+/** Drop the cached compendium indexes, so the next catalog read sees a pack that has been edited. */
 export function invalidateItemCatalog() {
   PACK_INDEXES.clear();
 }
@@ -135,12 +135,12 @@ export async function readItemCatalog(types, { fields = [] } = {}) {
 }
 
 /* -------------------------------------------- */
-/*  Activation command snapshot                 */
+/*  Item use on the host client                 */
 /* -------------------------------------------- */
 
 /**
- * The item activation command's reads (engine/items/activation.mjs, as its `activations` port): the resource keys,
- * the snapshot it validates and delivers from, the stale check before its first write, and the units its effects
+ * What the host client reads from Foundry to carry out an item use (engine/items/activation.mjs): the resource
+ * keys, the data it checks and applies, the out-of-date check before its first write, and the units its effects
  * reached. Built in init/system.mjs.
  */
 export class FoundryItemActivationRepository {
@@ -163,9 +163,9 @@ export class FoundryItemActivationRepository {
   }
 
   /**
-   * Project the caster, the Item envelope, every aimed or caught target, and the Scene bounds. Returns null when the
-   * caster isn't a Character on a Scene, the Item isn't one of its activation items, or an aimed token has no Actor
-   * or stands on another Scene. Returns `{unsupported}` when the Item's targeting can't be derived.
+   * Collect the caster, the item's targeting rules, every aimed or caught target, and the scene size. Returns null
+   * when the caster isn't a Character on a Scene, the Item isn't one of its activation items, or an aimed token has
+   * no Actor or stands on another Scene. Returns `{unsupported}` when the Item's targeting can't be derived.
    */
   async getSnapshot(intent) {
     const sourceToken = await resolveToken(intent.sourceTokenUuid);
@@ -192,6 +192,7 @@ export class FoundryItemActivationRepository {
       if (aimTargets.some(target => target.tokenUuid === String(token.uuid ?? ''))) continue;
       aimTargets.push(projectActivationTarget(token, gridSize, { token: sourceToken, losRule: envelope.losRule }));
     }
+    // Scene padding is always 0 (hooks/scene.mjs), so the map's size in squares is its pixel size over the grid size.
     const bounds = Object.freeze({
       columns: Math.ceil((Number(scene.width) || 0) / gridSize),
       rows: Math.ceil((Number(scene.height) || 0) / gridSize)
@@ -250,8 +251,8 @@ export class FoundryItemActivationRepository {
   }
 
   /**
-   * The side, level and pools of units an activation's effect steps reached beyond its caster and targets, such as
-   * the allies an area around the caster caught, for the activation XP settlement in engine/items/activation.mjs.
+   * The side, level and pools of units an item use's effect steps reached beyond its caster and targets, such as
+   * the allies an area around the caster caught, for the experience award in engine/items/activation.mjs.
    * A unit that is gone by then is left out.
    */
   async getReachedUnits(actorUuids) {
@@ -288,8 +289,8 @@ export class FoundryItemActivationRepository {
   }
 
   /**
-   * Whether the caster, the Item and the targets are still as the snapshot found them (activationFingerprint).
-   * deliverActivatedItem checks it before its first write and refuses a stale use.
+   * Whether the caster, the item and the targets are unchanged since getSnapshot read them (activationFingerprint).
+   * deliverActivatedItem checks it before its first write and refuses an out-of-date use.
    */
   async stillCurrent(snapshot) {
     const token = await resolveToken(snapshot.source.tokenUuid);
@@ -304,7 +305,7 @@ export class FoundryItemActivationRepository {
     return activationFingerprint(token, item, targets) === snapshot.fingerprint;
   }
 
-  /** Build the placement resolver the activation's authored geometry requirements are judged with. */
+  /** Build the checker that counts where a unit could stand, for items whose effects have placement requirements. */
   geometryResolver(snapshot) {
     return this.movements?.geometryResolver?.({
       sourceTokenUuid: snapshot.source.tokenUuid,
@@ -314,7 +315,7 @@ export class FoundryItemActivationRepository {
 }
 
 /* -------------------------------------------- */
-/*  Side projection                             */
+/*  Caster and targets                          */
 /* -------------------------------------------- */
 
 function projectActivationSource(token, item, gridSize) {
@@ -420,7 +421,7 @@ function projectActivationTarget(token, gridSize, looker = null) {
     magicSaveAdvantage: system.combat?.magicSaveAdvantage === true,
     blessed: projectActorStatusKeys(actor).has('blessed') || system.statuses?.blessed === true,
     sanctuary: projectActorStatusKeys(actor).has('sanctuary') || system.statuses?.sanctuary === true,
-    /** The base Actor's id, so rallyRankFor can match a Support bond on an unlinked Token, and the unit's party. */
+    // The base actor's id, so rallyRankFor can match a Support bond on an unlinked token, and the unit's party.
     baseActorId: String(actor.isToken ? (actor.token?.actorId ?? actor.id) : actor.id ?? ''),
     partyId: projectActorPartyId(actor) ?? '',
     rallied: [...(actor.effects ?? [])].some(effect => effect?.disabled !== true
@@ -432,8 +433,8 @@ function projectActivationTarget(token, gridSize, looker = null) {
 }
 
 /**
- * Whether walls hide the target from the caster. A walled Scene this client cannot test counts as blocked, as the
- * activation's grid sight and the attack click gate both treat it.
+ * Whether walls hide the target from the caster. A scene with walls this client cannot test counts as blocked, as
+ * it does everywhere else in targeting.
  */
 function wallSightBlockedBetween(source, target, gridSize, losRule = 'normal') {
   if (!source || String(losRule ?? 'normal') === 'ignoreLoS') return false;
@@ -504,7 +505,7 @@ function projectPassiveActivationEntries(actor) {
 }
 
 /* -------------------------------------------- */
-/*  Item and unit facts                         */
+/*  Item and unit details                       */
 /* -------------------------------------------- */
 
 function projectItemFacts(item) {
@@ -522,15 +523,14 @@ function projectItemFacts(item) {
     img: String(item?.img ?? ''),
     image: String(item?.img ?? ''),
     type: String(item?.type ?? ''),
-    /** The innate grant the Item came from, if any, by which the activation envelope recognises Rally. */
+    // The innate grant the item came from, if any; this is how the targeting rules recognise Rally.
     innateGrant: String(item?.flags?.[SYSTEM_ID]?.[INNATE_GRANT_FLAG] ?? ''),
     system
   });
 }
 
 /**
- * A unit's level and its HP and Stance maxima, which activation XP grades a target's share of. The trade snapshot in
- * document-writes/economy.mjs reads the thief's and its mark's here as well.
+ * A unit's level and its HP and Stance maxima, used to scale the experience an item use or a theft earns.
  */
 export function projectExperienceFacts(system) {
   return {
@@ -541,10 +541,9 @@ export function projectExperienceFacts(system) {
 }
 
 /**
- * What the activation XP settlement in engine/items/activation.mjs reads before it grades a use: the Item's entry in
- * the activation XP table, the id of the encounter running on the Scene (empty outside one and while the Scene
- * explores), and how many XP-granting uses of that entry the caster has already made in it. A theft reads the same
- * facts for the thief's Steal Ability through the trade snapshot in document-writes/economy.mjs.
+ * What the item-use experience award reads: the item's entry in the activation XP table, the id of the encounter
+ * running on the scene (empty outside one and during exploration), and how many experience-granting uses of that
+ * entry the caster has already made in it. A theft reads the same for the thief's Steal Ability.
  * @param {object} actor The caster Actor.
  * @param {{name: string}} item The Item whose name the entry is looked up by.
  * @param {object} scene The caster's Scene.
@@ -626,7 +625,7 @@ function sanctuaryEffectId(actor) {
 }
 
 /**
- * The facts stillCurrent compares: the caster's square and turn state, the Item's uses, and each target's square.
+ * What stillCurrent compares: the caster's square and turn state, the Item's uses, and each target's square.
  * Squares come from the stored Token position (persistedTokenPosition in host.mjs).
  */
 function activationFingerprint(token, item, targets) {
@@ -640,6 +639,11 @@ function activationFingerprint(token, item, targets) {
   });
 }
 
+/**
+ * Squares across plus squares down from the caster's top-left square to the target's (at least 1), ignoring token
+ * size. It only picks the cast animation and feeds the cast message; no rule reads it. aimDistance does the same
+ * for an aimed square.
+ */
 function footprintDistance(source, target, gridSize) {
   const sourceX = Math.floor(finite(source.x) / gridSize);
   const sourceY = Math.floor(finite(source.y) / gridSize);
@@ -667,7 +671,7 @@ function itemActor(item) {
 /* -------------------------------------------- */
 
 /**
- * Project the facts a hotbar cell needs to decide whether an Item enters activation targeting. Returns null when
+ * What a hotbar slot needs to decide whether an Item starts activation targeting. Returns null when
  * the Item can't be activated or its owner has no token on the canvas.
  */
 export async function projectHotbarActivation(itemUuid) {
@@ -686,6 +690,7 @@ export async function projectHotbarActivation(itemUuid) {
   const scene = token.parent;
   const gridSize = Math.max(1, Number(scene?.grid?.size) || 1);
   const source = projectActivationSource(token, item, gridSize);
+  // Scene padding is always 0 (hooks/scene.mjs), so the map's size in squares is its pixel size over the grid size.
   const bounds = Object.freeze({
     columns: Math.ceil((Number(scene?.width) || 0) / gridSize),
     rows: Math.ceil((Number(scene?.height) || 0) / gridSize)
@@ -711,8 +716,8 @@ export async function projectHotbarActivation(itemUuid) {
 }
 
 /**
- * Project the cells an aimed activation would cover, so the overlay draws the same cells the command will use.
- * @param {object} context Staged activation context.
+ * The cells an aimed item use would cover, so the overlay draws the same cells the host client will use.
+ * @param {object} context The targeting context built when targeting started.
  * @param {object} aim Aim cell.
  * @returns {Readonly<{ok: boolean, code: string, cells: ReadonlySet<string>, units: readonly object[]}>}
  */
@@ -744,10 +749,10 @@ export async function projectActivationAim(context, aim) {
 }
 
 /**
- * Project the ray a clicked target puts a line-shaped activation on, and the units it catches.
- * @param {object} context Staged activation context.
+ * The line a clicked target puts a line-shaped item use on, and the units it catches.
+ * @param {object} context The targeting context built when targeting started.
  * @param {object} grid Current targeting grid.
- * @param {object} target Detached facts for the clicked unit.
+ * @param {object} target The clicked unit's data.
  * @returns {Readonly<{ok: boolean, cells: ReadonlySet<string>, units: readonly object[]}>}
  */
 export async function projectActivationRay(context, grid, target) {
@@ -765,8 +770,8 @@ export async function projectActivationRay(context, grid, target) {
 }
 
 /**
- * Project the units an Item's own geometry catches into the full facts its confirm window shows.
- * @param {object} context Staged activation context.
+ * The units an item's own area catches, with the details its confirm window shows.
+ * @param {object} context The targeting context built when targeting started.
  * @param {ReadonlySet<string>} cells Cells the Item covers.
  * @returns {Promise<readonly object[]>}
  */
@@ -787,7 +792,7 @@ export async function projectCaughtUnits(context, cells) {
 }
 
 /* -------------------------------------------- */
-/*  Sight and geometry projection               */
+/*  Sight and areas                             */
 /* -------------------------------------------- */
 
 async function deriveActivationGeometry({
@@ -852,12 +857,12 @@ function projectGridSight(scene, envelope, source, bounds, units) {
   });
 }
 
-/** Reproject the activation grid inputs after any board change. */
+/** Rebuild the targeting grid data after anything on the map changes. */
 export async function projectActivationGrid(context) {
   return projectHotbarActivation(context.itemUuid);
 }
 
-/** Project one clicked Token into the facts the activation reach check consumes. */
+/** One clicked token's data for the item's reach check, after any fixture-click or Guard redirect. */
 export async function projectActivationTargetFacts(context, targetToken) {
   const fixture = redirectFoundryFixtureToken(targetToken);
   if (fixture.refused) return null;
@@ -876,9 +881,9 @@ export async function projectActivationTargetFacts(context, targetToken) {
 }
 
 /**
- * Project the confirm window's display facts, including each target's declared success rate.
- * @param {object} context Staged activation context.
- * @param {object[]} targets Detached target facts already validated against the grid.
+ * What the confirm window shows, including each target's success rate.
+ * @param {object} context The targeting context built when targeting started.
+ * @param {object[]} targets Target data already checked against the grid.
  * @param {object|null} location The square the window centres on: a picked placement, else the aimed ground cell.
  * @returns {Readonly<object>|null}
  */

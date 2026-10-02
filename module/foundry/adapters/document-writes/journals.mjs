@@ -13,9 +13,9 @@ const JOURNAL_DOCUMENT_TYPES = new Set(['JournalEntry', 'JournalEntryPage']);
  */
 export class FoundryJournalRepository {
   /**
-   * Facts about the journal entry a request names (a page counts as its parent entry): whether the unit links the
-   * entry or one of its pages, each owner of the unit with their current level on the entry, and whether the
-   * requester can already read it. null if the actor or entry can't be found.
+   * What the command needs about the journal entry a request names (a page counts as its parent entry): whether the
+   * unit links the entry or one of its pages, each owner of the unit with their own level on the entry (-1 when none
+   * is set), and whether the requester can already read it. null if the actor or entry can't be found.
    */
   async getAccessSnapshot(actorUuid, journalUuid, requesterId = '') {
     const [actor, document] = await Promise.all([

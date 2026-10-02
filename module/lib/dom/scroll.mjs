@@ -4,8 +4,9 @@
 /*  Public API                                  */
 /* -------------------------------------------- */
 /**
- * Capture non-zero scroll offsets and unmanaged open disclosures below an application root. The ui-chrome patch
- * (foundry/patches/ui-chrome.mjs) takes this snapshot before an application rerenders.
+ * Remember scroll positions and open `<details>` sections below an application root, so a re-render doesn't jump
+ * to the top. `<details>` marked `data-managed-open` are left to the application. The ui-chrome patch
+ * (foundry/patches/ui-chrome.mjs) calls this before an application re-renders.
  * @param {Element} root The application's root element.
  * @returns {Map<string, {top?: number, left?: number, open?: boolean}> | null}
  */
@@ -26,7 +27,8 @@ export function captureScrollPositions(root) {
 }
 
 /**
- * Restore a scroll snapshot onto the replacement nodes produced by a rerender.
+ * Put the saved scroll positions and open sections back after a re-render. Elements are matched by tag, id,
+ * classes, a few data attributes and their order among matching elements.
  * @param {Element} root The rerendered root element.
  * @param {Map<string, {top?: number, left?: number, open?: boolean}> | null} saved
  */

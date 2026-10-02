@@ -202,8 +202,13 @@ export function onControlTokenMovement(token, controlled) {
 /**
  * preUpdateToken check for every token move: refuse the moves movementInputPermission rejects, and keep the
  * planned unit on its movement graph. A step off the graph may offer a terrain crossing instead (offerCrossing).
- * A step refused because the unit is stranded (movementStranded in game/movement/pathfinding.mjs) says so here,
- * before any command is sent, once per key press rather than on every repeat of a held key.
+ * A step refused because the unit is stranded (it can't take a move of its own; see movementStranded in
+ * game/movement/pathfinding.mjs) says so here, before any command is sent, once per key press rather than on
+ * every repeat of a held key.
+ *
+ * Writes made through the API (`method: "api"`) and the system's own restore writes skip every check. A move
+ * Foundry doesn't mark as a drag or a key press, such as an edit in Token Config or a Ctrl+Z undo, is refused
+ * without a message, even for a GM.
  * @returns {boolean|undefined} False vetoes the Foundry Token update.
  */
 export function onPreUpdateTokenMovement(tokenDocument, changes, options = {}) {
@@ -252,7 +257,7 @@ export function onUpdateTokenMovement(tokenDocument, changes) {
   };
 }
 
-/** Resynchronize the local preview with the settled destination Foundry chains its next step from. */
+/** Resynchronize the local preview with the finished move's end point, which Foundry chains its next step from. */
 export function onMoveTokenMovement(tokenDocument, movement) {
   const plan = activeMovementPlan();
   if (!plan || plan.tokenId !== tokenDocument.id) return;
@@ -279,9 +284,9 @@ export function onDestroyTokenMovement(token) {
 }
 
 /**
- * renderTokenHUD handler meant to route a player's HUD to movement selection. It has no effect in practice: the
- * TokenHUD#bind wrapper in foundry/patches/token-drag.mjs refuses every player bind and calls selectTokenFromPointer
- * itself, so the HUD only renders for GMs, whom this skips.
+ * renderTokenHUD handler: for a player who may plan for the unit, start a plan and close the HUD. The
+ * TokenHUD#bind wrapper in foundry/patches/token-drag.mjs already refuses every player bind, so the HUD only
+ * renders for a GM, whom this skips.
  */
 export function onRenderMovementTokenHud(hud) {
   if (game.user.isGM) return false;
@@ -343,7 +348,7 @@ export async function refreshMovementPlanOverlay(tokenUuid) {
 }
 
 /**
- * Rebuild the open plan's field and any inspected reaches when another unit on this Scene moves (the overlay
+ * Rebuild the open plan's grid and any inspected reaches when another unit on this Scene moves (the overlay
  * refresh in init/hooks.mjs).
  */
 export async function refreshMovementOverlays({ sceneUuid, tokenUuids }, valid) {
@@ -371,7 +376,7 @@ export async function refreshMovementOverlays({ sceneUuid, tokenUuids }, valid) 
 
 /**
  * The Cancel key's movement step (keybindings.mjs): back out of attack targeting first, else step the plan back
- * one stage.
+ * one stage. While a plan is open this always keeps the press, even when the plan can't step back right now.
  */
 export function stepCancelMovement() {
   if (isAttackTargetingActive()) {
@@ -391,11 +396,7 @@ export function dismissBg3HudInspection() {
   return true;
 }
 
-/**
- * A frozen copy of the open plan's state, or null. Read by the targeting controls' `movement.inspect` port
- * (init/system.mjs), the Trade and Interact presses (keybindings.mjs and the BG3 HUD actions in init/hooks.mjs),
- * and the board cursor facts.
- */
+/** A frozen, read-only copy of the open plan's state for the other controls, or null. */
 export function inspectMovementPlan() {
   const plan = activeMovementPlan();
   if (!plan) return null;
@@ -475,11 +476,11 @@ async function toggleFlight(plan) {
 /*  Handing the plan over                       */
 /* -------------------------------------------- */
 /**
- * Take the movement field down and hold the plan while targeting, an interaction pick or the promotion window
- * uses the unit.
+ * Hide the movement grid and hold the plan while targeting, an interaction pick or the promotion window uses the
+ * unit.
  *
- * Calling it again for a plan it already holds returns true, so swapping the targeted Item doesn't read as a
- * second suspension and fail.
+ * It returns true for a plan that is already suspended, whichever of those suspended it, so swapping the targeted
+ * Item doesn't fail.
  * @param {string} tokenUuid Token whose plan is being handed to targeting.
  * @returns {boolean} Whether the plan is now suspended.
  */
@@ -501,7 +502,7 @@ export function suspendMovementForTargeting(tokenUuid) {
   }
 }
 
-/** Wait for the plan's Token to finish its movement translation, so targeting opens on a settled square. */
+/** Wait for the plan's Token to finish its movement animation, so targeting opens once the unit has stopped. */
 export async function settleMovementAnimation(tokenUuid) {
   const plan = activeMovementPlan();
   if (!plan || plan.snapshot.tokenUuid !== tokenUuid) return false;
@@ -518,13 +519,13 @@ export async function settleMovementAnimation(tokenUuid) {
 }
 
 /**
- * Read the plan again from the host (api.movement.getPlan) and redraw its field when targeting or a pick hands
+ * Read the plan again from the host (api.movement.getPlan) and redraw its grid when targeting or a pick hands
  * the unit back. With no local plan for that token, open a canter the exchange may have granted instead
  * (openCanterFromState).
  * @param {string} tokenUuid Token whose plan is being handed back.
  * @param {object} [options]
  * @param {boolean} [options.announce] Sound the selection, as a hand-back after a spent action or a trade does.
- * @returns {Promise<boolean>} Whether the field is open here again.
+ * @returns {Promise<boolean>} Whether the plan is open here again.
  */
 export async function resumeMovementAfterTargeting(tokenUuid, { announce = false } = {}) {
   const plan = activeMovementPlan();
@@ -572,11 +573,11 @@ export async function settleMovementAfterInteraction(tokenUuid) {
 }
 
 /**
- * Cancel a suspended plan because its token was deselected mid-targeting (the targeting port's `cancel`).
+ * Cancel a suspended plan because its token was deselected mid-targeting (targeting's `movement.cancel` helper).
  *
  * A refused cancel leaves the plan standing in `SUSPENDED_RELEASED`, which takes player input again while the
- * movement field is still down. The `finally` then hands the plan back through resumeMovementAfterTargeting,
- * which moves on to PLANNING and redraws the field.
+ * movement grid is still hidden. The `finally` then hands the plan back through resumeMovementAfterTargeting,
+ * which moves on to PLANNING and redraws the grid.
  */
 export async function cancelSuspendedMovement(tokenUuid) {
   const plan = activeMovementPlan();
@@ -589,7 +590,7 @@ export async function cancelSuspendedMovement(tokenUuid) {
   }
 }
 
-/** Paint the plan the way its kind is drawn: a canter without reach, exploration without any field at all. */
+/** Paint the plan the way its kind is drawn: a canter without reach, exploration without any grid at all. */
 function drawPlanField(snapshot, graph) {
   if (snapshot.exploring === true) {
     clearMovementPlan();
@@ -611,8 +612,8 @@ function openCanter(token) {
 }
 
 /**
- * Open canter from persisted turn state when exchange settlement grants it without a local plan.
- * @param {string} tokenUuid Token the exchange settled.
+ * Open a canter from the unit's saved turn data when a combat exchange granted one and this client has no plan.
+ * @param {string} tokenUuid Token the exchange resolved.
  * @returns {Promise<boolean>} Whether a canter is now open here.
  */
 async function openCanterFromState(tokenUuid) {
@@ -635,7 +636,7 @@ async function openCanterFromState(tokenUuid) {
   }
 }
 
-/** The placed Token behind a movement snapshot's uuid, without resolving the document asynchronously. */
+/** The placed Token with this uuid, found on the canvas without an asynchronous lookup. */
 function canvasTokenFor(tokenUuid) {
   const placeables = globalThis.canvas?.tokens?.placeables ?? [];
   return placeables.find(token => token.document.uuid === tokenUuid) ?? null;
@@ -955,7 +956,7 @@ function endTurnPrompt(atAnchor = true) {
 
 /**
  * The transition square under the unit, when it is one this unit may actually step off. A stranded unit steps off
- * none, so confirmPlan offers it the end of its turn rather than a hop useTeleport would refuse.
+ * none, so confirmPlan offers it the end of its turn rather than a hop the host would refuse.
  */
 function usableTransitionUnderfoot(snapshot) {
   if (movementStranded(snapshot)) return null;
@@ -1097,7 +1098,7 @@ function clearCanvasSelectionGesture() {
 }
 
 /* -------------------------------------------- */
-/*  Board helpers                               */
+/*  Map helpers                                 */
 /* -------------------------------------------- */
 function unitSelectionFacts(token) {
   const turn = token.actor?.system?.turn ?? {};

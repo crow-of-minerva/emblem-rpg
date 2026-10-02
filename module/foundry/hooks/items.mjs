@@ -6,9 +6,9 @@ import { isActiveGm } from '../adapters/services/host.mjs';
 /* -------------------------------------------- */
 
 /**
- * Build the Item hooks that keep persisted uses consistent: when an Item's maximum moves, the active GM clamps
- * its current uses back under the new effective maximum, exactly once per change.
- * @param {{clampItemUses: Function}} ports The Item write the clamp lands through.
+ * Build the Item hooks that keep saved uses consistent: when an Item's maximum moves, the host client clamps its
+ * current uses back under the new effective maximum, exactly once per change.
+ * @param {{clampItemUses: Function}} options The Item write that clamps the uses.
  */
 export function createItemUsesHookHandlers({ clampItemUses }) {
   return Object.freeze({
@@ -21,8 +21,9 @@ export function createItemUsesHookHandlers({ clampItemUses }) {
 }
 
 /**
- * Call normalizeCreatedItem for inventory arrivals and report a refused second Mount.
- * @param {{normalizeCreatedItem: Function, notify?: object}} ports The Item write and the refusal surface.
+ * On the host client, tidy an item an Actor has just received (normalizeCreatedItem), and tell the user who added
+ * it when it is refused, as a second Mount is.
+ * @param {{normalizeCreatedItem: Function, notify?: object}} options The Item write and the refusal notice.
  */
 export function createItemArrivalHookHandlers({ normalizeCreatedItem, notify = null }) {
   return Object.freeze({
@@ -36,7 +37,7 @@ export function createItemArrivalHookHandlers({ normalizeCreatedItem, notify = n
 
 /**
  * Invalidate the authoring Item catalog when a compendium Item changes.
- * @param {{invalidateItemCatalog: Function}} ports The catalog memo this drops.
+ * @param {{invalidateItemCatalog: Function}} options Drops the cached catalog.
  */
 export function createItemCatalogHookHandlers({ invalidateItemCatalog }) {
   return Object.freeze({

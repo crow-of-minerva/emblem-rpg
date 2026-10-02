@@ -16,7 +16,11 @@ import { FoundryDiagnostics } from '../../../../foundry/adapters/services/diagno
 const FALLBACK_ICON = 'icons/svg/hazard.svg';
 const notifications = createTerrainNotifier({ diagnostics: new FoundryDiagnostics() });
 
-/** Pick a shipped or world terrain preset and return a detached parameter object. */
+/**
+ * Show the preset picker and return a copy of the chosen preset's field values, or null if nothing was loaded.
+ * Shipped presets come from the system's `json/terrain.json`, custom ones from the world's own `json/terrain.json`.
+ * A custom preset with the same name as a shipped one is hidden.
+ */
 export async function openLoadTerrainPresetDialog() {
   const shipped = await readDefaultTerrainPresets();
   const defaults = shipped.presets ?? [];
@@ -34,6 +38,7 @@ export async function openLoadTerrainPresetDialog() {
     content: presetPickerMarkup(defaults, custom),
     buttons: [
       {
+        // Returns the selected cell's key; with nothing selected the dialog resolves to 'load', which loads nothing.
         action: 'load', label: 'Load', icon: 'fas fa-folder-open', default: true,
         callback: (_event, _button, dialog) => dialog.element.querySelector('.tpp-cell.is-selected')?.dataset.key ?? null
       },
@@ -45,7 +50,11 @@ export async function openLoadTerrainPresetDialog() {
   return preset ? structuredClone(preset.params) : null;
 }
 
-/** Save the current terrain form as a named world preset. */
+/**
+ * Ask for a name and icon, then save `params` (the terrain form's values) to the world's `json/terrain.json`.
+ * Saving under an existing custom name replaces that preset without asking; shipped names are refused.
+ * @returns {Promise<boolean>} Whether the preset was saved.
+ */
 export async function openSaveTerrainPresetDialog(params) {
   const shipped = await readDefaultTerrainPresets();
   const defaultNames = new Set((shipped.presets ?? []).map(preset => preset.name));
@@ -64,6 +73,7 @@ export async function openSaveTerrainPresetDialog(params) {
     ],
     render: (_event, dialog) => wireSavePreset(dialog.element, custom)
   });
+  // Cancel, closing the window, or a blank name gives an action name or null instead of `{ name, icon }`.
   if (!result?.name) return false;
   if (defaultNames.has(result.name)) {
     notifications.warn(`Choose a name other than the built-in "${result.name}".`);
@@ -77,6 +87,7 @@ export async function openSaveTerrainPresetDialog(params) {
 /* -------------------------------------------- */
 /*  Picker interaction                          */
 /* -------------------------------------------- */
+/** Clicking a cell in the Load dialog selects it. */
 function wirePresetPicker(root) {
   root.querySelectorAll('.tpp-cell[data-key]').forEach(cell => {
     cell.addEventListener('click', () => {
@@ -87,6 +98,7 @@ function wirePresetPicker(root) {
   wireDeleteButtons(root);
 }
 
+/** Clicking a custom preset in the Save dialog copies its name and icon into the form, ready to overwrite it. */
 function wireSavePreset(root, custom) {
   const byName = new Map(custom.map(preset => [preset.name, preset]));
   root.querySelectorAll('.tpp-cell[data-name]').forEach(cell => {
@@ -113,9 +125,11 @@ function wireSavePreset(root, custom) {
   });
 }
 
+/** Each delete button confirms, removes the preset from the world's file, then blanks its cell in place. */
 function wireDeleteButtons(root) {
   root.querySelectorAll('.tpp-del').forEach(button => {
     button.addEventListener('click', async event => {
+      // Keep the click from also selecting the cell.
       event.stopPropagation();
       const name = button.dataset.name;
       const confirmed = await foundry.applications.api.DialogV2.confirm({
@@ -158,6 +172,10 @@ function savePresetMarkup(custom) {
   </div>`;
 }
 
+/**
+ * A grid of preset cells, padded with empty cells to at least 16 and to a full row of four.
+ * @param {string} kind 'default' or 'custom'; it prefixes each cell's `data-key`.
+ */
 function presetGridMarkup(presets, kind, deletable) {
   const slotCount = Math.max(16, Math.ceil(presets.length / 4) * 4);
   const cells = [];
@@ -177,6 +195,7 @@ function presetGridMarkup(presets, kind, deletable) {
   return `<div class="tpp-grid" data-kind="${kind}">${cells.join('')}</div>`;
 }
 
+/** Read the Save dialog's name and icon, or warn and return null when the name is blank (the dialog still closes). */
 function readSavePresetForm(root) {
   const name = root.querySelector('[name="presetName"]')?.value?.trim();
   if (!name) {

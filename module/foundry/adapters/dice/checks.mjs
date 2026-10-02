@@ -22,8 +22,8 @@ let rollSequence = 0;
 /*  Character check rolling                     */
 /* -------------------------------------------- */
 /**
- * Roll characters' checks with Foundry dice on the host and return plain facts. The Roll objects stay here under
- * their rollReference until the chat card writer (document-writes/chat-output.mjs) takes them with takeRolls.
+ * Roll characters' checks with Foundry dice on the host and return plain results. The Roll objects stay here under
+ * their rollReference until the chat card writer takes them with takeRolls.
  */
 export class FoundryCharacterCheckService {
   #storedRolls = new Map();
@@ -31,12 +31,13 @@ export class FoundryCharacterCheckService {
   /**
    * Roll one declared check on the host.
    *
-   * A karmic check reads its debt, rolls and books the ledger in one karma turn, so the next check, from this
-   * operation or any other, decides from the debt this one left. Its returned booking is marked as already booked.
+   * Under the Karmic model, reading the faction group's karma debt, rolling, and saving the new debt happen as one
+   * queued step (takeKarmaTurn), so the next check, from this command or any other, sees the debt this one left. The
+   * returned karmaBooking is marked `booked: true` because it is already saved.
    * @param {string} actorUuid The rolling Actor.
    * @param {object} check The declared check from game/rolls/checks.mjs.
    * @param {{requestId?: string, operation?: object|null}} [context] The command's dispatcher operation, which
-   *   captures the karma ledger setting before a karmic booking rewrites it.
+   *   records the karma ledger's old value for undo before a karmic roll rewrites it.
    */
   async roll(actorUuid, check, { requestId = '', operation = null } = {}) {
     const actor = await fromUuid(actorUuid);
@@ -108,8 +109,9 @@ function presentedRolls(rolls, summaries, model) {
 }
 
 /**
- * Decide one karmic check from the debt the ledger holds now, roll it, and book the result, all in one karma turn.
- * The draws keep their original order: the declared attempt, then the pull, then any pulled attempts.
+ * Roll one karmic check and save the new debt; runs inside takeKarmaTurn. A positive debt means the group is owed
+ * good luck, so extra hidden rolls are made and the best total kept; a negative debt keeps the worst. Random numbers
+ * are drawn in a fixed order: the declared attempt, the draw that sets how many extra rolls, then those rolls.
  */
 async function karmicAttempt(check, model, chance, operation) {
   const ledger = readKarmaLedger();
@@ -132,9 +134,8 @@ async function karmicAttempt(check, model, chance, operation) {
 }
 
 /**
- * Save the ledger's current value in the command's operation before a booking rewrites it. A command that already
- * captured the setting when it opened (a movement crossing or a downtime activity, in document-writes/movement.mjs
- * and downtime.mjs) adds nothing here and performs no extra save.
+ * Record the ledger's current value in the command's undo record before the roll rewrites it. If the command
+ * already recorded the setting, this adds nothing.
  */
 function captureKarmaLedger(operation) {
   return operation?.capture({ settings: [KARMA_LEDGER_SETTING] });

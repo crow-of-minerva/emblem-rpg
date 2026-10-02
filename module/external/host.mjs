@@ -30,8 +30,7 @@ function resolveTarget(target) {
 
 /**
  * Install a named group of libWrapper registrations, all or nothing. The Foundry patches in foundry/patches/ use
- * it (vision, audio channels, bar attributes, chat notifications, core keybindings, UI chrome, settings sections).
- * Every target is checked before anything registers, and if a registration throws, the ones already made are
+ * it. Every target is checked before anything registers, and if a registration throws, the ones already made are
  * removed. So a mechanic never runs half on Foundry's code and half on the system's. A failed required group (only
  * vision groups are required) is logged as an error rather than a warning, because a vision patch that silently
  * doesn't apply can reveal parts of the map.

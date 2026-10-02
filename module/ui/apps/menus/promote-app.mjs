@@ -117,8 +117,8 @@ async function raisePromotion(intent) {
 }
 
 /**
- * Open the promotion window when the BG3 HUD activates a Promotion item (the activateItem port set up in
- * init/system.mjs). Returns false for any other Item, so the normal hotbar activation runs instead.
+ * Open the promotion window when the BG3 HUD activates a Promotion item (through the HUD's activateItem handler set
+ * up in init/system.mjs). Returns false for any other Item, so the normal hotbar activation runs instead.
  * @param {string} itemUuid The activated Item.
  * @param {string} [tokenUuid] The acting token. Defaults to the actor's first active token, and the HUD passes none.
  * @returns {Promise<boolean>} Whether this activation was a promotion.
@@ -227,7 +227,7 @@ async function confirmPromotion(actorName, className) {
  * Build promote-preview.hbs's context from projectPromotionPreview and resolvePromotionOptions: the current class,
  * the select's entries, and every path's header, bars, ranks and utility tiles, opening on the first selectable
  * path. Thumb sources stay the raw class art, and fitThumb trims and places them once the window exists.
- * @param {object} snapshot The promotion projection.
+ * @param {object} snapshot The promotion preview data.
  * @param {{options: object[], available: object[]}} resolution The resolved paths.
  * @returns {{current: object, selected: object, options: object[], paths: object[]}}
  */
@@ -314,7 +314,7 @@ function barView(row) {
 }
 
 /**
- * The mount line's chips: the Mount's name beside its image, or the riding icon when the projection carries none,
+ * The mount line's chips: the Mount's name beside its image, or the riding icon when the preview data has none,
  * and one chip per unit type it grants. The template holds a chip for every unit type, so a path change only shows
  * or hides them.
  */

@@ -9,25 +9,25 @@ import { projectWieldedArmament } from '../projections/combat-context.mjs';
 import { reportFoundryError } from '../services/diagnostics.mjs';
 import { isActiveGm } from '../services/host.mjs';
 
-/** The open action scope on the host. CommandDispatcher runs one root command at a time, and nested work joins it. */
+/** The rolls for the command running on the host, or null. One command runs at a time, and nested ones share it. */
 let running = null;
 
 /* -------------------------------------------- */
-/*  Action scopes                               */
+/*  Per-command rolls                           */
 /* -------------------------------------------- */
 
 /**
- * Roll each unit's chance modifiers once per host action, and give the rolls to Character preparation while the
- * action runs. A unit is prepared again only when a roll makes one of its modifiers apply. Previews and other clients
- * never see the rolls. engine/effects/modifier-chances.mjs opens and closes a scope around every command handler.
+ * On the host, roll each unit's percent-chance modifiers once per command and keep the results on the actor
+ * (`modifierChanceRolls`) until the command ends. A unit is prepared again only when a roll makes one of its
+ * modifiers apply. Other clients never see the rolls, but on the host a sheet or HUD drawn during the command shows
+ * the rolled stats. engine/effects/modifier-chances.mjs opens and closes one around every command handler.
  */
 export class FoundryModifierChanceScopes {
   /**
-   * Open the scope of one host action, or join the scope the running action opened.
-   * @param {{eager?: boolean}} [options] `eager` draws every chance-bearing Character in the world as the scope opens.
-   *   Otherwise a unit is drawn only when `actionModifierChances` asks for it.
-   * @returns {Promise<Readonly<object>|null>} The handle to pass to `close`, or null on a client that isn't the
-   *   command host.
+   * Start the rolls for one host command, or join those of the command already running.
+   * @param {{eager?: boolean}} [options] `eager` rolls at once for every Character in the world with chance
+   *   modifiers. Otherwise a unit is rolled for only when `actionModifierChances` asks for it.
+   * @returns {Promise<Readonly<object>|null>} The handle to pass to `close`, or null on any client but the host.
    */
   async open({ eager = false } = {}) {
     if (!isActiveGm()) return null;
@@ -41,7 +41,7 @@ export class FoundryModifierChanceScopes {
   }
 
   /**
-   * Close one opening of a scope. When the root closes it, every actor given rolls loses them and is prepared again.
+   * Close one `open`. When the outermost one closes, every actor holding rolls loses them and is prepared again.
    * @param {object|null} handle The handle `open` returned.
    * @returns {Promise<void>}
    */
@@ -56,9 +56,9 @@ export class FoundryModifierChanceScopes {
 }
 
 /**
- * Take the action's rolls off some actors while a preview reads them unrolled, and put them back after the read,
- * even if it fails. Used by the combat exchange snapshot (projections/combat-exchange.mjs).
- * @param {Iterable<Actor>|null} actors The units to read unrolled, or null for every unit the action gave rolls.
+ * Temporarily remove this command's chance rolls so a preview shows stats without them, then put them back, even if
+ * the read fails.
+ * @param {Iterable<Actor>|null} actors The units to read without rolls, or null for every unit holding them.
  * @param {Function} read The read.
  * @returns {Promise<*>} What the read returns.
  */
@@ -81,8 +81,8 @@ export async function withUndrawnModifierChances(actors, read) {
 }
 
 /**
- * The rolls one unit carries through the running action, drawn now if the action has not drawn them yet. Outside an
- * action they are drawn afresh and kept by nothing.
+ * A unit's rolls for the running command, rolled now if the command hasn't rolled for it yet. Outside a command
+ * they are rolled fresh and not kept.
  * @param {Actor} actor A Character Actor.
  * @returns {Readonly<object>} Rolls by modifier key, then node path.
  */
@@ -91,8 +91,8 @@ export function actionModifierChances(actor) {
 }
 
 /**
- * One percentile for each chance node a host action resolves, drawn on the host that runs the action.
- * @param {ReadonlyArray<object>} requirements The chance nodes to resolve.
+ * One percentile for each chance condition a host command resolves, rolled on the host.
+ * @param {ReadonlyArray<object>} requirements The chance conditions to resolve.
  * @returns {number[]} One percentile in [0, 100) per requirement, in order.
  */
 export function drawModifierChances(requirements = []) {
@@ -100,10 +100,10 @@ export function drawModifierChances(requirements = []) {
 }
 
 /* -------------------------------------------- */
-/*  One action's rolls                          */
+/*  One command's rolls                         */
 /* -------------------------------------------- */
 
-/** One action's rolls: every unit it rolled for, and the actors holding rolls that make a modifier apply. */
+/** One command's rolls: every unit it rolled for, and the actors holding rolls that make a modifier apply. */
 class ModifierChanceScope {
   depth = 1;
   #resolved = new Map();
@@ -114,19 +114,19 @@ class ModifierChanceScope {
     this.handle = Object.freeze({});
   }
 
-  /** A unit's rolls for this action, rolled the first time the action reads it. */
+  /** A unit's rolls for this command, rolled the first time the command reads it. */
   rollsFor(actor) {
     const uuid = String(actor?.uuid ?? '');
     if (this.#resolved.has(uuid)) return this.#resolved.get(uuid);
     return this.#resolve(actor, requirements => modifierChanceRolls(requirements, drawModifierChances(requirements)));
   }
 
-  /** The actors this action gave rolls to. */
+  /** The actors this command gave rolls to. */
   lentActors() {
     return [...this.#lent.keys()];
   }
 
-  /** Take the rolls back from every actor and prepare each again, so nothing read after the action carries a roll. */
+  /** Take the rolls back from every actor and prepare each again, so nothing read after the command carries a roll. */
   release() {
     for (const actor of this.#lent.keys()) {
       delete actor.modifierChanceRolls;
@@ -177,9 +177,9 @@ function worldCharacters() {
 }
 
 /**
- * The chance nodes a unit's modifiers can read, from the stored modifiers of everything it carries plus a borrowed
- * Armament. Only an Item's id and modifiers decide them, so nothing else is projected: drawWorld asks this of every
- * Character in the world on each gameplay action. A unit whose items can't be read gets none.
+ * The chance conditions a unit's modifiers can read, from the saved modifiers of everything it carries plus a
+ * borrowed Armament. Only each Item's id and modifiers are read, since drawWorld runs this for every Character in
+ * the world. A unit whose items can't be read gets none.
  */
 function chanceRequirements(actor) {
   try {
@@ -197,7 +197,7 @@ function chanceItem(item) {
   return { id: item.id, modifiers: (item._source?.system ?? item.system ?? {}).modifiers ?? [] };
 }
 
-/** Fresh rolls for a unit that no action keeps. */
+/** Fresh rolls for a unit outside any command. */
 function drawRolls(actor) {
   const requirements = chanceRequirements(actor);
   return modifierChanceRolls(requirements, drawModifierChances(requirements));

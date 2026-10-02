@@ -1,10 +1,12 @@
 <div class="terrain-root">
+  {{!-- Mode tabs. _hoistModeBar in app.mjs moves this bar into the window header on each render. --}}
   <div class="terrain-modebar">
     <button type="button" class="terrain-mode-btn {{#if isTerrain}}is-active{{/if}}" data-action="setMode" data-mode="terrain"><i class="fas fa-mountain-sun"></i> Terrain</button>
     <button type="button" class="terrain-mode-btn {{#if isWalls}}is-active{{/if}}" data-action="setMode" data-mode="walls"><i class="fas fa-bezier-curve"></i> Draw Walls</button>
     <button type="button" class="terrain-mode-btn {{#if isSettings}}is-active{{/if}}" data-action="setMode" data-mode="settings"><i class="fas fa-gear"></i> Settings</button>
   </div>
 
+  {{!-- Settings mode: combat music, movement, the builder grid, vision and fog, and the objectives summary. --}}
   {{#if isSettings}}
   <section class="terrain-pane terrain-settings-pane">
     <header class="terrain-pane-header"><i class="fas fa-gear"></i><span>Settings</span></header>
@@ -100,6 +102,9 @@
   </section>
   {{/if}}
 
+  {{!-- Terrain mode: zones, the tray tabs, the Selection trays and the footer buttons. --}}
+  {{!-- Control names match form-fields.mjs; fields.* comes from that table and the selection readers in app.mjs. --}}
+  {{!-- The style="display:none" conditions below must match the show/hide rules in _wireTerrainControls. --}}
   {{#if isTerrain}}
   <div class="terrain-terrain-mode">
     <section class="terrain-pane terrain-zones-pane">
@@ -608,6 +613,7 @@
   </footer>
   {{/if}}
 
+  {{!-- Walls mode: drawing mode, wall types, the scene's wall counts, and restrictions for the next walls drawn. --}}
   {{#if isWalls}}
   <section class="terrain-pane terrain-walls-pane">
     <header class="terrain-pane-header"><i class="fas fa-bezier-curve"></i><span>Draw Walls</span></header>

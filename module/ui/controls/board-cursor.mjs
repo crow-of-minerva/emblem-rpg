@@ -11,12 +11,12 @@ import { BOARD_CURSOR_MODES, markBoardCursorMode } from '../../presentation/inte
  */
 const REFRESH_EVENTS = Object.freeze(['pointermove', 'pointerdown', 'pointerup', 'keyup']);
 
-/** Recheck pointer and key releases next frame, after Foundry finishes settling the drag or plan. */
+/** After a pointer or key release, check again next frame, once the drop or the plan update has finished. */
 const SETTLING_EVENTS = new Set(['pointerup', 'keyup']);
 
 /**
- * Choose the board cursor from the control facts. An open targeting grid or interaction pick wins over a drag,
- * just as the canvas input gives a click to the open grid before the move underneath it.
+ * Show the pick cursor while a targeting grid or interaction pick waits for a click, else the drag cursor while
+ * this client drags a unit. A canvas click also goes to the open grid before the move underneath it.
  * @param {{picking?: boolean, dragging?: boolean}} [facts] Whether a grid or pick is waiting for a click, and
  *   whether this client is dragging a unit along its movement path.
  * @returns {string} One of {@link BOARD_CURSOR_MODES}.
@@ -31,7 +31,7 @@ export function resolveBoardCursorMode(facts = {}) {
  * Keep the board cursor in step with the controls. init/hooks.mjs installs this once during setup, with
  * readBoardCursorFacts as `readFacts`. The listeners run in the capture phase on the document.
  * @param {object} ports
- * @param {Function} ports.readFacts Returns the facts {@link resolveBoardCursorMode} decides from.
+ * @param {Function} ports.readFacts Returns the state {@link resolveBoardCursorMode} decides from.
  * @param {object} [ports.host] Holds the document to listen on (the browser window by default).
  * @param {Function} [ports.frame] Schedules the second reading after a release (the next animation frame by
  *   default).

@@ -276,7 +276,7 @@ export function takeRenderTurn(component, render) {
 }
 
 /* -------------------------------------------- */
-/*  Scale control projection                    */
+/*  HUD scale                                   */
 /* -------------------------------------------- */
 /** Clamp HUD scale before forwarding it to BG3 HUD Core’s client setting. */
 export function normalizeBg3HudScale(value) {

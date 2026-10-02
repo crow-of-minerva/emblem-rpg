@@ -3,10 +3,10 @@
 /* -------------------------------------------- */
 /*  Persisted vocabulary                        */
 /* -------------------------------------------- */
-/** The world setting a companion module holds while it drives the board through a whole phase. */
+/** The world setting a module (such as Enemy AI) holds while it moves units through a whole phase. */
 export const DRIVEN_HOLD_SETTING = 'drivenBoardHold';
 
-/** How long a driven hold may stand before the active GM clears it as abandoned (reapDrivenBoard). */
+/** How long a module's hold may last before the GM's client clears it as abandoned (reapDrivenBoard). */
 const DRIVEN_HOLD_STALE_MS = 5 * 60 * 1000;
 
 const DRIVER_ID_LIMIT = 128;
@@ -17,8 +17,7 @@ const HOLDER_ID_LIMIT = 128;
 const HOLDER_NAME_LIMIT = 64;
 
 /**
- * Normalize the stored board hold for encounter projections and document writes. Returns null when no holder is
- * recorded.
+ * Clean up the stored hold for the encounter code that reads and writes it. Returns null when no one holds it.
  */
 export function normalizeDrivenHold(raw) {
   const holderId = boundedString(raw?.holderId, HOLDER_ID_LIMIT);
@@ -35,8 +34,7 @@ export function normalizeDrivenHold(raw) {
 }
 
 /**
- * Tell encounter document writes whether the board hold can be cleared because its holder disconnected or timed
- * out.
+ * Whether the hold can be cleared because the user who took it disconnected or it timed out.
  */
 export function drivenHoldIsStale(hold, { holderActive = false, now = Date.now() } = {}) {
   if (!hold) return false;
@@ -46,7 +44,7 @@ export function drivenHoldIsStale(hold, { holderActive = false, now = Date.now()
 /* -------------------------------------------- */
 /*  Intents                                     */
 /* -------------------------------------------- */
-/** Bound companion-module labels and unit details before encounter document writes store a board hold. */
+/** Check a module's label and unit details before the hold is stored. */
 export function normalizeDrivenHoldIntent(payload = {}) {
   return Object.freeze({
     driverId: boundedString(payload?.driverId, DRIVER_ID_LIMIT),

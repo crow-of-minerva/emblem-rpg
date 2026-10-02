@@ -106,8 +106,8 @@ const HOTBAR_LAYOUT_INTENT_KEYS = Object.freeze(['actorUuid', 'state', 'expected
 const HOTBAR_LAYOUT_MAX_CHARACTERS = 48 * 1024;
 
 /**
- * Bound one layout save: the unit, its whole HUD state, and the revision the state was arranged from. The state is
- * returned as a detached, writable copy, since the host writes it into a document update.
+ * Check one layout save: the unit, its whole HUD state, and the revision the state was arranged from. The state is
+ * returned as a separate, writable copy, since the host writes it into a document update.
  * @param {object} payload The command payload.
  * @returns {{actorUuid: string, state: object, expectedRevision: number}|null}
  */
@@ -138,7 +138,7 @@ export function bg3HudCellGroups(state, includeViews = false) {
 /**
  * Remove, in place, every cell naming a document the unit does not carry, saved views included. Macros are world
  * documents and stay.
- * @param {object} state A detached HUD state.
+ * @param {object} state A copy of the HUD state, changed in place.
  * @param {string[]} carriedUuids The uuids of every Item the unit carries.
  * @returns {number} How many cells were removed.
  */

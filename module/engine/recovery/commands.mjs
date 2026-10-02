@@ -6,16 +6,15 @@ import { createCommandAuthorization } from '../authorization.mjs';
 import { holdsResources } from '../dispatcher.mjs';
 
 /**
- * The two table-management command definitions behind `api.recovery`, which init/system.mjs registers.
+ * The two table-recovery command definitions behind `api.recovery`, which init/system.mjs registers.
  *
- * `recovery.clear-lock` releases the control lock a departed or timed-out holder left, through the movement
- * release `recoverLock` that init/system.mjs injects (recoverStaleMovement). `/release`, the disconnect release, the
- * segment teardown and the startup sweep all use it. `getLock` reads the lock setting and
- * `lockKeys` names what releasing it may write.
+ * `recovery.clear-lock` releases the movement control lock a departed or timed-out player left, through the
+ * injected `recoverLock` (recoverStaleMovement, the same release `/release` uses). `getLock` reads the lock setting
+ * and `lockKeys` names what releasing it may write.
  *
- * `recovery.clear-busy` has ExecutionAnnouncer republish the execution view, which lifts every client's processing
- * blocker. When forced, it also has CommandDispatcher abandon whatever holds world execution. It runs in the
- * inspection lane beside that holder, which is why it never refuses busy. Both answer with a result code alone.
+ * `recovery.clear-busy` has ExecutionAnnouncer resend who holds the command slot, which lifts every client's
+ * "processing" blocker. When forced, it also has CommandDispatcher abandon whatever holds the slot. It is an
+ * inspect command, so it runs beside that command and never refuses as busy. Each returns its outcome in `data`.
  */
 export function createRecoveryCommandContribution({ authority, getLock, lockKeys, republishExecution, recoverLock,
   announce, abandonExecution, reloadHost }) {
@@ -24,6 +23,8 @@ export function createRecoveryCommandContribution({ authority, getLock, lockKeys
   const authorization = createCommandAuthorization(authority);
   return [
     { id: COMMAND_IDS.RECOVERY.CLEAR_LOCK, authorize: authorization.gm(),
+      // Reads the lock while the keys are worked out. CommandDispatcher hands this same context on to the handler,
+      // which compares it with a fresh read.
       concurrencyKeys: context => { context.recoveryLock = getLock(); return lockKeys(); },
       handler: async context => {
         if (lockIdentity(context.recoveryLock) !== lockIdentity(getLock())) {
@@ -42,7 +43,7 @@ export function createRecoveryCommandContribution({ authority, getLock, lockKeys
       handler: async context => {
         const holder = context.payload?.force === true ? abandonExecution() : null;
         await republishExecution();
-        // An abandoned operation keeps its record, so the host reloads and its startup restore puts it back.
+        // An abandoned command keeps its undo record, so the host reloads and startup undoes its writes.
         if (holder?.recorded === true) await reloadHost();
         return accept(RESULT_CODES.RECOVERY_BUSY_CLEARED,
           { abandoned: holder ? { commandId: holder.commandId, lane: holder.lane } : null });
@@ -52,8 +53,8 @@ export function createRecoveryCommandContribution({ authority, getLock, lockKeys
 
 /**
  * A stable text for one control lock. The handler compares the lock read while its keys were resolved with a
- * fresh read and refuses as stale if they differ, so it never releases a lock from under a new holder. Both reads
- * happen after the command has taken world execution.
+ * fresh read and refuses as stale if they differ, so it never releases a lock someone took in between. Both reads
+ * happen after the command has taken the command slot.
  */
 function lockIdentity(lock) {
   if (!lock || typeof lock !== 'object') return String(lock ?? '');

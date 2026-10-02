@@ -9,7 +9,7 @@ import { resolveParticipants } from './rules.mjs';
 const MULTIPLIER_BOUNDS = Object.freeze({ min: 0.1, max: 2 });
 const DEFAULT_SKILL_KEY = 'athletics';
 
-/** What one gather costs on the Energy lane, the same at every node. */
+/** The Energy one gather costs, the same at every node. */
 export const GATHERING_ENERGY_COST = 1;
 
 /** The node's yield multiplier, clamped on read so an extreme authored value cannot empty the map in one gather. */
@@ -35,8 +35,8 @@ export function gatherAmount(roll, multiplier) {
 }
 
 /**
- * Whether a node entry takes part in gathering at all: its source Resource still resolves (the snapshot marks a
- * vanished one `missing`) and it has stock left. Every other entry is ignored: not offered, drawn or counted.
+ * Whether a node entry takes part in gathering at all: its source Resource still exists (one that is gone is marked
+ * `missing`) and it has stock left. Every other entry is ignored: not offered, drawn or counted.
  */
 export function gatherableEntry(entry) {
   return entry?.missing !== true && Math.floor(Number(entry?.total) || 0) > 0;
@@ -68,9 +68,8 @@ export function nodeStock(items = []) {
 /*  Distribution                                */
 /* -------------------------------------------- */
 /**
- * Split a gather's yield among the node's entries, for workNode in engine/downtime/resolvers.mjs. Each unit is drawn
- * by weight from the given random source without replacement, so no entry gives more than its stock, and the
- * total is capped at the stock left.
+ * Split a gather's yield among the node's entries. Each unit is drawn by weight from the given random source without
+ * replacement, so no entry gives more than its stock, and the total is capped at the stock left.
  */
 export function distributeGather(items = [], total, rng) {
   const pool = [];
@@ -104,8 +103,8 @@ export function distributeGather(items = [], total, rng) {
 /*  Planning                                    */
 /* -------------------------------------------- */
 /**
- * Validate gathering for engine/downtime/commands.mjs. Check station, free exploration, reach, stock, performer
- * membership and available Energy. A node with no gatherable entry left is exhausted.
+ * Validate gathering. Check station, free exploration, reach, stock, performer membership and available Energy. A
+ * node with no gatherable entry left is exhausted.
  */
 export function planGathering(facts = {}) {
   const gathering = facts.station?.gathering ?? null;
@@ -136,11 +135,10 @@ export function planGathering(facts = {}) {
 }
 
 /**
- * Plan the inventory and node writes after a gather, for workNode in engine/downtime/resolvers.mjs. A drawn entry
- * joins a matching Resource stack or takes a free pocket slot. With no room it stays on the node, marked left
- * behind. A hidden entry is revealed only once it is collected. An entry whose source is gone by the time the yield
- * lands is ignored: no row, and no stock taken. The node is exhausted once no gatherable entry is left, and the
- * `missing` marks are the snapshot's, never written back.
+ * Plan the inventory and node writes after a gather. A drawn entry joins a matching Resource stack or takes a free
+ * pocket slot; with no room it stays on the node, marked left behind. A hidden entry is revealed only once it is
+ * collected. An entry whose source is gone by the time the yield lands is skipped and keeps its stock. The node is
+ * exhausted once no gatherable entry is left. `missing` marks are never saved.
  */
 export function planGatherDeposit({ distribution = {}, items = [], sources = {}, destination = {} } = {}) {
   const remaining = items.map(({ missing: _missing, ...entry }) => ({

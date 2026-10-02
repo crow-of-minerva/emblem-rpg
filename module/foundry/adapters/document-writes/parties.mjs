@@ -32,7 +32,7 @@ const CONVOY_ACCESS_VERSION = 1;
 /**
  * Saves the campaign party setting and the Foundry ownership it implies. PartyService (engine/authoring.mjs) calls
  * it for the GM's party tools, and the player-character hooks in foundry/hooks/actors.mjs keep Lords and party
- * access in step. None of this runs inside a command operation, so a failed write is not rolled back.
+ * access in step. None of this runs inside a command, so a failed write is not undone.
  */
 export class FoundryPartyRepository {
   /** The campaign party state from its world setting. */
@@ -61,7 +61,7 @@ export class FoundryPartyRepository {
     });
   }
 
-  /** Plain facts about an Actor a party request names, or null if the UUID isn't an Actor. */
+  /** Plain data about an Actor a party request names, or null if the UUID isn't an Actor. */
   async actorCandidate(uuid) {
     const actor = await this.resolveActor(uuid);
     if (!actor) return null;
@@ -128,8 +128,8 @@ export class FoundryPartyRepository {
     const ownership = { [userId]: ownerLevel() };
     if (fromUserId && fromUserId !== userId) ownership[fromUserId] = noneLevel();
     try {
-      // Ownership goes first. Party administration runs outside any operation, so a later failure isn't rolled
-      // back. The next assignment repairs ownership, but it wouldn't repair a half-changed unit type.
+      // Ownership is written first: these writes aren't undone on failure, and a rerun fixes ownership but not a
+      // half-changed unit type.
       await this.updateOwnership(actor, ownership);
       if (previousType !== requiredType) await this.updateUnitType(actor, requiredType);
       const state = this.readState();
@@ -247,8 +247,7 @@ export class FoundryPartyRepository {
   }
 
   /**
-   * The Convoy Actor a UUID names, or null. Synchronous, for FoundryTradeRepository and the economy projection
-   * (projections/economy.mjs).
+   * The Convoy Actor a UUID names, or null. Synchronous, for callers that can't wait on a lookup.
    */
   resolveConvoy(uuid) {
     const actor = resolveSync(uuid);
@@ -442,7 +441,7 @@ function recordedGrants(grants) {
  * @param {object} input
  * @param {Record<string, number>} input.ownership The Convoy's stored ownership.
  * @param {object|null} input.record Its stored access record.
- * @param {string[]} input.playerIds Every user who is not staff.
+ * @param {string[]} input.playerIds Every user who isn't a GM.
  * @param {string[]} input.memberIds The users whose party links this Convoy.
  * @param {{none: number, observer: number}} input.levels Foundry's ownership levels.
  * @returns {{set: Record<string, number>, remove: string[], record: object, recordChanged: boolean}}
@@ -482,7 +481,7 @@ function planConvoyAccess({ ownership = {}, record = null, playerIds = [], membe
   };
 }
 
-/** The non-staff users whose party links each Convoy, keyed by the Convoy's uuid. */
+/** The players whose party links each Convoy, keyed by the Convoy's uuid. */
 function convoyMembers(state, playerIds) {
   const members = new Map();
   for (const party of state?.parties ?? []) {

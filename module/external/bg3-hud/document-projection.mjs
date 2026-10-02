@@ -35,7 +35,7 @@ const STAT_INFLUENCES = Object.freeze({
 });
 
 /* -------------------------------------------- */
-/*  Document projections                        */
+/*  Cell and HUD data                           */
 /* -------------------------------------------- */
 /**
  * Turn an item into the cell data Core stores for a hotbar slot. The _emblem fields carry what the cell
@@ -88,11 +88,12 @@ export async function hydrateBg3Cell(cellData) {
 /**
  * Collect what decorateEmblemBg3Hud (presentation/interface/bg3-hud.mjs) needs to style the HUD for its current
  * actor: read-only state, the active item, a copy of the actor's system data, the rows that explain each stat's
- * modifier, the Ascend/Land button's facts and the counterattack toggle's. init/system.mjs pairs the two in
+ * modifier, and what the Ascend/Land button and the counterattack toggle need. init/system.mjs pairs the two in
  * decorateHud. The result is plain frozen data, never the live actor, and decorateEmblemBg3Hud keeps parts of it
  * between refreshes.
  * @param {object} app The BG3 HUD application.
- * @param {object} [ports] `characterSource(actor)` yields the compile source the stat baseline is measured from.
+ * @param {object} [ports] `characterSource(actor)` returns the unit's own build, used to tell how far each stat
+ *   is buffed or debuffed.
  */
 export function projectBg3HudView(app, ports = {}) {
   const actor = app?.currentActor;
@@ -133,7 +134,7 @@ function measureHudStatDeltas(actor, characterSource) {
   }
 }
 
-/** The nameplate's level, class and experience facts, or null for a unit with none of them to show. */
+/** The nameplate's level, class and experience, or null for a unit with none of them to show. */
 export function projectBg3Progression(actor) {
   const rawLevel = actor?.system?.progression?.level;
   const level = rawLevel === undefined || rawLevel === null ? null : Number(rawLevel) || 1;
@@ -197,7 +198,7 @@ function projectHudFlight(actor, scene) {
 }
 
 /**
- * The swords and dove toggle's facts: whether the unit never counterattacks (`system.pacifist`), and whether this
+ * What the swords and dove toggle needs: whether the unit never counterattacks (`system.pacifist`), and whether this
  * user may no longer change that (counterModeLocked in game/character/counter-mode.mjs). null for a unit other than
  * a Character, which has no toggle.
  */
@@ -258,7 +259,7 @@ export async function projectBg3Tooltip(document) {
 }
 
 /* -------------------------------------------- */
-/*  Modifier projections                        */
+/*  Modifier rows                               */
 /* -------------------------------------------- */
 /**
  * The rows that explain one displayed stat: direct contributions first, and the indirect ones (acting through an

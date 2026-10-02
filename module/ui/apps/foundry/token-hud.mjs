@@ -69,9 +69,9 @@ function showToggleState(control, className, label, on) {
 /* -------------------------------------------- */
 /**
  * Add the free-targeting override under Foundry's Hide button. While it is on, the unit's actions ignore line
- * of sight: game/character/rules.mjs turns the flag into an `ignoreLoS` rule for every targeting grid, sight
- * projection and exchange gate. Staff alone see it, and `character.targeting.set-free-targeting` rechecks that
- * on the host.
+ * of sight: game/character/rules.mjs turns the flag into an `ignoreLoS` rule for every targeting grid,
+ * line-of-sight check and attack check. Only the GM sees it, and the host rechecks that
+ * (`character.targeting.set-free-targeting`).
  */
 function installFreeTargetingControl(column, actor) {
   if (!localUserIsStaff() || column.querySelector(`.${FREE_TARGETING_CLASS}`)) return null;
@@ -89,7 +89,7 @@ function installFreeTargetingControl(column, actor) {
   return control;
 }
 
-/** Ask for the opposite of the state the unit holds now, then show the state the host settled. */
+/** Ask for the opposite of the state the unit holds now, then show the state the host reports back. */
 async function setFreeTargeting(actor, control) {
   try {
     const enabled = !unitIgnoresLineOfSight(actor.flags?.[SYSTEM_ID]);
@@ -110,8 +110,8 @@ async function setFreeTargeting(actor, control) {
 /**
  * Add the flight control directly under the status-effect palette. It shows only for a flier that controls its
  * own flight (a levitating unit is held up by an effect instead), and only for a user who may author the unit.
- * In practice that means staff, because the TokenHUD#bind wrapper in foundry/patches/token-drag.mjs opens the
- * HUD for GMs alone. Its click sends `movement.set-flight`, which checks the same facts again on the host.
+ * In practice that means the GM, because the TokenHUD#bind wrapper in foundry/patches/token-drag.mjs opens the
+ * HUD for GMs alone. Its click sends `movement.set-flight`, and the host checks the same conditions again.
  */
 function installFlightControl(column, actor, tokenUuid) {
   if (!flightIsAdjustable(actor) || column.querySelector(`.${FLIGHT_CLASS}`)) return null;
@@ -152,7 +152,7 @@ function showFlightState(control, icon, grounded) {
 }
 
 /**
- * Ask for the opposite of the unit's current flight state, then show the state the host settled on rather than
+ * Ask for the opposite of the unit's current flight state, then show the state the host reports rather than
  * the local Actor's, which may not have caught up yet on a client other than the host. A refusal is shown through
  * NotificationService. The mount flourish plays after the write and never holds it up.
  */

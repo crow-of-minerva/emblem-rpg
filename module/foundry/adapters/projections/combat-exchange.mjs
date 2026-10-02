@@ -64,14 +64,13 @@ import {
 } from '../services/host.mjs';
 
 /* -------------------------------------------- */
-/*  Exchange snapshots                          */
+/*  Attack data                                 */
 /* -------------------------------------------- */
 
 /**
- * The exchange engine's port to Foundry (engine/combat/exchanges). It builds the exchange snapshot, rolls the
- * exchange's dice, names the resource keys its commands declare, and reads the state an Extra Action choice needs.
- * init/system.mjs wires it in as `combatState` and also hands getSnapshot to the targeting controls, which build
- * the Combat and Destructible previews from it on the acting client.
+ * Reads everything an attack needs from Foundry and rolls its dice. The host client runs the attack with it, and
+ * the acting player's client builds the Combat and Destructible previews from it. init/system.mjs registers it as
+ * `combatState`.
  */
 export class FoundryCombatStateRepository {
   constructor({ health, movements, unitAudio = null }) {
@@ -81,8 +80,9 @@ export class FoundryCombatStateRepository {
   }
 
   /**
-   * The resource keys an exchange command declares, naming what it may write: the movement board, the karma
-   * ledger, the Scene, both Actors (the target after any Guard redirect) and the Items it uses.
+   * The resource keys an attack declares, naming what it may write: the movement board, the karma ledger, the
+   * scene, both actors (the target after any Guard redirect), and the weapon and Weapon Art uuids from the request.
+   * For an Armament attack the weapon uuid is the Armament's token, not its actor.
    */
   async resourceKeys(payload = {}) {
     const source = await resolveToken(payload.sourceTokenUuid);
@@ -140,11 +140,11 @@ export class FoundryCombatStateRepository {
   }
 
   /**
-   * The exchange snapshot: both sides, the distance and engagement after any pre-combat move, the attack sequence,
-   * and every validity fact the exchange checks, with a fingerprint over them. The exchange commands call it on
-   * the host, and the targeting controls call it on the acting client for the previews. Given `modifierChances`,
-   * it replays the action's drawn rolls. Without them no chance modifier fires, even while an action holds draws.
-   * After the pre-combat effects (`afterPreCombat`), the distance is the board's, with no predicted move.
+   * Everything one attack needs: both sides, the distance and engagement after any pre-combat move, the attack
+   * order, and every check the attack makes, with a fingerprint over them. The host client calls it to run the
+   * attack, and the acting player's client calls it for the previews. Pass the host's rolled chances in
+   * `modifierChances` to apply chance-based modifiers; without them none apply, as in the player's preview.
+   * With `afterPreCombat` the pre-combat effects have already run, so the distance is the current one on the map.
    * @param {object} intent The normalized exchange intent.
    * @param {{modifierChances?: object|null, afterPreCombat?: boolean}} [options] The drawn rolls, by Actor uuid,
    *   and whether pre-combat effects have run.
@@ -156,7 +156,7 @@ export class FoundryCombatStateRepository {
     return this.#projectSnapshot(intent, modifierChances, afterPreCombat);
   }
 
-  /** Build one exchange's snapshot, replaying the drawn rolls it is given (see getSnapshot). */
+  /** Build the data for one attack, applying the chance rolls it is given (see getSnapshot). */
   async #projectSnapshot(intent, modifierChances, afterPreCombat) {
     const sourceToken = await resolveToken(intent.sourceTokenUuid);
     let targetToken = await resolveToken(intent.targetTokenUuid);
@@ -182,7 +182,7 @@ export class FoundryCombatStateRepository {
     const movementSpent = resolveStandingMovementSpent(movement);
     const sourceChanceRolls = modifierChances?.[sourceToken.actor.uuid] ?? null;
     const targetChanceRolls = modifierChances?.[targetToken.actor.uuid] ?? null;
-    // How far a range-priced effect step reaches: the attack's maximum range.
+    // Effect steps priced by range use the weapon's maximum range.
     const effectRange = parseAttackRange(projectWeapon(sourceToken.actor, sourceItem).range)?.maxRange ?? 0;
     const approach = projectPreCombatApproach({
       sourceToken, targetToken, targetItem, movement, movementSpent, gridSize,
@@ -295,8 +295,8 @@ export class FoundryCombatStateRepository {
   }
 
   /**
-   * Draw the chance-modifier rolls for both Character combatants once per exchange, on the host. The exchange
-   * carries them through its snapshots and results so nothing is drawn twice.
+   * Roll the chance-based modifiers for both Character combatants once per attack, on the host client. The attack
+   * passes them along to every later step so nothing is rolled twice.
    */
   async drawModifierChances(snapshot) {
     const drawn = {};
@@ -309,8 +309,8 @@ export class FoundryCombatStateRepository {
   }
 
   /**
-   * Resolve one random hit check. A karmic check decides from the persisted debt with the exchange's own earlier
-   * bookings replayed over it, and returns its booking for the exchange to commit with the rest.
+   * Roll one hit check. Under the karmic model it starts from the saved karma debt plus any earlier rolls in this
+   * attack, and returns its own karma entry (`karmaBooking`) to be saved with the rest of the attack.
    * @param {object} side The acting side.
    * @param {object} target The defending side.
    * @param {object} combat The acting side's combat line.
@@ -378,16 +378,11 @@ export class FoundryCombatStateRepository {
 /* -------------------------------------------- */
 
 /**
- * The health facts an effect step's damage or healing resolves against. When the exchange that fired the step
- * reaches one of its two combatants, combatHealthTarget reads them under the combat context that exchange's
- * snapshot recorded, with the same attacking and defending roles, so a protection or immunity that holds only in the
- * fight counts against an on-hit burn as it does against the attack. Any other unit, and any run no exchange fired,
- * keeps the facts its health snapshot read outside combat.
- * FoundryEffectRepository.healthSnapshot calls this for every damage and heal step. The health snapshot itself stays
- * as it was read, for the health writer and recovery.
- * @param {object|null} combatContext The exchange snapshot's `combatContext`, which the exchange hands
- *   EffectExecutionService beside the effect runtime and which never leaves the host.
- * @param {object} health The unit's snapshot from FoundryHealthRepository.getSnapshot.
+ * The defenses an effect step's damage or healing is checked against. When an effect fired by an attack hits one
+ * of the two fighters, read its defenses as they stood in the fight; otherwise use its normal health data.
+ * @param {object|null} combatContext The attack's `combatContext` (see recordCombatContext); it stays on the host
+ *   client.
+ * @param {object} health The unit's health data from FoundryHealthRepository.getSnapshot.
  * @returns {Promise<Readonly<object>>}
  */
 export async function projectExchangeHealthTarget(combatContext, health) {
@@ -405,9 +400,9 @@ export async function projectExchangeHealthTarget(combatContext, health) {
 }
 
 /**
- * Record, by reference, the combat context the snapshot projection reads both combatants under: the two Tokens, the
- * Items the intent names and the target wields, and the approach and chance facts withFoundryCombatContext installs.
- * The snapshot carries it as `combatContext` for projectExchangeHealthTarget.
+ * Save what the attack read both fighters under: the uuids of the two tokens, the weapon, Weapon Art and the
+ * target's weapon, plus the distance and chance-roll values withFoundryCombatContext applies. The attack data
+ * carries it as `combatContext` so projectExchangeHealthTarget can read the fighters the same way later.
  */
 function recordCombatContext({ intent, sourceToken, targetToken, targetItem }, facts) {
   return Object.freeze({
@@ -421,7 +416,7 @@ function recordCombatContext({ intent, sourceToken, targetToken, targetItem }, f
 }
 
 /* -------------------------------------------- */
-/*  Side projection                             */
+/*  Attack sides                                */
 /* -------------------------------------------- */
 
 /** The attack, critical and Weapon Art animations for this engagement, picked from the Items' animations by range. */
@@ -436,9 +431,9 @@ function projectFoundryCombatAnimations(weapon, activeItem, engagement) {
 }
 
 /**
- * The health facts the exchange's attacks resolve against, read while withFoundryCombatContext holds: the maximums,
- * protections, immunities and armor a combat-only modifier may change, over the hit points, stance and shield the
- * health snapshot read outside it. The snapshot itself stays as it was read, for the writer and recovery.
+ * The defenses an attack is checked against. Call it inside withFoundryCombatContext so combat-only modifiers to
+ * maximums, protections, immunities and armor apply; current hit points, stance and shield come from the health
+ * data read before the fight.
  */
 function combatHealthTarget(actor, health) {
   return Object.freeze({
@@ -450,10 +445,9 @@ function combatHealthTarget(actor, health) {
 }
 
 /**
- * One Character side of the exchange: the rule facts projectCombatRuleFacts shares with the planner measurement,
- * the health facts combatHealthTarget reads under the same context, and everything settlement reads. The Combat
- * Preview shows this side too, adding only display facts, so it also carries the proficiency totals the preview's
- * weapon switcher reads.
+ * One Character's side of the attack: its rule values (the same ones attack targeting uses), its defenses, and
+ * everything needed to apply the result. The Combat Preview shows this side too, so it also carries the
+ * proficiency totals the preview's weapon switcher reads.
  */
 function projectSide(token, weapon, health, activeItem = null, engagement = '') {
   const actor = token.actor;
@@ -505,8 +499,8 @@ function projectSide(token, weapon, health, activeItem = null, engagement = '') 
 }
 
 /**
- * The Destructible side: its rule facts, its integrity and protections as combatHealthTarget reads them, and nothing
- * settlement awards.
+ * The Destructible's side: its rule values, integrity and protections. Fields only a Character uses are zeroed or
+ * empty.
  */
 function projectObjectSide(token, health) {
   const actor = token.actor;
@@ -596,6 +590,11 @@ function projectEffectLifecycle(actor) {
   ])));
 }
 
+/**
+ * Whether the requested Weapon Art can be used with this weapon, and its cost. The art spends `cost` uses of the
+ * weapon's durability and the weapon must keep at least one use afterwards. A cost that is not a whole number from
+ * 0 to 100 makes the art invalid.
+ */
 function projectWeaponArt(actor, weapon, art, requested) {
   if (!requested) return Object.freeze({ valid: true, cost: 0 });
   if (!art || itemActor(art)?.uuid !== actor.uuid || art.type !== 'Ability'
@@ -677,6 +676,11 @@ function projectEffectItem(item) {
 /*  Live validation                             */
 /* -------------------------------------------- */
 
+/**
+ * A hash of the fields the attack depends on. The host refuses the attack when it differs from the one the
+ * player's preview showed, so the preview and the host must compute every field here the same way, and nothing
+ * only one client knows may go in. This is why getSnapshot leaves out the host's rolled chances by default.
+ */
 function combatFingerprint(snapshot) {
   return digest(JSON.stringify({
     sceneUuid: snapshot.sceneUuid,
@@ -785,7 +789,7 @@ function exchangeLosRule(source, item) {
 }
 
 /**
- * Whether the client building the snapshot can test the exchange's sight: always under ignoreLoS, otherwise only
+ * Whether the client reading the attack can test the exchange's sight: always under ignoreLoS, otherwise only
  * when the units' Scene has no walls or is the one this client displays. That client is the host for the exchange
  * and the acting player's for the preview. While an encounter runs, the scene lock keeps clients on its Scene.
  */
@@ -814,6 +818,7 @@ function targetEligibilityValid(sourceToken, targetToken, item, source, target) 
   if (sourceToken.actor.system.turn.actionAvailable === false) return false;
   if (source.tauntedByActorUuid && source.tauntedByActorUuid !== target.actorUuid) return false;
   if (target.effectLifecycle?.sanctuaryEffectId) return false;
+  // A melee-only weapon (range 1) can't reach a flying target from the ground.
   if (String(item.system?.weapon?.rng ?? '').trim() === '1'
     && airborneBeyondMelee(projectFlightReach(sourceToken, targetToken))) return false;
   return true;
@@ -828,7 +833,7 @@ function hitChanceModel() {
   return Object.values(HIT_CHANCE_MODELS).includes(model) ? model : HIT_CHANCE_MODELS.KARMIC;
 }
 
-/** The karma debt one faction's next attack roll uses: the saved ledger with this exchange's bookings replayed. */
+/** The karma debt for one faction's next attack roll: the saved karma ledger plus earlier rolls in this attack. */
 function exchangeKarmaDebt(bookings, faction) {
   const ledger = readKarmaLedger();
   const replayed = replayKarmaBookings(ledger, bookings);
@@ -846,6 +851,10 @@ function randomDeclaredAttempts(count, twoRn, blessed) {
   }));
 }
 
+/**
+ * Karma debt rolls extra attempts and keeps the best one (`keep: 'high'`) or the worst (`keep: 'low'`), so a side
+ * that has been unlucky gets luckier and a side that has been lucky gets less so.
+ */
 function chooseKarmicAttempt(candidates, keep, side, target, combat) {
   let chosen = candidates[0];
   let chosenTotal = attackAttemptTotal(chosen, side, target, combat);

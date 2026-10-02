@@ -19,7 +19,7 @@ const CONTAINER_TABS = Object.freeze([Object.freeze({ key: 'all', label: 'All', 
 const notifications = new NotificationService({ diagnostics: new FoundryDiagnostics() });
 const NO_CHOICE = Object.freeze({ confirmed: false, giveItemIds: Object.freeze([]), takeItemIds: Object.freeze([]) });
 
-/** Where an Item sheet opened from a menu row is held, above the window that opened it. */
+/** The z-index an Item sheet opened from a menu row is held at, just above the menu's window and input overlay. */
 const PINNED_SHEET_Z = 100002;
 
 /** The parts of a row that inspect the Item rather than pick it: its portrait and its name. */
@@ -34,9 +34,9 @@ const ROW_INSPECT_SELECTOR = '.trade-item-icon, .trade-item-name';
  * ui/controls/interaction.mjs opens it and acts on the returned choice.
  * @param {object} view The economy query's trade view.
  * @param {{confirm?: Function, resume?: Function, refresh?: Function}} [handlers] `confirm` runs the ticked
- *   exchange, and the window closes only once it returns true. `resume` is called after a row is dropped on the
- *   ground, so the unit's movement plan is worked out again. `refresh` reads the trade view again after the host
- *   refuses an exchange, so the window shows the goods as they now stand.
+ *   exchange; a true answer closes the window. `resume` is called after a row is dropped on the ground, so the
+ *   unit's movement plan is worked out again. `refresh` reads the trade view again after the host refuses an
+ *   exchange, so the window shows the goods as they now stand.
  * @returns {Promise<{confirmed: boolean, giveItemIds: string[], takeItemIds: string[]}>}
  */
 export async function openTradeWindow(view, { confirm = null, resume = null, refresh = null } = {}) {
@@ -76,7 +76,7 @@ export async function openTradeWindow(view, { confirm = null, resume = null, ref
   return state.outcome;
 }
 
-/** Send the ticked rows through the caller's `confirm`. A refusal leaves the window open to be corrected. */
+/** Send the ticked rows through the caller's `confirm`, and close the window once it accepts them. */
 async function confirmTrade(dialog, root, handlers, state) {
   if (state.processing) return false;
   const choices = readTradeChoices(root);
@@ -136,7 +136,7 @@ async function rerenderTradeWindow(dialog, root, view, handlers, state) {
   });
 }
 
-/** Map the economy trade projection into the trade template. */
+/** Build the trade template's data from the trade view. */
 function prepareTradeView(view) {
   const isSteal = view.mode === TRADE_MODES.STEAL;
   const takeOnly = view.takeOnly === true;
@@ -299,7 +299,10 @@ export async function openRowItemSheet(actorUuid, itemId) {
   return true;
 }
 
-/** Hold a rendered sheet above the menu it was opened from, without touching the application's own methods. */
+/**
+ * Lift a rendered sheet above the menu it was opened from by setting its z-index. Foundry's bringToFront gives the
+ * sheet a new, lower z-index when it is clicked after another window has been brought to the front.
+ */
 function raiseSheetAbove(sheet, zIndex) {
   if (!sheet) return;
   if (sheet.position) sheet.position.zIndex = zIndex;

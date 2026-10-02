@@ -46,8 +46,9 @@ const PARTIALS = Object.freeze({
 });
 
 /**
- * Register the system's document classes and data models, sheets, settings, keybindings and Handlebars helpers.
- * Called from the `init` hook in init/hooks.mjs.
+ * Register the system's document classes and data models, the forced-move movement action, the status effects,
+ * sheets, the combat tracker, settings, keybindings and Handlebars helpers. Called from the `init` hook in
+ * init/hooks.mjs.
  */
 export function registerSystemFoundations(getTooltip, callbacks = {}) {
   registerDataModels();
@@ -79,6 +80,8 @@ function registerDataModels() {
         : ItemDataModel;
   }
 
+  // The resource bars each actor type offers its tokens. Foundry v14 reads CONFIG.Actor.trackableAttributes for
+  // that, not `trackers`, so this list has no effect.
   CONFIG.Actor.trackers = CONFIG.Actor.trackers ?? {};
   CONFIG.Actor.trackers[ACTOR_TYPES.CHARACTER] = [
     { path: 'resources.hp.value', label: 'HP' },
@@ -91,8 +94,8 @@ function registerDataModels() {
 }
 
 /**
- * The movement action an effect's forced move uses (EFFECT_MOVE_ACTION, in document-writes/effect-execution.mjs). It
- * can't be picked by hand and costs no movement.
+ * The movement action an effect's forced move uses (EFFECT_MOVE_ACTION, from contracts/domains/combat.mjs). It
+ * can't be picked by hand, costs no movement, isn't blocked by walls and draws no ruler.
  */
 function registerMovementActions() {
   CONFIG.Token.movement.actions[EFFECT_MOVE_ACTION] = {
@@ -110,6 +113,7 @@ function registerMovementActions() {
   };
 }
 
+/** Replace Foundry's whole status list with the system's, so core statuses such as `dead` no longer exist. */
 function registerStatusEffects() {
   CONFIG.statusEffects = tokenHudStatusEffects();
 }
@@ -194,6 +198,7 @@ function registerHandlebars(getTooltip) {
     }
   });
 
+  // eq, or and and replace core helpers of the same name with versions that behave the same.
   handlebars.registerHelper('eq', (left, right) => left === right);
   handlebars.registerHelper('capitalize', value => {
     const text = String(value ?? '');

@@ -80,7 +80,7 @@ function sortUnits(units, sortBy, sortDir) {
 /* -------------------------------------------- */
 
 /**
- * Flatten one projected unit into everything its roster row needs.
+ * Flatten one unit from the map's encounter data into everything its roster row needs.
  *
  * Built per render rather than cached, because almost every field is derived and a stale row would
  * show a unit at the wrong health or with a badge it has since lost.
@@ -149,8 +149,8 @@ const BaseCombatTracker = foundry.applications.sidebar.tabs.CombatTracker;
 const AbstractSidebarTab = foundry.applications.sidebar.AbstractSidebarTab;
 
 /**
- * Render the encounter projection as a two-sided faction roster. Override Foundry tracker methods that expect
- * initiative markup. init/registrations.mjs installs it as `CONFIG.ui.combat`.
+ * The combat tracker, drawn as a two-sided faction roster of the current map's encounter. Overrides the Foundry
+ * tracker methods that expect initiative markup. init/registrations.mjs installs it as `CONFIG.ui.combat`.
  */
 export class EmblemCombatTracker extends BaseCombatTracker {
   #pages = { player: 0, enemy: 0 };
@@ -204,12 +204,13 @@ export class EmblemCombatTracker extends BaseCombatTracker {
   /*  Rendering                                   */
   /* -------------------------------------------- */
 
-  /** Answer with the tracked encounter only while it is still in the collection. */
+  /** The viewed Combat, or null once it has been deleted: a delayed render can run after its Combat is gone. */
   get viewed() {
     const combat = super.viewed;
     return combat && game.combats.get(combat.id) ? combat : null;
   }
 
+  // Overriding only the getter would hide the inherited setter.
   set viewed(combat) {
     super.viewed = combat;
   }
@@ -323,7 +324,7 @@ export class EmblemCombatTracker extends BaseCombatTracker {
     return context;
   }
 
-  /** Whether a Token's rendered visibility lists or drops an enemy row since the last render or observed flip. */
+  /** True when this token turning visible or hidden adds or removes an enemy row. */
   enemyListingChanged(token) {
     const hidden = token.document.hidden === true;
     const listedNow = enemyVisibleToUser({ hidden, visible: token.visible !== false });
@@ -332,7 +333,7 @@ export class EmblemCombatTracker extends BaseCombatTracker {
     return true;
   }
 
-  /** Whether an enemy on the Scene the roster reads has no listing from the last render, as a new placement has. */
+  /** True when an enemy on this scene wasn't in the last roster render, such as one just placed. */
   enemyListingIncomplete() {
     const scene = globalThis.canvas?.scene ?? globalThis.game?.scenes?.active ?? null;
     const units = [];
@@ -348,7 +349,7 @@ export class EmblemCombatTracker extends BaseCombatTracker {
    * that choice when the phase changes. The side shown here is the one the pager steps.
    *
    * A paused map has no Combat document, so its round, objective roster, progress and auto-advance switch come from
-   * the Scene's pause record instead. It keeps the running board's layout, greyed and labelled as paused.
+   * the Scene's pause record instead. It keeps the running encounter's layout, greyed and labelled as paused.
    */
   #buildEmblemContext() {
     const scene = globalThis.canvas?.scene ?? globalThis.game?.scenes?.active ?? null;
@@ -482,9 +483,9 @@ export class EmblemCombatTracker extends BaseCombatTracker {
   /* -------------------------------------------- */
 
   /**
-   * Staff entries for one exploration row. Each is offered only while the unit has something to undo, and the
-   * state behind that test is projected as the menu opens, so a row rendered before the unit worked still reads
-   * true. Both entries settle through `game.emblemRpg.api.downtime`, which reports its own result.
+   * GM context-menu entries for one exploration row. Each is offered only while the unit has something to undo,
+   * checked against the unit's current data when the menu opens. Both go through `game.emblemRpg.api.downtime`,
+   * which reports its own result.
    */
   #explorationEntryOptions() {
     return [
@@ -522,7 +523,7 @@ export class EmblemCombatTracker extends BaseCombatTracker {
   /**
    * Reset downtime for this map through api.downtime.resetDowntime: every party unit gets its Downtime Action and
    * Energy back, the downtime buffs are dispelled, the Stationary factions are unlocked and every Vendor on the map
-   * forgets its haggles. The facade surfaces the result. The GM confirms first, and a cancel sends nothing.
+   * forgets its haggles. The API shows the result to the GM. The GM confirms first, and a cancel sends nothing.
    */
   async _onResetTableDowntime(event) {
     event.preventDefault();
@@ -543,8 +544,8 @@ export class EmblemCombatTracker extends BaseCombatTracker {
   }
 
   /**
-   * Confirm phase advancement against the encounter, phase and round captured on the first press.
-   * The host rejects stale confirmation instead of advancing a newer phase.
+   * Advance the phase on the second press. The request carries the encounter, phase and round seen on the first
+   * press, and the host refuses it if the encounter has moved on since.
    */
   async _onAdvancePhase(event, _target) {
     event.preventDefault();
@@ -854,8 +855,8 @@ export class EmblemCombatTracker extends BaseCombatTracker {
 /* -------------------------------------------- */
 
 /**
- * Capture Scene, encounter, phase and round for the Advance Phase command's stale-request check. Used by the
- * tracker's Advance Phase control and by the Advance Phase scene control (scene-controls.mjs).
+ * Record the scene, encounter, phase and round an Advance Phase request is meant for, so the host can refuse it
+ * if the encounter has moved on.
  * @param {string} sceneUuid The Scene whose encounter would advance.
  * @returns {{sceneUuid: string, expected?: {combatId: string, phase: string, round: number}}}
  */
@@ -867,8 +868,8 @@ export function captureAdvanceIntent(sceneUuid) {
 }
 
 /**
- * Focus a roster Token: staff also select it, while players only pan. Players enter gameplay through movement
- * controls.
+ * Focus a roster token: the GM also selects it, while players only pan to it. Players take control of units
+ * through the movement controls instead.
  * @param {object} token The row's Token placeable.
  * @param {object} [user] The clicking user.
  * @returns {boolean} Whether the unit was selected.
@@ -882,8 +883,8 @@ export function focusTrackerUnit(token, user = globalThis.game?.user) {
 }
 
 /**
- * Ask the tracker to re-render. EmblemCombatTracker#render collapses a burst of these into one pass. init/hooks.mjs
- * calls this from the canvas and document hooks that change what the roster shows.
+ * Ask the tracker to re-render. EmblemCombatTracker#render collapses a burst of these into one pass. Called from
+ * the canvas and document hooks that change what the roster shows.
  */
 export function rerenderTracker() {
   if (globalThis.ui?.combat?.rendered) void globalThis.ui.combat.render();
@@ -899,6 +900,7 @@ export function rerenderTrackerForActorChange(changes) {
   if (actorChangeAffectsRoster(changes)) rerenderTracker();
 }
 
+// How many withRosterRenderHeld calls are running. While above zero, unforced renders of the open tracker are dropped.
 let rosterRenderHeld = 0;
 
 /**
@@ -914,16 +916,16 @@ export function withRosterRenderHeld(work) {
   }
 }
 
-/** Re-render for a Token refresh only when its rendered visibility lists or drops an enemy row. */
+/** Re-render for a token refresh only when its visibility change adds or removes an enemy row. */
 export function rerenderTrackerForTokenRefresh(token, flags) {
   if (!flags.refreshVisibility) return;
   if (globalThis.ui?.combat?.enemyListingChanged?.(token)) rerenderTracker();
 }
 
 /**
- * Re-render for a player's vision refresh only when an enemy has no listing yet. Foundry raises `sightRefresh`
- * after asking every Token for a visibility refresh, and rerenderTrackerForTokenRefresh follows each listed enemy
- * through its own refresh, so a render here is owed only to an enemy placed since the roster last drew.
+ * Re-render for a player's vision refresh only when an enemy isn't in the roster yet. Foundry raises
+ * `sightRefresh` after asking every token to refresh its visibility, and rerenderTrackerForTokenRefresh already
+ * handles each enemy the roster knows, so this only matters for an enemy placed since the roster last drew.
  */
 export function rerenderTrackerForSightRefresh() {
   const tracker = globalThis.ui?.combat;
@@ -961,8 +963,8 @@ function rosterBoard(scene) {
 }
 
 /**
- * The unit behind one exploration row, read from the current board rather than from the rendered row, so the
- * staff menu decides on what the Actor holds now. Null when the Token has left the map.
+ * The unit behind one exploration row, read fresh from the scene rather than from the rendered row, so the GM's
+ * menu sees the actor's current data. Null when the token has left the map.
  */
 function explorationUnit(row) {
   const tokenId = String(row?.dataset?.tokenId ?? '');

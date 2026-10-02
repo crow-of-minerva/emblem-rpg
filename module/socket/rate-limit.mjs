@@ -11,7 +11,8 @@ const DEFAULT_MAX_TRACKED_CALLERS = 128;
 /**
  * Limit how many commands each non-GM user can send to the host, checked by CommandGateway before dispatch.
  * Each caller has one window for all commands and one per command. A reconnect clears the caller's counters.
- * CommandDispatcher still checks authority on its own.
+ * CommandDispatcher still checks authority on its own. Only commands are limited; status, stop, presence and
+ * presentation messages are not.
  */
 export class SocketRateLimiter {
   constructor({

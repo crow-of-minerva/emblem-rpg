@@ -126,9 +126,8 @@ function recipeSignature(recipe) {
 }
 
 /**
- * Point a recipe's ingredients at the Resource items of the same name, taking their uuid and art. Used by the recipe
- * library writer in foundry/adapters/document-writes/downtime.mjs and by projectRecipeLibrary in
- * projections/downtime.mjs. Returns the same recipe object when nothing changed, so the writer can skip a write.
+ * Point a recipe's ingredients at the Resource items of the same name, taking their uuid and art. Returns the same
+ * recipe object when nothing changed, so the caller can skip the write.
  */
 export function hydrateIngredients(recipe, byName) {
   let changed = false;
@@ -157,8 +156,8 @@ function cookbookIngredients(source) {
 }
 
 /**
- * Parse the shipped cookbook for foundry/adapters/services/json-files.mjs, giving each recipe its built-in id and
- * art path. An entry with no name or no ingredient is skipped with a warning.
+ * Parse the shipped cookbook, giving each recipe its built-in id and art path. An entry with no name or no
+ * ingredient is skipped with a warning, and one with no difficulty gets DC 1.
  */
 export function parseCookbook(raw) {
   const source = Array.isArray(raw) ? raw : (Array.isArray(raw?.recipes) ? raw.recipes : []);
@@ -250,9 +249,8 @@ export function modifier(name, target, amount) {
 }
 
 /**
- * Build the meal passive a cook grants each diner, for workPot in engine/downtime/resolvers.mjs. It carries the
- * recipe's growth bonuses, halved on a failure, plus the special stat when earned. The item is tagged as downtime
- * content so the GM's Reset Downtime removes it.
+ * Build the meal passive a cook grants each diner. It carries the recipe's growth bonuses, halved on a failure, plus
+ * the special stat when earned. The item is tagged as downtime content so the GM's Reset Downtime removes it.
  */
 export function buildMealPassive(recipe, outcome, specialFoodType = null) {
   const growths = mealGrowths(recipe, outcome);
@@ -315,7 +313,7 @@ export function growthCells(recipe) {
 }
 
 /**
- * Validate cooking for engine/downtime/commands.mjs before costs are written.
+ * Validate cooking before anything is spent.
  * Check station, free exploration and reach, chef availability, known recipe, unfed diners still standing, and
  * ingredients for every serving.
  */
@@ -331,6 +329,7 @@ export function planCooking(facts = {}) {
   const recipe = recipesForChef(facts.library ?? [], chef.recipeIds).find(entry => entry.id === facts.recipeId) ?? null;
   if (!recipe) return refuse(RESULT_CODES.DOWNTIME_RECIPE_UNKNOWN, { performerName: chef.name });
   const diners = [chef];
+  // normalizeCookingIntent has already removed duplicate diners.
   for (const uuid of facts.dinerUuids ?? []) {
     if (uuid === chef.actorUuid) continue;
     const diner = participants.find(entry => entry.actorUuid === uuid) ?? null;

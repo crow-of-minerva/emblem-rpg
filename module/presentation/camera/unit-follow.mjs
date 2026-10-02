@@ -38,8 +38,8 @@ const GLIDE_95 = Math.acos(-0.9) / Math.PI;
 const FOLLOW_95 = 4.7439;
 
 /**
- * The follow's stiffness for a Follow Speed choice, per second. A single step covers 95% of its distance in the
- * same time as a `followDuration` glide by `canvas.animatePan` would. Instant has no smoothing at all.
+ * How fast the camera catches up for each Follow Speed choice: one step covers 95% of its distance in the time a
+ * `followDuration` glide by `canvas.animatePan` would. Instant jumps straight there.
  * @param {string} speed A `CAMERA_FOLLOW_SPEED_SETTING` choice.
  * @returns {number}
  */
@@ -371,7 +371,7 @@ function holdAgainstMovement(follow, before) {
 
 /**
  * Pan once to the follow's position when it has moved far enough to see, then keep what Foundry's view limits let it
- * reach. Smaller moves wait and add up. The settling pan that puts the view exactly on target is always made.
+ * reach. Smaller moves wait and add up. The final pan that puts the view exactly on target is always made.
  */
 function applyView(host, follow, { settling = false } = {}) {
   const tolerance = UNIT_CAMERA.viewTolerance;
@@ -389,7 +389,7 @@ function applyView(host, follow, { settling = false } = {}) {
   return true;
 }
 
-/** Put the follow at a point with no velocity: settled on its target, or taking over a view it did not make. */
+/** Put the follow at a point with no velocity: at rest on its target, or taking over a view it did not make. */
 function holdStill(follow, point) {
   follow.x = { position: point.x, velocity: 0 };
   follow.y = { position: point.y, velocity: 0 };
@@ -402,6 +402,7 @@ function atRest(follow, target) {
     && Math.abs(follow[key].velocity) * scale < UNIT_CAMERA.restSpeed);
 }
 
+/** Clamp a view centre to Foundry's pan limits, using the canvas's protected `_constrainView`. */
 function constrainView(host, x, y) {
   const view = host._constrainView?.({ x, y, scale: host.stage.scale?.x }) ?? { x, y };
   return { x: Number(view.x), y: Number(view.y) };

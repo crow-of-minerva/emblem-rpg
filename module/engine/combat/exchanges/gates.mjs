@@ -7,7 +7,7 @@ import { standsOverObstacle } from '../../../game/movement/pathfinding.mjs';
 /** Why an exchange refused when the host cannot test the walls of the Scene it is fought on. */
 const SCENE_GEOMETRY_UNAVAILABLE = 'combat.scene-geometry-unavailable';
 
-/** Refuse an exchange whose fresh projection no longer satisfies the preview it was confirmed from. */
+/** Refuse an attack whose fresh read of the map no longer matches the preview the player confirmed. */
 export function validateSnapshot(snapshot, intent, userId) {
   if (!snapshot) return refuse(RESULT_CODES.COMBAT_EXCHANGE_UNAVAILABLE);
   if (snapshot.explorationActive === true) return refuse(RESULT_CODES.ITEM_ACTIVATION_EXPLORATION_FORBIDDEN);
@@ -40,7 +40,7 @@ export function validateSnapshot(snapshot, intent, userId) {
 }
 
 /**
- * Project the exchange again once its modifier chances are drawn. A refusal now means the board changed
+ * Read the attack again after its chance modifiers are rolled. A refusal now means the map changed
  * (StaleCombatError), not that the preview no longer matches.
  */
 export async function requireOpeningExchangeSnapshot(combatState, intent, userId) {
@@ -49,7 +49,7 @@ export async function requireOpeningExchangeSnapshot(combatState, intent, userId
   return snapshot;
 }
 
-/** Project the exchange again between blows. The source must still hold its plan, action and Item. */
+/** Read the attack again between blows. The attacker must still hold its movement plan, action and Item. */
 export async function requireActiveExchangeSnapshot(combatState, intent, userId) {
   const snapshot = await combatState.getSnapshot({ ...intent, previewFingerprint: '' });
   if (!snapshot) throw new StaleCombatError();
@@ -62,7 +62,7 @@ export async function requireActiveExchangeSnapshot(combatState, intent, userId)
   return snapshot;
 }
 
-/** Project the exchange again for settlement. A defeated side is fine here, but a vanished one is not. */
+/** Read the attack again for its closing writes. A defeated unit is fine here, but a missing one is not. */
 export async function requireSettlementSnapshot(combatState, intent) {
   const snapshot = await combatState.getSnapshot({ ...intent, previewFingerprint: '' });
   if (!snapshot) throw new StaleCombatError();

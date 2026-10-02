@@ -305,6 +305,7 @@ export class ConfigurePartyApp extends PartyApplication {
     const bar = this.element.querySelector('.cp-topbar');
     if (!bar) return;
     header.insertBefore(bar, header.querySelector('.header-control') ?? null);
+    // The header starts a window drag on pointerdown; stop it so pressing these buttons doesn't.
     for (const button of bar.querySelectorAll('button')) {
       button.addEventListener('pointerdown', event => event.stopPropagation());
     }
@@ -384,6 +385,10 @@ export class ConfigurePartyApp extends PartyApplication {
     return null;
   }
 
+  /**
+   * A copy of the party setting as this window last showed it. Each action edits this copy and saves the whole
+   * setting.
+   */
   _partyState() {
     return foundry.utils.deepClone(this.partySnapshot?.state ?? { parties: [], membership: {}, lords: {} });
   }

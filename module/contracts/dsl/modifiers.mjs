@@ -8,12 +8,12 @@ import { say, warn } from './messages.mjs';
 /* -------------------------------------------- */
 /*  Vocabulary                                  */
 /* -------------------------------------------- */
-/** Facts that hold only inside an exchange. A modifier that reads one applies only in combat. */
+/** Values that exist only inside an exchange. A modifier that reads one applies only in combat. */
 const COMBAT_FACTS = Object.freeze([
   'target', 'distance', 'engagement', 'inMeleeRange', 'attacking', 'defending', 'usingWeaponArt', 'attackIndex'
 ]);
 
-/** Turn facts that change as the unit moves, so an allowance gated on them collapses after the first leg. */
+/** Turn values that change as the unit moves, so an allowance gated on them is lost after the first leg of a move. */
 const MOVEMENT_FACTS = Object.freeze(['movementSpent', 'hasMoved', 'hasMovement']);
 
 /** Combat flags that decide the order of blows, which the exchange preview reads before the first one. */
@@ -48,7 +48,8 @@ const MODIFIER = 'this modifier';
 /**
  * Validate one item modifier against the authoring rules: its condition tree on the modifier or aura surface, the
  * stats a combat-only or turn-state condition may not write, the equip and activation flags for the item's subtype,
- * and an aura's numeric quantity. Reading the stat it writes is a warning.
+ * and an aura's numeric quantity. Reading the stat it writes is a warning. It doesn't check that the target is a
+ * writable name; character preparation reports an unknown target when it runs.
  * @param {object} modifier
  * @param {{itemType?: string, kind?: string, knownStatuses?: string[]}} [options] `itemType` is the item's subtype,
  *   or its document type where it has none; `kind` defaults to the modifier's own.
@@ -141,7 +142,7 @@ function ownFact(path) {
   return SELF_ROOTS.includes(segments[0]) ? segments.slice(1).join('.') : path;
 }
 
-/** Whether a read path needs a combat context: the target, a target shorthand, or a combat fact. */
+/** Whether a read path needs a combat context: the target, a target shorthand, or a combat-only value. */
 function readsCombat(path) {
   const fact = ownFact(path);
   const [first] = fact.split('.');
@@ -159,7 +160,8 @@ function combatOnlyFamily(written, stat, quantity) {
   if (stat === 'expMultiplier') return 'experience gain';
   if (root === 'special' && leaf === 'max') return 'a special maximum';
   if (written === 'equipment.slots') return 'equipment slots';
-  // Status flags a modifier grants are compiled facts, not document writes, so combat may gate them.
+  // Status flags a modifier grants are worked out during character preparation, not written to documents, so combat
+  // may gate them.
   if (root === 'unitType') return 'unit type';
   // Combat flags only matter in combat, except Levitation, which also makes the unit fly on the map.
   if (root === 'combat' && key === 'levitation') return 'levitation';

@@ -19,7 +19,7 @@ import { changeLeafPaths } from '../../lib/core/runtime.mjs';
 /* -------------------------------------------- */
 
 /**
- * Innate grant hook handlers, on the command host. When a Character's grant conditions or a grant's source item
+ * Innate grant hook handlers, on the host client. When a Character's grant conditions or a grant's source item
  * change, submit RECONCILE for it through `executeInternal` (MaintenanceScheduler.submit). Compendium actors are
  * skipped, and so is a unit that already holds its grants under their current names (unitHoldsInnateGrants). Every
  * startup sweeps all world and token Characters, so a unit missing a grant, holding an extra one or holding a Rally
@@ -37,7 +37,7 @@ export function createInnateGrantLifecycle({ executeInternal, notify = null }) {
   }
 
   /**
-   * Reconcile every unit that could hold an innate item: each world actor and each token's actor on every Scene,
+   * Check every unit that could hold an innate item: each world actor and each token's actor on every Scene,
    * displayed or not. One at a time, so a large world doesn't read the packs for all of them at once.
    */
   async function reconcileAll() {
@@ -58,7 +58,7 @@ export function createInnateGrantLifecycle({ executeInternal, notify = null }) {
 
   /**
    * Whether an item edit changed a grant source rather than one unit's inventory. A source lives in the world or a
-   * compendium, so an owned item never is one. A source edit drops the cached lookup and reconciles every unit again.
+   * compendium, so an owned item never is one. A source edit drops the cached lookup and checks every unit again.
    */
   function sourceChanged(item) {
     if (item?.parent?.documentName === 'Actor') return false;

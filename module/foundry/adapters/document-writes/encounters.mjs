@@ -32,12 +32,15 @@ import { reportFoundryError, reportFoundryProbe } from '../services/diagnostics.
 
 const encounterOptions = () => ({ emblemEncounterSettlement: true });
 
-/** The Scene flags a phase change writes. capturePhaseChange records them before the first stage runs. */
+/** The Scene flags a phase change writes. capturePhaseChange records them before the first write. */
 const PHASE_SCENE_PATHS = Object.freeze([
   `flags.${SYSTEM_ID}.${ENCOUNTER_PHASE_FLAG}`, `flags.${SYSTEM_ID}.${ENCOUNTER_ROUND_FLAG}`
 ]);
 
-/** The only Actor field applyTurnUpdates writes, so only each participant's turn state is recorded. */
+/**
+ * The Actor path recorded before applyTurnUpdates. The updates can also change Willpower, Dexterity, Extra Actions,
+ * Energy and the downtime flag, which are not recorded.
+ */
 const TURN_PATHS = Object.freeze(['system.turn']);
 
 /** What Foundry's Combat#startCombat writes, and so all that needs restoring to undo a start. */
@@ -57,9 +60,8 @@ const SUMMON_REMAINING_PATH = `flags.${SYSTEM_ID}.${SUMMON_REMAINING_FLAG}`;
  * the Combat document and its objective flags, and an ended encounter's cleanup. Plain reads pass straight through
  * to FoundryEncounterProjection (projections/encounters.mjs).
  *
- * Every writer takes the `operation` its command carries (`context.operation`, passed down through the phase and
- * objective services) and captures what it is about to change before it writes. CommandDispatcher commits or
- * restores that operation when the root command settles.
+ * Each writer takes the running command's `operation` (its undo record) and records what it is about to change
+ * before writing, so a failed command can be undone.
  */
 export class FoundryEncounterRepository {
   constructor({ projection, guardBonds = null }) {
@@ -94,13 +96,13 @@ export class FoundryEncounterRepository {
   }
 
   /**
-   * Record the before-images of everything an ordinary phase change writes, in one capture: the Scene's phase and
-   * round together with the terrain entries its expiry sweep will rewrite, and each participant's turn state.
-   * `engine/combat/encounters/phases.mjs` calls this before its first stage.
+   * Record, in one save, what an ordinary phase change writes: the Scene's phase and round, the terrain entries the
+   * timed-terrain expiry will rewrite, and each participant's turn state. `engine/combat/encounters/phases.mjs` calls
+   * this before its first write.
    * @param {string} sceneUuid The map whose phase is turning over.
-   * @param {{operation: object|null, actorUuids: string[], terrain: object|null}} intent The operation to capture
-   *   into, the participants to protect, and `TerrainPhaseService.projectTimedExpiry`'s projection.
-   * @returns {Promise<boolean>} Whether the capture could be taken.
+   * @param {{operation: object|null, actorUuids: string[], terrain: object|null}} intent The undo record, the
+   *   participants to record, and the expiry plan from `TerrainPhaseService.projectTimedExpiry`.
+   * @returns {Promise<boolean>} False when the Scene is gone.
    */
   async capturePhaseChange(sceneUuid, { operation = null, actorUuids = [], terrain = null } = {}) {
     if (!operation) return true;
@@ -145,7 +147,7 @@ export class FoundryEncounterRepository {
     }
   }
 
-  /** Write every participating unit's opening turn state in one pass, capturing them all before the first write. */
+  /** Write every participating unit's opening turn state in one pass, recording their turn state first. */
   async applyTurnUpdates(sceneUuid, plan = [], operation = null) {
     const actors = [];
     for (const entry of plan) {
@@ -205,9 +207,9 @@ export class FoundryEncounterRepository {
   /* -------------------------------------------- */
 
   /**
-   * Create the Scene's encounter, since the phase model runs one Combat per Scene. Its id is recorded on the
-   * operation before the Combat exists, so if the command is refused afterwards, or the host resets before it
-   * commits, the Combat is removed rather than left on the map. null if the Scene already has one.
+   * Create the Scene's encounter; the system runs one Combat per Scene. Its id is recorded for undo before the
+   * Combat exists, so a failed command, or a host client reload before the command finishes, removes it. Returns
+   * null if the Scene already has one.
    */
   async createEncounter(sceneUuid, operation = null) {
     const scene = await resolveScene(sceneUuid);
@@ -216,7 +218,7 @@ export class FoundryEncounterRepository {
       const combatId = documentId();
       await operation?.capture({ creating: [{ documentName: 'Combat', ids: [combatId] }] });
       const combat = await getDocumentClass('Combat').create({ _id: combatId, scene: scene.id }, { keepId: true });
-      // The Combat is recorded as a creation, so its activation needs no before-image.
+      // Undo deletes the new Combat, so its activation needs no record of its own.
       await combat?.activate({ render: false });
       return combat ? String(combat.id) : null;
     } catch (diagnosticError) {
@@ -240,9 +242,9 @@ export class FoundryEncounterRepository {
   }
 
   /**
-   * Start the Scene's encounter with Foundry's Combat#startCombat. That is an ordinary document update, so the
-   * round and turn it writes are captured here like any other write. This capture is the only thing in encounter
-   * startup that can undo a start.
+   * Start the Scene's encounter with Foundry's Combat#startCombat, recording the round and turn it writes so a
+   * failed command can undo the start. The system keeps phase and round in Scene flags and never advances the
+   * Combat's own round, so core round hooks and round-based effect durations from other modules don't tick.
    */
   async startEncounter(sceneUuid, operation = null) {
     const combat = await resolveSceneCombat(sceneUuid);
@@ -301,7 +303,7 @@ export class FoundryEncounterRepository {
     return this.#writeSceneFlag(sceneUuid, EXPLORATION_FLAG, active ? true : undefined, operation);
   }
 
-  /** One Scene flag, captured at its own path and then written or removed. */
+  /** One Scene flag, recorded at its own path and then written or removed. */
   async #writeSceneFlag(sceneUuid, flag, value, operation) {
     const scene = await resolveScene(sceneUuid);
     if (!scene) return false;
@@ -324,12 +326,12 @@ export class FoundryEncounterRepository {
    * Clear what an ended encounter leaves on its map, as `planEncounterAftermath` planned it for the teardown in
    * engine/combat/encounters/objectives.mjs: break every Guard bond through FoundryGuardBondRepository, delete the
    * statuses the units wear, clear the units' Rally records, then remove the summoned Tokens and any unlinked Actor
-   * inside them. Everything is captured in one call before the first write, so a refused end puts the bonds,
+   * inside them. Everything is recorded in one save before the first write, so a refused end puts the bonds,
    * statuses, records and summons back.
    * @param {string} sceneUuid The map whose encounter is ending.
    * @param {{bondedTokenUuids: string[], statuses: Array<{actorUuid: string, effectIds: string[]}>,
    *   ralliedActorUuids?: string[], summonTokenUuids: string[]}} plan What the teardown clears.
-   * @param {object|null} [operation] The ending command's operation.
+   * @param {object|null} [operation] The ending command's undo record.
    * @returns {Promise<boolean>} Whether everything planned is gone.
    */
   async clearEncounterAftermath(sceneUuid, plan, operation = null) {
@@ -366,11 +368,11 @@ export class FoundryEncounterRepository {
 
   /**
    * Count down the timed summons an ending phase reaches and remove those whose time ran out, as `planSummonExpiry`
-   * planned it for the phase change in engine/combat/encounters/phases.mjs. Each counter is captured before it is
+   * planned it for the phase change in engine/combat/encounters/phases.mjs. Each counter is recorded before it is
    * written, and the removal goes through removeSummons.
    * @param {string} sceneUuid The map whose phase is ending.
    * @param {{expiredTokenUuids: string[], counters: Array<{tokenUuid: string, remaining: number}>}} plan
-   * @param {object|null} [operation] The phase change's operation.
+   * @param {object|null} [operation] The phase change's undo record.
    * @returns {Promise<boolean>} Whether every counter is written and every expired summon is gone.
    */
   async expireSummons(sceneUuid, plan, operation = null) {
@@ -394,9 +396,9 @@ export class FoundryEncounterRepository {
 
   /**
    * Clear the record of the Rallies each named unit cast this map, for a new encounter's start (beginEncounter in
-   * engine/combat/encounters/phases.mjs). The records are captured before they are cleared.
+   * engine/combat/encounters/phases.mjs). The records are saved for undo before they are cleared.
    * @param {string[]} actorUuids The Actors `planRallyRecordReset` named.
-   * @param {object|null} [operation] The starting command's operation.
+   * @param {object|null} [operation] The starting command's undo record.
    * @returns {Promise<boolean>} Whether every record cleared.
    */
   async clearRallyRecords(actorUuids, operation = null) {
@@ -420,7 +422,7 @@ export class FoundryEncounterRepository {
     return this.#writeSceneFlag(sceneUuid, OBJECTIVE_FLAGS.CONFIG, structuredClone(spec), operation);
   }
 
-  /** Store the resolved target snapshot, optionally resetting progress with it. */
+  /** Store the resolved objective targets, optionally resetting progress with them. */
   async writeObjectiveTargets(sceneUuid, targets, { resetProgress = false, operation = null } = {}) {
     const combat = await resolveSceneCombat(sceneUuid);
     if (!combat) return false;
@@ -449,7 +451,7 @@ export class FoundryEncounterRepository {
     }, operation);
   }
 
-  /** Remove recorded arrivals after breaking their Guard bonds, capturing both halves and the Tokens first. */
+  /** Remove units that have arrived after breaking their Guard bonds, recording both sides and the Tokens first. */
   async withdrawUnits(sceneUuid, tokenUuids, operation = null) {
     const scene = await resolveScene(sceneUuid);
     if (!scene) return false;
@@ -495,12 +497,12 @@ export class FoundryEncounterRepository {
       { ...pending, updatedAt: committedAt, commit: { reason, committedAt } }, operation);
   }
 
-  /** Drop a queued end that no longer reflects the board. */
+  /** Drop a queued end that no longer matches the map. */
   async clearPendingEnd(sceneUuid, operation = null) {
     return this.#writeEncounterFlag(sceneUuid, OBJECTIVE_FLAGS.END_PENDING, undefined, operation);
   }
 
-  /** One encounter flag, captured at its own path and then written or removed. */
+  /** One encounter flag, recorded at its own path and then written or removed. */
   async #writeEncounterFlag(sceneUuid, flag, value, operation) {
     const combat = await resolveSceneCombat(sceneUuid);
     if (!combat) return false;
@@ -515,17 +517,17 @@ export class FoundryEncounterRepository {
     }
   }
 
-  /** The Scene's objective board, from projectObjectiveBoard. Nothing calls this at present. */
+  /** The Scene's objective overview, from projectObjectiveBoard. */
   async projectBoard(sceneUuid) {
     const scene = await resolveScene(sceneUuid);
     return scene ? projectObjectiveBoard(scene) : null;
   }
 
   /* -------------------------------------------- */
-  /*  Driven board hold                           */
+  /*  Companion module hold                       */
   /* -------------------------------------------- */
 
-  /** The hold a companion module has on the board, as plain data, or null. */
+  /** The hold a companion module (such as the enemy AI) has taken on play, as plain data, or null. */
   getDrivenHold() {
     return projectDrivenHold();
   }
@@ -536,7 +538,7 @@ export class FoundryEncounterRepository {
     return key === `${SYSTEM_ID}.${DRIVEN_HOLD_SETTING}`;
   }
 
-  /** Take the board for a companion module (api drivenBoard.hold). Returns null while another client holds it. */
+  /** Take the hold for a companion module (api drivenBoard.hold). Returns null while another client has it. */
   async holdDrivenBoard(intent, userId, userName = '') {
     const holderId = String(userId ?? '');
     if (!holderId) return null;
@@ -561,7 +563,7 @@ export class FoundryEncounterRepository {
     return normalizeDrivenHold(value);
   }
 
-  /** Hand the board back, which only the client holding it may do. */
+  /** Release the hold, which only the client holding it may do. */
   async releaseDrivenBoard(userId) {
     const standing = projectDrivenHold();
     if (!standing) return true;
@@ -585,8 +587,8 @@ export class FoundryEncounterRepository {
 /* -------------------------------------------- */
 
 /**
- * The Scene flag entries one phase's timed-terrain expiry will rewrite, from the projection
- * `TerrainPhaseService.projectTimedExpiry` returns, so the opening capture protects exactly those squares.
+ * The Scene flag entries one phase's timed-terrain expiry will rewrite, from
+ * `TerrainPhaseService.projectTimedExpiry`, so only those squares are recorded before the phase change.
  */
 function terrainSweepPaths(terrain) {
   const paths = new Set();
@@ -616,8 +618,7 @@ async function resolveSceneCombat(sceneUuid) {
 }
 
 /**
- * Break the Guard bonds of the summons named and delete their Tokens, capturing both first. A timed summon's expiry
- * and a recast that replaces earlier summons (document-writes/effect-execution.mjs) both remove summons this way.
+ * Break the Guard bonds of the summons named and delete their Tokens, recording both first.
  * @returns {Promise<boolean>} Whether every summon is gone.
  */
 export async function removeSummons(scene, tokens, guardBonds, operation = null) {
@@ -663,7 +664,7 @@ async function resolveActors(actorUuids = []) {
   return actors;
 }
 
-/** The one path each Rally record reset writes, for the operation to capture. */
+/** The one path each Rally record reset writes, to be recorded for undo. */
 function rallyRecordCaptures(actors) {
   return actors.map(actor => ({ document: actor, paths: [RALLY_RECORD_PATH] }));
 }
@@ -673,7 +674,7 @@ async function writeRallyRecordResets(actors) {
   for (const actor of actors) await actor.update({ [RALLY_RECORD_PATH]: [] }, encounterOptions());
 }
 
-/** The identity `createEncounter` reserves in its operation before it hands Foundry a `keepId` creation. */
+/** A new document id, picked before creation so it can be recorded for undo and kept with `keepId`. */
 function documentId() {
   return foundry.utils.randomID();
 }

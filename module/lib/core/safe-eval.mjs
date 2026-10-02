@@ -751,7 +751,8 @@ function getCompiled(expr) {
 
 /**
  * Evaluate the authored expression DSL without eval or Function. Invalid input throws for the caller to report as
- * a structured failure.
+ * a structured failure. Property reads run any getters on the context objects, so pass plain data. An array that
+ * nests other arrays many levels deep can take seconds to turn into a string or number.
  */
 export const SafeEval = {
   /**
@@ -759,7 +760,8 @@ export const SafeEval = {
    * @param {string} expr        Expression source.
    * @param {object} [ctx]       Values the expression may name.
    * @returns {*}                `undefined` for an empty expression.
-   * @throws {SafeEvalError}
+   * @throws {SafeEvalError} On input the language refuses. Extreme input (very deep nesting, huge strings) can
+   *   throw a RangeError or TypeError instead, so callers catch everything.
    */
   evaluate(expr, ctx) {
     if (expr === undefined || expr === null || expr === '') return undefined;

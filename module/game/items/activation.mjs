@@ -109,14 +109,14 @@ function stepsDealDamage(steps) {
 }
 
 /* -------------------------------------------- */
-/*  Authored envelope                           */
+/*  Activation settings                         */
 /* -------------------------------------------- */
 
 /**
- * The activation envelope: everything about an item's targeting, cost and delivery that the checks in this file
- * read, derived once from its authored data. The item projection (projections/items.mjs) builds it for the targeting
- * controls and engine/items/activation.mjs.
- * @param {object} input Plain Item facts plus the owner's system for use scaling.
+ * An item's targeting, cost and roll settings, read once from its data for the checks below, which call the result
+ * the envelope. foundry/adapters/projections/items.mjs builds it for the targeting controls and
+ * engine/items/activation.mjs.
+ * @param {object} input Plain Item data plus the owner's system, for range scaling.
  * @returns {object} Either the frozen `{ok: true, ...envelope}` or `{ok: false, code}`.
  */
 export function deriveActivationEnvelope(input = {}) {
@@ -199,8 +199,9 @@ export function deriveActivationEnvelope(input = {}) {
 }
 
 /**
- * An item's range after scaling, for deriveActivationEnvelope and projectLoadoutItem in the attack-targeting
- * projection. Scaling reads the authored range's leading number and returns a plain maximum, so it starts at 1.
+ * An item's range after scaling, for deriveActivationEnvelope and projectLoadoutItem in
+ * foundry/adapters/projections/attack-targeting.mjs. Scaling reads the authored range's leading number and returns
+ * a plain maximum, so it starts at 1.
  */
 export function evaluateActivationRange(ownerSystem, effectData = {}, item = null) {
   const authored = String(effectData.rng ?? '1');
@@ -223,7 +224,7 @@ export function explorationAllowsItem(item = {}) {
 /**
  * Check caster and item legality for engine/items/activation.mjs and the hotbar entry in ui/controls/targeting.mjs,
  * before target geometry.
- * @param {object} input Plain envelope and owner turn facts, plus `item` (the Item's projected facts) and
+ * @param {object} input The envelope and the owner's turn state, plus `item` (the Item's data) and
  *   `proficiencyTotal` (the caster's compiled total in the Item's `system.weapon.req` proficiency).
  * @returns {{ok: boolean, code: string, data?: object}} A Spell rank refusal names the school and rank.
  */
@@ -253,10 +254,11 @@ export function validateActivationLegality(input = {}) {
 
 /**
  * Whether a caster ranks high enough in a Spell's or activated staff's school to use it, for
- * validateActivationLegality and the attack-targeting projection. Like game/character/inventory.mjs for weapons, it
- * asks holdsProficiencyRank in game/progression/rules.mjs, so no school, "None" or rank 0 passes. Only Spells and
- * Staff (U) Equipment are checked here. An attack Staff is wielded, so the equipment and attack checks cover it.
- * @param {{item?: object, proficiencyTotal?: number}} input Plain Item facts and the caster's compiled total in the
+ * validateActivationLegality and foundry/adapters/projections/attack-targeting.mjs. Like
+ * game/character/inventory.mjs for weapons, it asks holdsProficiencyRank in game/progression/rules.mjs, so no
+ * school, "None" or rank 0 passes. Only Spells and Staff (U) Equipment are checked here. An attack Staff is wielded,
+ * so the equipment and attack checks cover it.
+ * @param {{item?: object, proficiencyTotal?: number}} input Plain Item data and the caster's compiled total in the
  *   Item's `system.weapon.req` proficiency.
  * @returns {{ok: boolean, proficiency?: string, rank?: number, rankLabel?: string, itemName?: string}}
  */
@@ -281,7 +283,7 @@ export function resolveSpellRank(input = {}) {
  * Check authored requirements for engine/items/activation.mjs.
  * Terrain predicates use the supplied placement resolver and refuse when it is unavailable.
  * @param {object} input Requirements, the Item's name, document type (`itemType`) and required proficiency, which
- *   decide whether Silence blocks the caster, the caster's derived facts, the derived targets, and optionally
+ *   decide whether Silence blocks the caster, the caster's derived data, the derived targets, and optionally
  *   `resolveTerrainGeometry`, which counts the placements a geometry predicate reaches.
  * @returns {{ok: boolean, code: string, data?: object}} A refusal names what failed for the player.
  */
@@ -325,7 +327,7 @@ export function validateActivationRequirements(input = {}) {
   });
 }
 
-/** The authored requirement list an activation Item carries, read from its projected facts. */
+/** The authored requirement list an activation Item carries, read from its data. */
 export function activationRequirements(itemFacts) {
   const requirements = itemFacts?.system?.requirements;
   return Array.isArray(requirements) ? requirements : [];
@@ -336,7 +338,7 @@ export function activationRequiredProficiency(itemFacts) {
   return String(itemFacts?.system?.weapon?.req ?? '');
 }
 
-/** Reduce one unit's projected square and footprint to the placement a geometry predicate reads. */
+/** A unit's square and footprint, in the shape a terrain requirement check reads. */
 export function requirementPlacement(unit) {
   if (!unit) return null;
   return {
@@ -363,8 +365,8 @@ export function activationRedirectsToGuarder({ subtype, targetType } = {}) {
  * scenery, admit Destructibles only for damaging items, and refuse a hostile direct pick on a unit under Sanctuary.
  * @param {object} envelope Derived activation envelope.
  * @param {string} sourceActorUuid Acting unit.
- * @param {object[]} targets Resolved target facts.
- * @param {object} [source] Acting unit's facts, needed by Items whose legality depends on the caster.
+ * @param {object[]} targets Resolved target data.
+ * @param {object} [source] Acting unit's data, needed by Items whose legality depends on the caster.
  * @returns {{ok: boolean, code: string}}
  */
 export function validateActivationTargets(envelope, sourceActorUuid, targets = [], source = null) {
@@ -406,8 +408,8 @@ export function validateActivationTargets(envelope, sourceActorUuid, targets = [
  * engine activation checks. Destructibles skip the faction check, and validateActivationTargets checks instead
  * whether the item can damage them.
  * @param {object} envelope Derived activation envelope.
- * @param {object|null} source The caster's projected facts.
- * @param {object} target One target's projected facts.
+ * @param {object|null} source The caster's data.
+ * @param {object} target One target's data.
  * @returns {boolean}
  */
 export function activationTargetFactionAllowed(envelope = {}, source = null, target = {}) {
@@ -431,10 +433,10 @@ function rallyTargetAllowed(source, target) {
 }
 
 /**
- * The cells an item can target, for ui/controls/targeting.mjs and the item projection. Lines are rays from the
- * footprint's edge, and a cone picks an adjacent direction. Area grids drop cells out of sight, while other grids
- * keep height-hidden cells and mark them for dimming.
- * @param {object} input Plain envelope, source position, Scene bounds, footprint, and detached sight facts.
+ * The cells an item can target, for ui/controls/targeting.mjs and foundry/adapters/projections/items.mjs. Lines are
+ * rays from the footprint's edge, and a cone picks an adjacent direction. Area grids drop cells out of sight, while
+ * other grids keep height-hidden cells and mark them for dimming.
+ * @param {object} input Plain envelope, source position, Scene bounds, footprint, and detached sight data.
  * @returns {{targetableCells: readonly object[], targetableKeys: ReadonlySet<string>,
  *   flyersOnlyKeys: ReadonlySet<string>}}
  */
@@ -456,10 +458,10 @@ export function buildActivationTargetingGrid(input = {}) {
 }
 
 /**
- * Validate reach before engine activation settlement, checking sight, height, then range.
+ * Validate reach before the activation is carried out, checking sight, height, then range.
  * Honor ignore-sight and free-targeting flags. Height blocks grounded targets only when every target
  * square is hidden from every caster square.
- * @param {object} input Plain source position, Scene bounds, footprint, sight facts, and target facts.
+ * @param {object} input Plain source position, Scene bounds, footprint, sight data, and target data.
  * @returns {{ok: boolean, code: string}}
  */
 export function validateActivationReach(input = {}) {
@@ -528,11 +530,11 @@ function meleeReachAbility(itemName) {
  * Check Shove, Retrieve and Swap for engine/items/activation.mjs and the activation click in
  * ui/controls/targeting.mjs. All three refuse an airborne target that melee can't reach, judged by
  * airborneBeyondMelee in game/targeting/attack-grid.mjs as for an attack. Shove and Retrieve then check each mover's
- * board. Shove pushes the target away, and Retrieve steps the caster back and pulls the target into the square it
- * left. Each needs a free square at the same height or lower, and a missing board refuses. Drops are resolved as
- * crossings. Swap's exchange of squares is left to its effect.
- * @param {object} input Plain envelope, source, target, the movement boards of both, and the `classicFlyers` and
- *   `flightForbidden` facts.
+ * movement data (`boards`). Shove pushes the target away, and Retrieve steps the caster back and pulls the target
+ * into the square it left. Each needs a free square at the same height or lower, and missing movement data refuses.
+ * Drops are resolved as crossings. Swap's exchange of squares is left to its effect.
+ * @param {object} input The envelope, source, target, the movement data of both, and the `classicFlyers` and
+ *   `flightForbidden` settings.
  * @returns {{ok: boolean, code: string, ability: string}}
  */
 export function validateForcedMovementSquare(input = {}) {
@@ -604,10 +606,10 @@ function forcedVerdict(ok, code, ability) {
 /* -------------------------------------------- */
 
 /**
- * The cells an aimed area covers, worked out from the aim cell rather than targets the client sent, for the item
- * projection. A cone starts at the footprint edge it faces. Sight is tested from the area's origin once the aim is
- * valid.
- * @param {object} input Plain envelope, source position, footprint, aim cell, Scene bounds, and sight facts.
+ * The cells an aimed area covers, worked out from the aim cell rather than targets the client sent, for
+ * foundry/adapters/projections/items.mjs. A cone starts at the footprint edge it faces. Sight is tested from the
+ * area's origin once the aim is valid.
+ * @param {object} input Plain envelope, source position, footprint, aim cell, Scene bounds, and sight data.
  * @returns {{ok: boolean, code: string, cells: ReadonlySet<string>, origin: object|null}}
  */
 export function deriveActivationArea(input = {}) {
@@ -651,10 +653,10 @@ export function activationAreaCells(input = {}) {
 }
 
 /**
- * Check ground occupancy for engine activation settlement only when Unoccupied Only is enabled.
+ * Check that the aimed square is free, when the item's Unoccupied Only setting is on.
  * @param {object} envelope Derived activation envelope.
  * @param {object} aim Aim cell.
- * @param {readonly object[]} units Detached board units.
+ * @param {readonly object[]} units The units on the map.
  * @param {string} sourceTokenUuid The acting unit, which never blocks its own placement.
  * @returns {{ok: boolean, code: string}}
  */
@@ -672,9 +674,10 @@ export function validateGroundPlacement(envelope, aim, units = [], sourceTokenUu
 }
 
 /**
- * The units an item's area or line catches, for the item projection. Ground placement catches no units, and a line
- * leaves out the caster. Scenery is left out, and Destructibles count only for an item that deals damage.
- * @param {object} input Plain envelope, covered cells, board units, and source facts.
+ * The units an item's area or line catches, for foundry/adapters/projections/items.mjs. Ground placement catches no
+ * units, and a line leaves out the caster. Scenery is left out, and Destructibles count only for an item that deals
+ * damage.
+ * @param {object} input The envelope, covered cells, units on the map, and the caster's data.
  * @returns {readonly object[]} The caught units.
  */
 export function deriveActivationTargets(input = {}) {
@@ -712,8 +715,8 @@ export function resolveActivationLine(input = {}) {
 }
 
 /**
- * Validate client-selected parameters against authored item choices before engine activation settlement.
- * @param {object} item Detached Item facts.
+ * Validate client-selected parameters against authored item choices before the activation runs.
+ * @param {object} item Detached Item data.
  * @param {object} params Parameters the request named.
  * @returns {{ok: boolean, code: string}}
  */
@@ -738,13 +741,14 @@ export function validateActivationParams(item = {}, params = {}) {
 }
 
 /* -------------------------------------------- */
-/*  Delivery outcomes                           */
+/*  Saves and checks                            */
 /* -------------------------------------------- */
 
 /**
- * Plan dice delivery for engine/items/activation.mjs. Destructibles automatically fail saves,
- * so they cause no roll, roll card, Willpower spend or save-effect consumption.
- * @param {object} input Plain envelope, faction facts, and whether the target is a Destructible.
+ * Decide which roll an activation needs (a target's save, the caster's skill check, or none) for
+ * engine/items/activation.mjs. Destructibles automatically fail saves, so they cause no roll, roll card,
+ * Willpower spend or save-effect consumption.
+ * @param {object} input The envelope, both factions, and whether the target is a Destructible.
  * @returns {{kind: string, autoSucceed: boolean, autoFail: boolean}}
  */
 export function resolveActivationDelivery(input = {}) {
@@ -776,8 +780,8 @@ export function resolveSaveAdvantage(input = {}) {
 }
 
 /**
- * Interpret the roll for activation settlement: a failed target save or successful caster check lands the effect.
- * @param {object} input Plain delivery kind and rolled outcome.
+ * Whether the effect lands after the roll: a failed target save or successful caster check lands it.
+ * @param {object} input The roll kind from resolveActivationDelivery and its result.
  * @returns {boolean}
  */
 export function resolveActivationLanded(input = {}) {
@@ -788,7 +792,7 @@ export function resolveActivationLanded(input = {}) {
 
 /**
  * Plan use consumption and depleted-item deletion for the Foundry activation writer.
- * @param {object} input Plain envelope and landing facts.
+ * @param {object} input The envelope and whether the effect landed.
  * @returns {{consume: boolean, remaining: number, destroy: boolean}}
  */
 export function resolveActivationConsumption(input = {}) {
@@ -806,8 +810,8 @@ export function resolveActivationConsumption(input = {}) {
 }
 
 /**
- * Build upfront activation cost writes. engine/items/activation.mjs spends a Standard Action through end-turn
- * settlement.
+ * The turn change written when an activation starts: only a Bonus Action is spent here. engine/items/activation.mjs
+ * spends a Standard Action later, when the turn ends.
  */
 export function resolveActivationActionSpend(actionType) {
   if (actionType === 'Bonus Action') return { 'system.turn.bonusActionAvailable': false };
@@ -817,7 +821,7 @@ export function resolveActivationActionSpend(actionType) {
 /**
  * Calculate the effect's landing percentage for the activation confirmation UI.
  * A save chance is inverted and a check chance used as it is. Exempt allies and Destructibles are certain.
- * @param {object} input Plain delivery kind and the built check plan's declared success chance.
+ * @param {object} input The roll kind and the check plan's declared success chance.
  * @returns {number|null} A whole percentage, or null when the item asks for no roll.
  */
 export function activationSuccessRate(input = {}) {
@@ -834,7 +838,7 @@ export function activationSuccessRate(input = {}) {
 /**
  * Select the presentation cinematic from item type and subtype for engine activation.
  * Utility staves cast and offensive staves attack. Mounts use their own flourish.
- * @param {object} item Plain Item facts.
+ * @param {object} item Plain Item data.
  * @returns {string|null} A cinematic category name.
  */
 export function activationCinematicCategory(item = {}) {
@@ -850,7 +854,7 @@ export function activationCinematicCategory(item = {}) {
 /**
  * Choose the token-art condition consumed by activation presentation: On Cast for Spells and casting
  * Equipment, otherwise the ability-use condition.
- * @param {object} item Plain Item facts.
+ * @param {object} item Plain Item data.
  * @returns {string} A conditional token art name.
  */
 export function activationCastCondition(item = {}) {
@@ -862,7 +866,7 @@ export function activationCastCondition(item = {}) {
 /**
  * Tell activation presentation whether to retain the pose through the effect sequence.
  * Ability-use poses always persist. On Cast persists when an authored entry waits on the token.
- * @param {object} input Plain Item facts and its authored entries.
+ * @param {object} input Plain Item data and its authored entries.
  * @returns {boolean}
  */
 export function activationHoldsCastArt(input = {}) {
@@ -871,13 +875,13 @@ export function activationHoldsCastArt(input = {}) {
 }
 
 /**
- * What the unit's turn does after an activation settles, for engine/items/activation.mjs. Dash keeps its movement
+ * What the unit's turn does after an activation, for engine/items/activation.mjs. Dash keeps its movement
  * plan, and a Bonus Action keeps the unit on its square with no movement. Other actions offer the Extra Action, then
  * Canter after a Spell or a staff (activationAllowsCanter), then end the turn, in the order resolveCombatContinuation
  * in game/combat/exchange.mjs uses after an attack. Multiattack only follows an attack.
- * @param {object} input Plain action cost and live turn facts, plus `cantersAfter`, `hasCanter` and the
+ * @param {object} input Plain action cost and live turn state, plus `cantersAfter`, `hasCanter` and the
  *   `movementRemaining` the walked leg left.
- * @returns {Readonly<object>} The continuation every settling client reads.
+ * @returns {Readonly<object>} The continuation every client reads.
  */
 export function resolveActivationContinuation(input = {}) {
   if (input.sourceDefeated === true) return turnContinuation(COMBAT_CONTINUATIONS.END_TURN);
@@ -917,7 +921,7 @@ export function mountActivationIntent(source = {}) {
 /**
  * Gate Mount activation in engine/items/activation.mjs against the scene's mount restriction.
  * Always allow dismounting so a unit can leave the saddle after a scene change.
- * @param {object} input Plain envelope and the rider's saddle and map facts.
+ * @param {object} input Plain envelope and the rider's mounted state and map settings.
  * @returns {{ok: boolean, code: string}}
  */
 export function validateMountActivation(input = {}) {
@@ -933,7 +937,7 @@ export function validateMountActivation(input = {}) {
 /**
  * The stat rows the Mount confirmation shows, leaving out unchanged stats. Mounting adds the mount's bonuses and
  * dismounting subtracts them. A formula attack changes only its number and keeps its dice.
- * @param {object} source Plain rider facts: attribute totals and the attack total as displayed.
+ * @param {object} source Plain rider data: attribute totals and the attack total as displayed.
  * @param {object} stats Authored mount stat bonuses.
  * @param {string} intent `mount` or `dismount`.
  * @returns {ReadonlyArray<object>}
@@ -989,7 +993,8 @@ function parseBoosterGrowths(text) {
 /**
  * The permanent gains a Booster gives, for engine/items/activation.mjs and the activation writer. Personal stats rise
  * within class caps, listed growths rise, and HP or Stn rise along with their maximum.
- * @param {object} input `item` facts plus the user's `progression` facts (stat halves, growth halves, cap totals).
+ * @param {object} input `item` data plus the user's `progression` data (stat base and class parts, growths, cap
+ *   totals).
  * @returns {object}
  */
 export function planBoosterGains(input = {}) {

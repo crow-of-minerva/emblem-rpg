@@ -1,9 +1,9 @@
 /** @layer ui/apps/sheets/item/editors */
 /*
  * The animation editor: the Sequencer steps an Item or an Armament Object plays for each slot and range. The field
- * tables below drive the step cards. Keys and value shapes the fields can't show stay in each card's Advanced JSON
- * box, so opening and saving the editor keeps authored data. openAnimationPayloadEditor reuses the same step list for
- * the animation on an effect step.
+ * tables below drive the step cards. Keys the fields don't cover, and values of a shape a field can't show, go in
+ * each card's Advanced JSON box. openAnimationPayloadEditor reuses the same step list for the animation on an
+ * effect step.
  */
 import {
   STEP_KINDS,
@@ -50,7 +50,8 @@ let _clipboard = null;
 /* -------------------------------------------- */
 
 /**
- * Map editor tabs to animation slots and ranges. Mount and dismount use activation melee and ranged slots.
+ * Map editor tabs to animation slots and ranges. Mount and dismount reuse the activation melee and ranged slots, so in
+ * an editor that shows both pairs, the Mount and Dismount tabs overwrite the Adjacent and Ranged ones on save.
  * @type {Record<string, object>}
  */
 const TAB_DEFINITIONS = {
@@ -97,8 +98,8 @@ function visibleTabKeysFor(item) {
 /* -------------------------------------------- */
 
 /**
- * Descriptor shorthands. `renderField` reads `label`, `tooltip` (a tooltips.mjs id) and `unit` from each, so a
- * table row names what the card shows and where its help text comes from.
+ * Shorthands for field descriptors. `renderField` reads `label`, `tooltip` (a tooltips.mjs id) and `unit` from
+ * each.
  */
 const ms = (name, label, placeholder, tooltip) => ({ name, label, type: 'number', unit: 'ms', placeholder, tooltip });
 const num = (name, label, placeholder, tooltip) => ({ name, label, type: 'number', placeholder, tooltip });
@@ -117,8 +118,8 @@ const COMMON_FIELDS = [
 ];
 
 /**
- * The fields on an effect step, used both to render and to read a card. `coveredKeys` lists the stored keys a
- * composite field handles, so they stay out of Advanced JSON.
+ * The fields on an effect step, used both to render and to read a card. `coveredKeys` lists the stored keys that a
+ * field made of several inputs handles, so they stay out of Advanced JSON.
  * @type {object[]}
  */
 const EFFECT_FIELDS = [
@@ -187,8 +188,8 @@ const TOKEN_ANIM_FIELDS = [
 ];
 
 /**
- * The field table for a step kind. An effect has no per-target field, since it already places itself per target
- * through its location reference, and offering both would be two ways to say one thing.
+ * The field table for a step kind. An effect's per-target box sits inside its at-location field, so the shared one
+ * is left out.
  */
 function fieldsForKind(kind) {
   switch (kind) {
@@ -218,9 +219,9 @@ const FIELD_STYLE = { numberStep: '0.01' };
 const KIND_LABELS = Object.freeze({ effect: 'Effect', sound: 'Sound', wait: 'Wait', tokenAnim: 'Token animation' });
 
 /**
- * The shared card list bound to this editor's step markup. Here a pane's cards are its model: a delete, duplicate or
- * drag moves the elements themselves and `reindex` renumbers them. So only the paint, read and single-card render
- * parts are used, and a card's collapsed state stays where the user left it.
+ * The shared card list bound to this editor's step markup. The cards in a pane are the data: a delete, duplicate or
+ * drag moves the elements themselves and `reindex` renumbers them. So only the drawing, reading and single-card
+ * rendering parts are used, and a card's collapsed state stays where the user left it.
  * @type {object}
  */
 const stepCards = createCardList({
@@ -401,9 +402,9 @@ function unparsedStepJson(paneEl) {
 }
 
 /**
- * The refusal line for one pane's unparsed Advanced JSON. Steps are numbered per pane, so a tab of the slot editor
- * is named by its label, with its slot in front where two tabs share the label, as attack Adjacent and activation
- * Adjacent do. Brackets in a label are dropped so the sentence stays plain.
+ * The save error for a pane's Advanced JSON boxes that aren't valid JSON. Steps are numbered per pane, so a tab of
+ * the slot editor is named by its label, with its slot in front where two tabs share the label, as attack Adjacent
+ * and activation Adjacent do. Brackets in a label are dropped so the sentence stays plain.
  */
 function stepJsonErrors(paneEl) {
   const tab = TAB_DEFINITIONS[paneEl.dataset.animPane];
@@ -452,7 +453,7 @@ function refreshStepJson(html) {
   else delete saveBtn.dataset.tooltip;
 }
 
-/** Read every step in a pane, in card order. The step reader ignores the `tabKey` it is passed. */
+/** Read every step in a pane, in card order. */
 function readStepsFromDom(paneEl, tabKey) {
   return stepCards.read(paneEl.querySelector('.ed-list'), { tabKey });
 }
@@ -506,7 +507,8 @@ function collectSlotPayloads(tabs, dialogEl) {
 
 /**
  * The update that writes these slots at `system.anim`, where an Item and an Armament Actor both keep them, with each
- * removed slot set to null. persistAnim applies it.
+ * removed slot set to null. persistAnim applies it. Each slot is an ObjectField, which Foundry merges into the stored
+ * value on update, so a key left out of the new slot (such as a cleared duration) keeps its old value.
  * @param {object} anim                   The slot payloads.
  * @returns {object}
  */
@@ -625,8 +627,8 @@ function classifyTargetingNeed(steps) {
 }
 
 /**
- * Wait for a click on a canvas square for the animation preview, and swallow the click before it selects a Token.
- * The point snaps to the cell center, and the listener is removed on timeout.
+ * Wait for a click on a canvas square for the animation preview. Foundry still handles the click as well. The point
+ * snaps to the cell center, and the listener is removed on timeout.
  * @returns {Promise<{x: number, y: number}|null>} The cell center, or null if nothing was clicked in time.
  */
 async function awaitCanvasClickPosition(timeoutMs) {
@@ -645,6 +647,8 @@ async function awaitCanvasClickPosition(timeoutMs) {
       ev.preventDefault();
       ev.stopPropagation();
 
+      // Scenes always have padding 0 (hooks/scene.mjs), so dividing by the grid size finds the square. This assumes
+      // the canvas starts at the window's top-left corner.
       const t = canvas.stage.worldTransform;
       const worldX = (ev.clientX - t.tx) / t.a;
       const worldY = (ev.clientY - t.ty) / t.d;

@@ -16,7 +16,10 @@ const SORT_LABELS = Object.freeze({ az: 'A-Z', cost: 'Cost', type: 'Type' });
 const SHOP_HEIGHT = 606;
 const CART_FOOTER_HEIGHT = 56;
 
-/** Each buyer's remembered shop: the mode it was left in, where it was selling from, and the basket. */
+/**
+ * Each buyer's remembered shop: the mode it was left in, where it was selling from, and the basket. It is kept per
+ * buyer, not per vendor, and lasts until the page reloads.
+ */
 const VENDOR_SHOP_STATE = new Map();
 
 /* -------------------------------------------- */
@@ -26,8 +29,8 @@ const VENDOR_SHOP_STATE = new Map();
 /**
  * Show a Vendor's shop with a basket remembered per buyer. openShopFor (ui/controls/interaction.mjs) opens it with
  * the api.economy.inspectShop view. Checkout sends the basket as one api.economy.vendorCheckout command, which the
- * host settles before posting the receipt. In free exploration the footer also offers Haggle (see haggle below). The
- * window stays open until the player closes it.
+ * host carries out before posting the receipt. In free exploration the footer also offers Haggle (see haggle
+ * below). The window stays open until the player closes it.
  * @param {object} view The economy query's shop view.
  * @param {{refresh?: Function}} [handlers] Re-reads the view, so the shop shows current stock, gold and prices after
  *   a checkout or a haggle.
@@ -81,7 +84,10 @@ function pinShopHeight(dialog, app) {
 /*  Shop state                                  */
 /* -------------------------------------------- */
 
-/** Start from the basket this buyer left behind, if any. pruneCart trims it to the listing once the body mounts. */
+/**
+ * Start from the basket this buyer left behind, if any. Once the body mounts, pruneCart drops the lines the listing
+ * no longer has.
+ */
 function restoreShopState(view) {
   const state = {
     mode: 'buy',
@@ -124,7 +130,7 @@ function settleSellSource(view, state) {
 /*  Shop view                                   */
 /* -------------------------------------------- */
 
-/** Map the shop projection and basket state into the vendor template. */
+/** Build the vendor template's data from the shop view and the basket. */
 function prepareShopView(view, state) {
   const buying = state.mode === 'buy';
   const source = sellSource(view, state);
@@ -482,7 +488,10 @@ function syncLine({ root, state }, itemId) {
   }
 }
 
-/** Reconcile a remembered basket with the listing: gone lines are dropped, counts clamped, the rest reflected. */
+/**
+ * Match a remembered basket to the listing: drop lines that are gone, cap each count at the line's limit when it has
+ * one, and show the rest.
+ */
 function pruneCart(shop) {
   const { state } = shop;
   for (const [itemId, quantity] of [...state.cart]) {
@@ -530,8 +539,8 @@ function updateFooter(shop) {
 /* -------------------------------------------- */
 
 /**
- * Send the basket as one api.economy.vendorCheckout command, which settles it line by line and posts the receipt to
- * chat. The basket is then cleared and the shop rebuilt, whatever the result.
+ * Send the basket as one api.economy.vendorCheckout command; the host carries it out line by line and posts the
+ * receipt to chat. The basket is then cleared and the shop rebuilt, whatever the result.
  */
 async function checkout(shop) {
   const { state, view } = shop;

@@ -26,7 +26,7 @@ const ACTOR_ID_PATTERN = /Actor\.([^.]+)$/;
 /*  Rank curve                                  */
 /* -------------------------------------------- */
 
-/** A rank forced into range, coerced so a value read straight off a document cannot poison the arithmetic. */
+/** Clamp a stored rank to the valid range; anything that isn't a number counts as unranked. */
 export function clampSupportRank(rank) {
   const value = Number(rank);
   const whole = Number.isFinite(value) ? Math.trunc(value) : SUPPORT_UNRANKED;
@@ -92,7 +92,7 @@ function supportActorIdFromUuid(uuid) {
  * Plan the source unit's whole support list after an XP grant, as one update, for settleSupportXpGrant in
  * engine/support/commands.mjs. Writing it partner by partner would let the writes overwrite each other. The
  * partners' own entries follow afterward through planSupportMirror.
- * @param {{source: object, others: object[], gain: number, autoCreate?: boolean}} input Detached grant facts.
+ * @param {{source: object, others: object[], gain: number, autoCreate?: boolean}} input Detached grant data.
  * @returns {{gain: number, partners: object[]|null, recipients: string[], rankUps: object[]}}
  */
 export function planSupportXpGrant({ source, others = [], gain, autoCreate = true }) {
@@ -132,7 +132,8 @@ export function planSupportXpGrant({ source, others = [], gain, autoCreate = tru
  * Plan the partners' side of a unit's bonds, for settleSupportMirror in engine/support/commands.mjs. The unit's own
  * list is the authority: each partner's entry for it is added, corrected or removed to match. Only the partner
  * lists that change are returned.
- * @param {{source: object, roster: object[]}} input The swept unit and every Character that could hold its bond.
+ * @param {{source: object, roster: object[]}} input The unit whose bonds changed and every Character that could
+ *   hold its bond.
  * @returns {{actorUuid: string, partners: object[]}[]}
  */
 export function planSupportMirror({ source, roster = [] }) {
@@ -196,9 +197,9 @@ function rallyRankBetween(partners, target) {
 }
 
 /**
- * The caster facts the Rally rules below read, from an activation source (projectActivationSource in
- * foundry/adapters/projections/items.mjs): its support facts, name and Actor uuid.
- * @param {object} source The caster's projected activation facts.
+ * The caster data the Rally rules below read, from an activation source (projectActivationSource in
+ * foundry/adapters/projections/items.mjs): its support data, name and Actor uuid.
+ * @param {object} source The caster's activation data.
  * @returns {{uuid: string, name: string, affinity?: string, partners?: object[], partyId?: string,
  *   rallies?: object[]}}
  */
@@ -209,8 +210,7 @@ export function rallyCasterFacts(source) {
 /**
  * The rank a Rally from the caster reaches this target at, or null when it can't. An earned bond gives its rank. A
  * unit in the caster's party without one is rallied at SUPPORT_UNRANKED, which prices the affinity's None tier. A
- * caster never reaches itself. Read by rallyTargetBlocker, settleRally (engine/items/activation.mjs), the Rally
- * preview in foundry/adapters/projections/items.mjs and the targeting badges in ui/controls/targeting.mjs.
+ * caster never reaches itself.
  * @param {{uuid?: string, partners?: object[], partyId?: string|null}} caster Unit calling the Rally.
  * @param {{uuid?: string, actorId?: string, partyId?: string|null}} target Unit being rallied.
  * @returns {number|null}
@@ -293,8 +293,7 @@ export function planRallyCount(rallies, actorUuid) {
 
 /**
  * The stat changes a Rally at this rank grants from the caster's affinity, leaving out stats that don't change.
- * SUPPORT_UNRANKED reads the None tier. Read by planRallyEffect, the Rally preview in
- * foundry/adapters/projections/items.mjs and the Character sheet.
+ * SUPPORT_UNRANKED reads the None tier.
  * @returns {Record<string, number>|null} Null when the affinity is not registered.
  */
 export function rallyStatBonuses(table, affinity, rank) {

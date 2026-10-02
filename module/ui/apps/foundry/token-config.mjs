@@ -6,7 +6,10 @@ import { reportFoundryError } from '../../../foundry/adapters/services/diagnosti
 /* -------------------------------------------- */
 /*  Token configuration                         */
 /* -------------------------------------------- */
-/** Token config tabs that mean nothing for an Object: it does not see, is not lit from within, and has no bars. */
+/**
+ * Token config tabs hidden for an Object: it does not see, is not lit from within, and has no bars. Foundry v14
+ * has only the vision, light and resources tabs; the other ids match nothing.
+ */
 const OBJECT_HIDDEN_TABS = Object.freeze([
   'vision', 'light', 'resources', 'detection', 'detectionModes', 'attributes'
 ]);
@@ -41,6 +44,10 @@ export function onRenderTokenConfig(application, html) {
 /* -------------------------------------------- */
 /*  Character tokens                            */
 /* -------------------------------------------- */
+/**
+ * Replace the token's size row with a Standard (1×1) / Large (2×2) select that fills hidden width and height
+ * inputs. The row's v14 Z (depth) field is removed with it.
+ */
 function replaceDimensionsWithSizeSelect(root, currentWidth, currentHeight) {
   const widthInput = root.querySelector('input[name="width"]');
   const group = widthInput?.closest('.form-group');
@@ -81,6 +88,7 @@ function stripObjectTokenConfig(root, actor) {
   }
   hideDynamicTokenRingSection(root);
   injectAltImageField(root, actor);
+  // If the image field wasn't there yet, try again on the next frame, after a short delay, and on each tab click.
   if (root.querySelector(`[${ALT_FIELD_MARKER}="1"]`)) return;
   const retry = () => injectAltImageField(root, actor);
   globalThis.requestAnimationFrame?.(retry);
@@ -90,6 +98,7 @@ function stripObjectTokenConfig(root, actor) {
   }
 }
 
+/** Found by its English legend text, so the section stays visible when Foundry runs in another language. */
 function hideDynamicTokenRingSection(root) {
   for (const legend of root.querySelectorAll('legend')) {
     if (legend.textContent?.trim() !== 'Dynamic Token Ring') continue;
@@ -99,6 +108,10 @@ function hideDynamicTokenRingSection(root) {
   }
 }
 
+/**
+ * Add the Object's alt image path under its texture. The path is saved to the actor as soon as it changes, not
+ * with the form, so the config's Cancel does not undo it.
+ */
 function injectAltImageField(root, actor) {
   const source = root.querySelector('[name="texture.src"]');
   const container = source?.closest('.form-group') ?? source?.closest('fieldset') ?? source?.parentElement;

@@ -40,7 +40,7 @@ export function readPartyState() {
 }
 
 /* -------------------------------------------- */
-/*  Membership facts                            */
+/*  Membership                                  */
 /* -------------------------------------------- */
 /**
  * The ids of the non-GM users who own an actor, in world user order. GMs are left out because a GM owns everything,
@@ -63,11 +63,10 @@ export function projectOwnershipLevel(ownership, userId) {
 }
 
 /**
- * The party an actor belongs to: the party of the first owning player who is in one. Read by the character sheet,
- * FoundryActorRepository, the sight pool (projectPartySightFacts in vision.mjs) and the Rally facts in items.mjs
- * and board.mjs.
+ * The party an actor belongs to: the party of the first owning player who is in one. Ownership through the
+ * "All Players" default counts.
  * @param {Actor} actor The unit.
- * @param {PartyState} [state] Party state already read, so a caller projecting many units reads the setting once.
+ * @param {PartyState} [state] Party state already read, so a caller checking many units reads the setting once.
  * @returns {string|null} Party id, or null when no owning player is assigned to one.
  */
 export function projectActorPartyId(actor, state = readPartyState()) {

@@ -23,9 +23,8 @@ export function objectIsNameOnlyFixture(objectType) {
 }
 
 /**
- * Whether an Object subtype is set aside (bracketed) while its feature is still in development.
- * `resolveInteractionTarget` drops a bracketed fixture before classifying anything, and
- * `ui/apps/sheets/object/sheet.mjs` shows a notice in place of its authoring fields.
+ * Whether an Object subtype is switched off ("bracketed") because its feature isn't finished.
+ * `resolveInteractionTarget` skips it, and its sheet shows a notice in place of its authoring fields.
  * @param {string} objectType The Actor's `system.objectType`.
  * @returns {boolean}
  */
@@ -45,8 +44,8 @@ export function objectSubtypeBracketed(objectType) {
 export const TARGET_KINDS = Object.freeze({ UNIT: 'unit', DESTRUCTIBLE: 'destructible', SCENERY: 'scenery' });
 
 /**
- * Classify Actor facts for Foundry targeting projections and game/ target validation. A hidden fixture
- * (fixtureHidden) is scenery, so a hidden Destructible can't be struck.
+ * Classify an Actor for targeting. A hidden fixture (fixtureHidden) is scenery, so a hidden Destructible can't be
+ * struck.
  * @param {{documentType?: string, objectType?: string, hidden?: boolean}} facts The Actor's `type`, its
  *   `system.objectType`, and whether its Token is hidden.
  * @returns {string} One of `TARGET_KINDS`.
@@ -90,7 +89,10 @@ export function fixtureHiddenFromMovement(facts = {}) {
 /* -------------------------------------------- */
 /*  Lock rules                                  */
 /* -------------------------------------------- */
-/** The lockpicking difficulty of a Chest or Door, falling back to the middling default. */
+/**
+ * The lockpicking difficulty of a Chest or Door. A missing or non-numeric value falls back to 10, but null or an
+ * empty string reads as 0, which makes the lock key-only.
+ */
 export function objectLockDifficulty(difficultyClass) {
   const difficulty = Number(difficultyClass);
   return Number.isFinite(difficulty) ? difficulty : 10;
@@ -127,9 +129,8 @@ function planDoorSightWalls(footprint = {}) {
 }
 
 /**
- * Plan the door-wall writes for reconcileDoorSight in engine/board.mjs: a box for each locked door and none for an
- * unlocked one. A box that still matches is kept, a moved or resized one is rebuilt, and walls whose door is gone are
- * removed.
+ * Plan the door-wall writes: a box for each locked door and none for an unlocked one. A box that still matches is
+ * kept, a moved or resized one is rebuilt, and walls whose door is gone are removed.
  * @param {object} board The Scene's doors and its already-tagged walls, each with its coordinates.
  * @returns {{build: object[], removeTokenIds: string[], orphanWallIds: string[]}}
  */
@@ -181,7 +182,7 @@ function cellsOverlap(left = [], right = []) {
   return right.some(cell => keys.has(cellKeyOf(cell)));
 }
 
-/** Build the orthogonal interaction-pick ring used by ui/controls/interaction.mjs. */
+/** The squares orthogonally next to a unit's footprint: the ring the interaction pick offers. */
 export function interactionPickCells(unitCells = []) {
   const own = new Set(unitCells.map(cell => `${cell.x},${cell.y}`));
   const ring = new Map();
@@ -202,8 +203,8 @@ export function cellsAdjacent(left = [], right = []) {
 }
 
 /**
- * The doors on a unit's interaction-pick ring, for ui/controls/interaction.mjs. Only a door the unit is known to see
- * counts, so unknown sight leaves it out, and a hidden door isn't there at all.
+ * The doors on a unit's interaction-pick ring, open ones included. Only a door the unit is known to see counts, so
+ * unknown sight leaves it out, and a hidden door isn't there at all.
  */
 export function doorsOnPickRing(unitCells = [], objects = [], doorVisible = () => true) {
   const ring = interactionPickCells(unitCells);
@@ -239,8 +240,8 @@ export function doorSightLine({ unitCells = [], doorCells = [], gridSize = 0 } =
 }
 
 /**
- * Whether any of the Scene's wall segments crosses doorSightLine's ray, for foundry/adapters/projections/vision.mjs.
- * Collinear walls do not cross the ray. A missing ray counts as blocked, so unknown sight never grants access.
+ * Whether any of the Scene's wall segments crosses doorSightLine's ray. Collinear walls do not cross the ray. A
+ * missing ray counts as blocked, so unknown sight never grants access.
  * @param {{line: object, walls: number[][]}} input The sight line, and wall segments as `[x0, y0, x1, y1]`.
  * @returns {boolean}
  */
@@ -250,7 +251,7 @@ export function doorSightBlocked({ line = null, walls = [] } = {}) {
     { x: wall[0], y: wall[1] }, { x: wall[2], y: wall[3] }));
 }
 
-/** Whether two segments properly cross. Collinear segments do not count. */
+/** Whether two segments cross. Touching at an end point counts; collinear segments do not. */
 function segmentsCross(a, b, c, d) {
   const side = (p, q, r) => Math.sign(((q.x - p.x) * (r.y - p.y)) - ((q.y - p.y) * (r.x - p.x)));
   const first = side(a, b, c);
@@ -264,12 +265,13 @@ function segmentsCross(a, b, c, d) {
 /* -------------------------------------------- */
 
 /**
- * Choose the interaction offered by ui/controls/interaction.mjs. Hidden fixtures and bracketed subtypes are dropped
- * first, and so are the exploration-only subtypes outside free exploration, so a unit standing on one finds nothing.
- * Check Armament outside exploration, then station, loose loot, chest and adjacent visible doors. Doors require
- * confirmed sight, and every other interaction requires standing on the fixture.
- * @param {{unitCells: object[], objects: object[], exploring?: boolean, doorVisible?: Function}} input Placed Object
- *   facts with footprints, and whether the acting unit sees a given Door: true, false, or null when unknown.
+ * Choose what Interact offers. Hidden fixtures and switched-off subtypes are dropped first, and so are the
+ * exploration-only subtypes outside free exploration, so a unit standing on one finds nothing.
+ * Check Armament outside exploration, then station, loose loot, chest and visible locked doors touching the unit,
+ * diagonals included (the door pick that follows offers only orthogonal squares). Doors require confirmed sight, and
+ * every other interaction requires standing on the fixture.
+ * @param {{unitCells: object[], objects: object[], exploring?: boolean, doorVisible?: Function}} input The placed
+ *   Objects with their footprints, and whether the acting unit sees a given Door: true, false, or null when unknown.
  * @returns {{kind: string, object: object|null, doors: object[]}}
  */
 export function resolveInteractionTarget({ unitCells = [], objects = [], exploring = false, doorVisible = () => true }) {
@@ -298,12 +300,12 @@ export function resolveInteractionTarget({ unitCells = [], objects = [], explori
 const LOCKPICK_ENERGY_COST = 1;
 
 /**
- * Plan lock opening for engine/objects/interaction.mjs from fresh projected facts.
+ * Plan opening a lock.
  * Check sight before revealing lock state or spending costs. A key opens the lock outright, while Locktouch
  * requires a pickable lock and a roll. Encounter attempts also require an available action. A Locktouch attempt in
- * free exploration is an Energy-lane act (energyLaneBlock in game/downtime/rules.mjs), so a unit that took its
- * Downtime Action or has no Energy left is refused with the reason in `blocked`.
- * @param {object} facts Lock and unit facts. `visible` is true only when the unit is known to see the lock, and
+ * free exploration costs Energy (energyLaneBlock in game/downtime/rules.mjs), so a unit that took its Downtime
+ * Action or has no Energy left is refused with the reason in `blocked`.
+ * @param {object} facts The lock and the unit. `visible` is true only when the unit is known to see the lock, and
  *   `downtime` holds the unit's `commitment` and `energy` while exploring.
  * @returns {{ok: boolean, code?: string, blocked?: string, consumesKey?: boolean, rollsCheck?: boolean,
  *   energyCost?: number}}
@@ -331,9 +333,9 @@ export function planLockOpening(facts) {
 /* -------------------------------------------- */
 
 /**
- * Validate Armament use for engine/objects/interaction.mjs. Require overlap, an unmounted wielder,
- * the proficiency rank and usable durability. Free Exploration forbids firing.
- * @param {object} facts Unit and Armament facts.
+ * Validate Armament use. Require overlap, an unmounted wielder, the proficiency rank and usable durability. Free
+ * Exploration forbids firing.
+ * @param {object} facts The unit and the Armament.
  * @returns {{ok: boolean, code?: string}}
  */
 export function planArmamentWield(facts) {
@@ -377,7 +379,7 @@ export function isDroppableItem(item) {
   return DROPPABLE_ITEM_TYPES.has(String(item?.type ?? '')) && item?.innate !== true;
 }
 
-/** Validate item drops for engine/objects/interaction.mjs. Discard requires only a droppable item. */
+/** Validate an item drop. Discard requires only a droppable item. */
 export function planItemDrop(facts) {
   if (!facts.item) return refusal(RESULT_CODES.DROP_UNAVAILABLE);
   if (!isDroppableItem(facts.item)) return refusal(RESULT_CODES.DROP_ITEM_REFUSED);
@@ -401,10 +403,7 @@ export function defeatedLootPayloads(items = []) {
   return items.filter(item => item.stealableFlag === 'Drops' && item.isEquipped !== true && isDroppableItem(item));
 }
 
-/**
- * The odds band, as a CSS class, that the lock offer (engine/objects/interaction.mjs) and the crossing offers colour
- * a success chance with.
- */
+/** The odds band, as a CSS class, that lock and crossing offers colour a success chance with. */
 export function successChanceBand(successPercent) {
   const failure = 100 - successPercent;
   if (failure >= 56) return 'low-chance';
@@ -425,7 +424,10 @@ const ART_ROOT = `systems/${SYSTEM_ID}/assets`;
 /** A fully transparent sprite, for an Object that must hold a square while showing nothing. */
 const EMPTY_ART = `${ART_ROOT}/ui/empty.png`;
 
-/** The animated glint a Gathering Node shows where JB2A is installed. Without JB2A the node is unmarked. */
+/**
+ * The animated glint a Gathering Node shows where the JB2A Patreon module (`jb2a_patreon`) is active. Without it,
+ * free JB2A included, the node is unmarked.
+ */
 const GATHERING_NODE_GLINT =
   'modules/jb2a_patreon/Library/Generic/Item/GlintFew01_01_Regular_Yellow_200x200.webm';
 
@@ -477,9 +479,8 @@ function objectArtState(facts = {}) {
 }
 
 /**
- * The art a subtype seeds, for foundry/adapters/document-writes/objects.mjs. A field is written only while it is
- * unset, Foundry's placeholder or an earlier default, so art a GM chose survives a subtype change. A dropped loot bag
- * keeps the art its contents gave it.
+ * The art a subtype seeds. A field is written only while it is unset, Foundry's placeholder or an earlier default,
+ * so art a GM chose survives a subtype change. A dropped loot bag keeps the art its contents gave it.
  * @param {object} facts The Object's current art and subtype.
  * @returns {object} Dot-path writes, empty when nothing needs seeding.
  */
@@ -504,8 +505,8 @@ export function objectArtDefaults(facts = {}, objectType = '') {
 }
 
 /**
- * Seed a Convoy's own art, for the Convoy creation and update handlers in foundry/hooks/objects.mjs, only where it
- * still carries Foundry's placeholder or nothing at all. A portrait the owner chose is never replaced.
+ * Seed a Convoy's own art, only where it still carries Foundry's placeholder or nothing at all. A portrait the owner
+ * chose is never replaced.
  * @param {{img?: string, prototypeSrc?: string, placeholderArt?: string}} facts The Convoy's current art.
  * @returns {object} Dot-path writes, empty when the Convoy already shows art of its own.
  */
@@ -537,8 +538,7 @@ export function objectScaleDefaults(currentScaleX, objectType = '') {
 }
 
 /**
- * Choose the texture, scale and tint an Object's token shows, for the writers in
- * foundry/adapters/document-writes/objects.mjs and tokens.mjs. Portrait art wins over prototype art, then the
+ * Choose the texture, scale and tint an Object's token shows. Portrait art wins over prototype art, then the
  * subtype's state art applies. A null scale keeps the prototype's. A state with no tint takes the prototype's tint,
  * then white.
  * @param {object} facts The Object's art fields, subtype and state.

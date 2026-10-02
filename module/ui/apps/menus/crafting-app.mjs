@@ -40,13 +40,14 @@ const KIND_NAMES = Object.freeze({ weapon: 'weapon', armor: 'armor', staff: 'sta
 /*  Crafting menu                               */
 /* -------------------------------------------- */
 /**
- * Show a Workshop's or Laboratory's jobs and the units that can work them. interactWithStation
- * (ui/controls/interaction.mjs) opens it with the api.downtime.inspectCrafting view. On submit the window closes and
- * one api.downtime.forge or api.downtime.brew command runs, which rolls the check and applies the result.
+ * Show a Workshop's or Laboratory's jobs and the units that can work them, from the api.downtime.inspectCrafting
+ * view. The button sends one api.downtime.forge or api.downtime.brew command, which rolls the check and applies the
+ * result. A refusal made on this client, such as a busy host or a paused table, leaves the window open with the
+ * picks; otherwise the window closes while the host runs the command.
  * @param {object} view The downtime query's crafting view.
  * @param {{refresh?: Function}} [handlers] Re-reads the view before the window is rebuilt.
- * @returns {Promise<boolean>} Always false in practice: the window closes before the command answers, and the caller
- *   ignores the value.
+ * @returns {Promise<boolean>} Resolves when the window closes, which is before the command answers, so the value
+ *   does not report the outcome.
  */
 export async function openCraftingMenu(view, { refresh = null } = {}) {
   if (menuShown(WINDOW_CLASS)) return false;
@@ -317,7 +318,10 @@ function yieldBands(dc, critMargin) {
   ]);
 }
 
-/** Where the first brewed copy would go, worked out by planBrewDelivery, the plan the brew command delivers with. */
+/**
+ * Where the first brewed copy would go, worked out by planBrewDelivery, the plan the brew command delivers with.
+ * `performer.reach` lists the unit first and the Convoy in its reach, if any, second.
+ */
 function brewDelivery(performer) {
   const limit = Number(performer.pocketLimit);
   const plan = planBrewDelivery({
@@ -373,7 +377,7 @@ function selectSubject(menu, row) {
   void rerenderMenu(menu);
 }
 
-/** Close the window, then send the forge or brew command with the chosen crafter and item or recipe. */
+/** Send the forge or brew command with the chosen crafter and item or recipe. */
 async function beginCrafting(menu) {
   const { view, state } = menu;
   const prepared = prepareCraftingView(view, state);

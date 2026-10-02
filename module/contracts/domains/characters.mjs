@@ -42,8 +42,8 @@ export const GROWTH_KEYS = Object.freeze(['hp', 'mgt', 'agi', 'tqn', 'wit', 'cha
 const STAT_LEAVES = Object.freeze(['base', 'class', 'item', 'passive', 'mod', 'penalty', 'aura']);
 
 /**
- * Allow modifiers to write only mod and penalty. Character preparation derives the other stat components and would
- * overwrite them.
+ * The stat components a modifier may write by name (plus `override` on a formula stat). Character preparation
+ * works out the others and would overwrite them. A bare stat name such as `mgt` writes the `passive` component.
  */
 const WRITABLE_STAT_LEAVES = Object.freeze(['mod', 'penalty']);
 
@@ -114,7 +114,7 @@ export const REGISTERED_STATUS_KEYS = Object.freeze(
 
 /**
  * Passive capabilities items or effects grant, set under `combat` on the unit. Most are combat rules, but movement,
- * board, token and audio code read Levitation too.
+ * map, token and audio code read Levitation too.
  */
 const COMBAT_FLAGS = Object.freeze([
   { key: 'canter', label: 'Canter' },
@@ -464,7 +464,7 @@ function combatFactEntries() {
   ];
 }
 
-/** Every name an author can use, in one flat list. The name is also the path into a unit's facts. */
+/** Every name an author can use, in one flat list. The name is also the path a condition reads the value from. */
 const VOCABULARY = Object.freeze([
   ...identityEntries(),
   ...resourceEntries(),
@@ -481,7 +481,10 @@ const VOCABULARY = Object.freeze([
   ...statLeafEntries()
 ].map(entry => Object.freeze(entry)));
 
-/** Lookup by authored name. @type {ReadonlyMap<string, object>} */
+/**
+ * Lookup by authored name. Treat it as read-only: freezing a Map doesn't block set or delete.
+ * @type {ReadonlyMap<string, object>}
+ */
 export const VOCABULARY_BY_NAME = Object.freeze(new Map(VOCABULARY.map(entry => [entry.name, entry])));
 
 /** Writable names mapped to the schema path each reaches. @type {ReadonlyMap<string, string>} */
@@ -491,7 +494,7 @@ const WRITABLE_TARGETS = Object.freeze(new Map(
 
 /**
  * Resolve an authored modifier target to the schema path it writes.
- * @param {string} name Authored name, e.g. `atk` or `mgt.penalty`.
+ * @param {string} name Authored name, e.g. `atk` or `stats.mgt.penalty`.
  * @returns {string|null} Schema path under `system`, or null when the name is not writable.
  */
 export function resolveTarget(name) {

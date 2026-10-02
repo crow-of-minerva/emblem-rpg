@@ -43,11 +43,10 @@ const OBJECT_FIXTURE_TYPES = Object.freeze([
 /*  Unit occupancy                              */
 /* -------------------------------------------- */
 /**
- * Whether the moving unit may pass through another unit, and whether that unit's square is taken for landing. The
- * movement projection (foundry/adapters/projections/movement.mjs) sorts the board's units into buildMovementGraph's
- * blocked and occupied cells with it, and projections/board.mjs asks it for landing alone. Each unit's `airborne` is
- * the fact projectMovementUnit reads with isAirborneActor. A hidden fixture neither blocks nor takes a square, except
- * a hidden Destructible, which still blocks (fixtureHiddenFromMovement in game/objects/rules.mjs).
+ * Whether the moving unit may pass through another unit's square, and whether that square is taken so the unit
+ * cannot stop there. Allies can be passed, and so can any unit at a different height: a flier passes over a ground
+ * unit and the other way round. A hidden fixture neither blocks nor takes a square, except a hidden Destructible,
+ * which still blocks.
  */
 export function resolveMovementOccupancy(moving, other) {
   const occupiesLanding = unitOccupiesLanding(other);
@@ -72,12 +71,12 @@ export function resolveMovementOccupancy(moving, other) {
 /*  Landing                                     */
 /* -------------------------------------------- */
 /**
- * Whether an obstacle lies under a footprint, which makes its square one a flier cannot land on. The flight action
- * in engine/movement/commands.mjs refuses to land there. A stance break lands a flier there anyway and strands it.
+ * Whether an obstacle lies under a footprint, so a flier cannot land there. Only a stance break sets a flier down on
+ * one anyway.
  * @param {{x: number, y: number}} anchor The footprint's top-left square.
  * @param {{width?: number, height?: number}} [footprint] Its size in squares.
- * @param {Array<{x: number, y: number}>} [obstacles] The Scene's obstacle squares, as a movement snapshot's
- *   `terrainOcclusionCells` carries them.
+ * @param {Array<{x: number, y: number}>} [obstacles] The Scene's obstacle squares (`terrainOcclusionCells` in the
+ *   unit's movement data).
  * @returns {boolean}
  */
 export function landingBlocked(anchor, footprint, obstacles) {
@@ -94,9 +93,8 @@ export function landingBlocked(anchor, footprint, obstacles) {
 }
 
 /**
- * Whether the square a movement snapshot has its unit standing on now is one a flier cannot land on, the test every
- * forced landing is refused by (planForcedLanding in input-policy.mjs).
- * @param {object|null} movement Movement snapshot: `current`, `footprint` and `terrainOcclusionCells`.
+ * Whether the unit is standing over an obstacle right now, a square a flier cannot land on.
+ * @param {object|null} movement The unit's movement data: `current`, `footprint` and `terrainOcclusionCells`.
  * @returns {boolean}
  */
 export function standsOverObstacle(movement) {
@@ -105,13 +103,12 @@ export function standsOverObstacle(movement) {
 }
 
 /**
- * Whether a unit is stranded on the square it stands on: a stance break grounded it (the `groundedByStanceBreak`
- * fact the movement snapshot reads off its Actor), it is still a flier on the ground, and an obstacle is under it.
- * It takes no move of its own until it takes off, so buildMovementGraph gives it no steps and the movement commands
- * refuse to move it. A push, a swap or an effect's placement is not its own move and ignores this.
- * @param {object} source Movement snapshot: `groundedByStanceBreak`, `flying`, `airborne`, `footprint` and
+ * Whether a unit is stuck where it stands: a stance break knocked a flier to the ground (`groundedByStanceBreak`)
+ * while it was over an obstacle. It cannot move on its own until it takes off again, so buildMovementGraph gives it
+ * no steps. A push, a swap or an effect that places it still moves it.
+ * @param {object} source The unit's movement data: `groundedByStanceBreak`, `flying`, `airborne`, `footprint` and
  *   `terrainOcclusionCells`.
- * @param {{x: number, y: number}} [anchor] The square it stands on, or the snapshot's plan anchor when none is named.
+ * @param {{x: number, y: number}} [anchor] The square it stands on. Defaults to `source.start`.
  * @returns {boolean}
  */
 export function movementStranded(source = {}, anchor = source.start) {
@@ -125,24 +122,28 @@ export function movementStranded(source = {}, anchor = source.start) {
 /*  Public pathfinding                          */
 /* -------------------------------------------- */
 /**
- * Build the weighted graph used by movement previews, engine validation and planning modules.
+ * Build the movement graph used by movement previews, move validation and the Enemy AI. It is a cheapest-first
+ * (Dijkstra) search over 4-way steps, ordered by route (movement cost plus any `cellPenalties`) and stopped at the
+ * unit's allowance in movement cost. For a token larger than one square, a step costs the most expensive square under
+ * the new footprint, and walls are tested on each footprint square's centre-to-centre line.
  * Teleport edges are opt-in: the normal player grid stops at the pad until the player activates it.
- * Only movement-priced pads can be represented as graph edges. A unit stranded where the search starts
- * (movementStranded) keeps its own square and nothing more, with no allowance left for a crossing.
- * @param {object} source Plain Scene and unit projection.
+ * Only pads that cost movement can become graph edges. A unit stuck where the search starts (movementStranded)
+ * keeps its own square and nothing more, with no movement left for a crossing.
+ * @param {object} source The map's terrain and the unit's movement data.
  * @param {object} [options]
  * @param {boolean} [options.teleports] Whether movement-cost pads become edges of the graph.
- * @param {{x: number, y: number}|null} [options.start] Search from this square instead of the snapshot's anchor.
+ * @param {{x: number, y: number}|null} [options.start] Search from this square instead of the unit's `start`.
  * @param {number|null} [options.allowance] Reach to search to, `Infinity` included, instead of the unit's own.
- * @param {object|null} [options.cellPenalties] A surcharge, by cell key, added to the route cost (not the movement
- *   cost) of entering a cell.
+ * @param {object|null} [options.cellPenalties] A surcharge, by cell key, added to the route cost of entering a cell.
+ *   It is meant to steer the route only, but since each square keeps its cheapest route, a penalty can also hide
+ *   squares near the edge of the allowance and raise the cost reported for others.
  * @param {boolean} [options.attackReach] Whether the attack reach is measured. False leaves both tile lists empty.
  * @param {boolean} [options.keyboardDiagonals] Whether the diagonal keyboard steps are listed. False leaves
  *   `diagonalStepKeys` empty for a reader that never moves the unit by key, such as the threat overlay's reach.
  * @param {boolean} [options.reverse] Search toward `start` instead of away from it. Every step and teleport is taken
  *   against its direction, so a cell's cost and route are what walking from it to `start` costs, its parent is the
  *   next square on that walk, and the placements are the squares `start` can be reached from. `start` is a goal
- *   here, not where the unit stands, so being stranded is not checked.
+ *   here, not where the unit stands, so the stuck-unit check is skipped.
  * @returns {object} Serializable graph with legal destinations and route metadata.
  */
 export function buildMovementGraph(source, {
@@ -260,19 +261,19 @@ export function buildMovementGraph(source, {
 }
 
 /**
- * Resolve the cost and shortest legal route checked by engine/movement/commands.mjs before committing a
- * destination.
+ * The cost and shortest legal route to a square the unit can end its move on.
  * @param {object} graph Graph returned by {@link buildMovementGraph}.
- * @param {object} destination Grid anchor.
- * @returns {object|null} Resolution, or `null` when the anchor is not a legal landing.
+ * @param {object} destination The footprint's top-left square.
+ * @returns {object|null} Resolution, or `null` when the unit cannot stop there.
  */
 export function resolveMovementDestination(graph, destination) {
   return resolveRoute(graph, destination, graph.destinations);
 }
 
 /**
- * The landing test the graph applies to a placement, judged where the footprint stands with no walk implied.
- * @param {object} source Plain Scene and unit projection.
+ * The test the graph uses for whether a footprint may stop on a square, judged on that square alone with no walk
+ * to it.
+ * @param {object} source The map's terrain and the unit's movement data.
  * @returns {(anchor: {x: number, y: number}, footprint: {width: number, height: number}) => boolean}
  */
 export function standingLegality(source = {}) {
@@ -310,7 +311,7 @@ export function resolveSettledStanding(walked, movement) {
 /**
  * Resolve a movement UI preview, including friendly-occupied cells that cannot be committed as destinations.
  * @param {object} graph Graph returned by {@link buildMovementGraph}.
- * @param {object} destination Grid anchor.
+ * @param {object} destination The footprint's top-left square.
  * @returns {object|null} Preview resolution, or `null` outside the movement graph.
  */
 export function resolveMovementPreview(graph, destination) {
@@ -318,8 +319,8 @@ export function resolveMovementPreview(graph, destination) {
 }
 
 /**
- * Route a movement preview from the temporary Token position, for ui/controls/drag-route.mjs. `cost` stays relative
- * to the committed anchor, and `routeCost` measures only this temporary route.
+ * Route a movement preview from where the token is being dragged. `cost` is still counted from the square the move
+ * started on, and `routeCost` measures only this route.
  */
 export function resolveMovementPreviewFrom(graph, start, destination) {
   const origin = normalizePoint(start);
@@ -367,7 +368,7 @@ export function resolveMovementPreviewFrom(graph, start, destination) {
   });
 }
 
-/** Whether two adjacent preview anchors share a legal directed movement edge. */
+/** Whether a legal step leads from one square to the adjacent one, in that direction. */
 function canTraverseMovementStep(graph, from, to) {
   const start = normalizePoint(from);
   const destination = normalizePoint(to);
@@ -420,7 +421,7 @@ export function remainingMovement(total, spent) {
   return Math.max(0, finiteNumber(total) - Math.max(0, finiteNumber(spent)));
 }
 
-/** The reach a unit's graph is built to: nothing for an open plan whose movement is spent, its allowance otherwise. */
+/** The reach a unit's graph is built to: zero while it plans a move with no movement left, its allowance otherwise. */
 function movementReach(source = {}) {
   if (source.allowance === Infinity) return Infinity;
   if (source.movementPlanning === true && source.movementAvailable === false && source.exploring !== true) return 0;
@@ -433,7 +434,7 @@ function movementReach(source = {}) {
 /**
  * Tell threat and planning prefilters whether distance bounds movement cost.
  * Free cells and paired movement-priced teleports break that bound, so distant units cannot be pruned safely.
- * @param {object} source Plain Scene and unit projection.
+ * @param {object} source The map's terrain.
  * @returns {boolean}
  */
 export function terrainBoundsTravelByDistance(source = {}) {
@@ -442,9 +443,8 @@ export function terrainBoundsTravelByDistance(source = {}) {
 
 /**
  * The teleports that cost movement, which a distance prefilter must count as shortcuts. Null when the map has free
- * cells, since then distance limits nothing. Pass the scene's plain terrain, not a unit's version of it: an extra
- * shortcut only makes the prefilter skip less.
- * @param {object} source Plain terrain: `terrainCosts` and `terrainTeleports`.
+ * cells, since then distance limits nothing.
+ * @param {object} source The map's own terrain, not one unit's view of it: `terrainCosts` and `terrainTeleports`.
  * @returns {ReadonlyArray<{x: number, y: number, exit: {x: number, y: number}, cost: number}>|null}
  */
 export function travelShortcuts(source = {}) {
@@ -497,8 +497,8 @@ export function shortcutTravelDistance(from, to, shortcuts = []) {
 }
 
 /**
- * Build teleport edges for buildMovementGraph. Exclude action- and bonus-priced pads because their
- * turn costs need engine settlement. Restricted pads remain walkable but cannot be activated.
+ * Build teleport edges for buildMovementGraph. Pads that cost an action or a bonus action are left out, since only
+ * the teleport command can charge those. Pads barred to this unit stay walkable but give no edge.
  */
 function teleportEdges(input, blocked, occupied) {
   const edges = new Map();
@@ -524,10 +524,10 @@ function teleportPadsByExit(edges) {
 }
 
 /**
- * Check a teleport destination for buildMovementGraph using standing rules, not walked edges.
- * Ignore crossed walls and heights but require a uniform floor under the landing footprint. A unit on the landing
- * footprint, ally or not, drops the edge, because the teleport command (useTeleport in engine/movement/commands.mjs)
- * never lands a unit on an occupied exit.
+ * Whether a pad's exit can hold the unit, judged by standing rules rather than a walked step: walls and height
+ * changes on the way are ignored, but a walker needs level floor under the whole footprint. Any unit on the exit,
+ * ally or not, drops the edge. The teleport command is looser: unless the pad is blockable, it moves the arrival to
+ * the nearest clear square, so the graph can miss a hop the command would allow.
  */
 function teleportLandingOk(anchor, input, blocked, occupied) {
   let floor = null;
@@ -618,9 +618,8 @@ function filterMeleeElevation(tiles, placement, elevations) {
 }
 
 /**
- * The attack tiles whose ground height hides from a placement, judged from the footprint square nearest each tile.
- * buildCombinedAttackRange runs it for every placement of every graph the threat overlay builds, so it allocates
- * nothing per tile beyond the parsed tile itself.
+ * The attack tiles hidden by higher ground from a placement, judged from the footprint square nearest each tile.
+ * It runs for every placement the threat overlay draws, so keep it free of per-tile allocations.
  */
 function heightObscuredCells(tiles, placement, footprint, elevations) {
   const sourceCells = [];
@@ -669,9 +668,9 @@ function freezeAttackRange(attackable, flyersOnly) {
 /*  Hostile hints                               */
 /* -------------------------------------------- */
 /**
- * Build movement-overlay hints for ui/controls/movement.mjs. Mark hostile weapon effectiveness as danger
- * and stealable goods when the selected unit has Steal. Leave friendly units unmarked.
- * @param {object} source Movement snapshot carrying `factionRole` and the projected `hints` facts.
+ * The movement overlay's marks on hostile units: danger where a hostile's weapon is effective against this unit,
+ * and stealable goods when this unit has Steal. Friendly units get no mark.
+ * @param {object} source The unit's movement data, with `factionRole` and `hints`.
  * @returns {object[]} One `{tokenId, x, y, width, effective, stealable}` per marked hostile.
  */
 export function planMovementHints(source = {}) {
@@ -778,7 +777,7 @@ function footprintPenalty(penalties, anchor, footprint) {
  * Validate a crossing landing before the movement UI offers a check. Require clear terrain,
  * a free footprint and an unobstructed center-to-center segment. Passing through allies does not allow landing on
  * them.
- * @param {object} landing The snapshot's landing facts, from {@link crossingLandingFacts}.
+ * @param {object} landing The prepared landing data from {@link crossingLandingFacts}.
  * @param {{x: number, y: number}} from The square being left.
  * @param {{x: number, y: number}} to The square aimed at.
  * @param {object} [options] `ignoreWalls` lets a step authored to pass through walls land past one.
@@ -791,10 +790,7 @@ function crossingLandingIsLegal(landing, from, to, { ignoreWalls = false } = {})
   return ignoreWalls || !stepCrossesWall(from, to, input);
 }
 
-/**
- * What crossingLandingIsLegal reads, built once per snapshot. Normalizing costs about a millisecond on a terrain-heavy
- * scene, so callers that check many landings build this once instead of once per landing.
- */
+/** What crossingLandingIsLegal reads, built once so callers testing many landings don't redo the setup. */
 function crossingLandingFacts(source, input = normalizeInput(source)) {
   return {
     input,
@@ -807,7 +803,7 @@ function crossingLandingFacts(source, input = normalizeInput(source)) {
  * Classify a forced move for Shove and Retrieve activation checks.
  * Level ground is a step, descent requires crossing resolution and ascent is refused.
  * Airborne units ignore floor transitions but still need a valid destination.
- * @param {object} source Movement snapshot of the unit being moved, with its own occupancy.
+ * @param {object} source Movement data of the unit being moved, with occupied squares worked out for that unit.
  * @param {{x: number, y: number}} from The square being left.
  * @param {{x: number, y: number}} to The square it is being sent to.
  * @param {object} [options] `ignoreWalls` for a step authored to pass through walls.
@@ -835,9 +831,10 @@ function forcedStep(outcome, crossing = null) {
 }
 
 /**
- * Build crossing choices for ui/controls/movement.mjs and engine/movement/commands.mjs. Entering an impassable
- * bridge cell follows its network to the possible landings, and the player chooses when the network branches.
- * @param {object} source Movement snapshot carrying the projected crossing board.
+ * The crossings a step from one square to the next can attempt. Stepping onto a bridge square (an obstacle or
+ * impassable square with crossing directions authored) follows the bridge to its possible landings, and the player
+ * picks one when the bridge branches.
+ * @param {object} source The unit's movement data, with the map's crossing data (`terrainCrossings`).
  * @param {{x: number, y: number}} from The square being left.
  * @param {{x: number, y: number}} to The square aimed at.
  * @returns {readonly object[]} One entry per landing the attempt could reach.
@@ -860,9 +857,9 @@ export function crossingCandidates(source, from, to) {
 }
 
 /**
- * Build crossing-arrow previews for ui/controls/movement.mjs and the movement projection. Walkable destinations are
- * skipped, and where one border branches to several bridge exits the landing with the best odds wins.
- * @param {object} source Movement snapshot carrying the projected crossing board and the unit's skill facts.
+ * The crossing arrows to show from the squares a unit can reach. Squares it can walk to are skipped, and where one
+ * step in one direction leads to several bridge exits the landing with the best odds wins.
+ * @param {object} source The unit's movement data, with the map's crossing data and the unit's skills.
  * @param {object} graph Graph returned by {@link buildMovementGraph}.
  * @returns {readonly object[]} One entry per reachable crossing, carrying its skill, odds and odds band.
  */
@@ -900,6 +897,10 @@ export function collectCrossingOptions(source, graph) {
   return Object.freeze([...options.values()]);
 }
 
+/**
+ * Whether a step crosses a wall, tested on each footprint square's centre-to-centre line. A wall running between
+ * two rows or columns inside a large footprint is never tested.
+ */
 function stepCrossesWall(from, to, input) {
   if (input.wallsByCell.size === 0) return false;
   for (let dx = 0; dx < input.footprint.width; dx += 1) {
@@ -927,6 +928,10 @@ function wallsNearStep(input, fromX, fromY, toX, toY) {
   return new Set([...near, ...beyond]);
 }
 
+/**
+ * Diagonal keyboard steps between two squares the unit can already reach, on level ground unless it flies. Walls
+ * at the corner are not tested; the destination still costs what the 4-way search found.
+ */
 function buildDiagonalStepKeys(placements, input) {
   const placementKeys = new Set(placements.map(cell => cellKey(cell.x, cell.y)));
   const diagonalSteps = [];
@@ -979,6 +984,10 @@ function onSegment(ax, ay, bx, by, px, py) {
 /* -------------------------------------------- */
 /*  Input normalization                         */
 /* -------------------------------------------- */
+/**
+ * The search input with defaults filled in. A unit in the air ignores walls, obstacles and terrain movement costs;
+ * impassable squares still stop it.
+ */
 function normalizeInput(source = {}, { start: startOverride = null, allowance = null } = {}) {
   const columns = positiveInteger(source.columns);
   const rows = positiveInteger(source.rows);
@@ -1111,7 +1120,7 @@ function positiveInteger(value) {
   return number > 0 ? number : 0;
 }
 
-/** A caller-named reach, which a planner uses instead of the unit's own. `Infinity` asks for the whole board. */
+/** A caller-named reach, which a planner uses instead of the unit's own. `Infinity` asks for the whole map. */
 function overriddenReach(allowance) {
   if (allowance === null || allowance === undefined) return null;
   if (allowance === Infinity) return Infinity;
@@ -1151,6 +1160,7 @@ function stepKeySet(steps) {
 
 const EMPTY_STEP_KEYS = new Set();
 
+/** Counts cells as they join a search queue, so equal routes come off oldest first. Shared by every search here. */
 let openOrder = 0;
 
 /** Whether one open cell comes off the frontier before another: cheapest route first, then oldest. */

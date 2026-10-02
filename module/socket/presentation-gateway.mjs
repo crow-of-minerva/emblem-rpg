@@ -41,13 +41,13 @@ const PRESENTATION_DELIVERY_KIND = 'presentation-delivery';
 const PRESENTATION_DELIVERY_KEYS = Object.freeze(['kind', 'session', 'sequence', 'audience', 'message']);
 const MAX_PRESENTATION_AUDIENCE = 64;
 
-/** The longest one message may hold up the mechanics, whatever the delivery policy asks for. */
+/** The longest the rules wait on one message, whatever the delivery policy asks for. */
 const MAX_PRESENTATION_HOLD_MS = 15000;
 
 /**
- * Deliver engine presentation messages to the other clients through socketlib and to the host's own presenter.
- * The delivery policy in presentation/interface/delivery.mjs sets how long each message holds the mechanics and
- * what a hidden client skips. The engine waits for that hold, never for rendering to finish.
+ * Send animations and notices from the host client to the other clients through socketlib, and to the host's own
+ * presenter. The delivery policy in presentation/interface/delivery.mjs sets how long the rules pause for each
+ * message and what a hidden client skips. The rules wait that set time, never for the animation itself.
  */
 export class UnitPresentationGateway {
   #sequence = 0;
@@ -64,9 +64,10 @@ export class UnitPresentationGateway {
   }
 
   /**
-   * Broadcast an engine presentation message, start the host's presenter and wait for the delivery policy's hold.
+   * Broadcast a presentation message, start the host's presenter and wait the pause the delivery policy sets.
    * @param {object} message A presentation message.
-   * @param {{audience?: string[]|null}} [options] The only users who should present it, or everyone when omitted.
+   * @param {{audience?: string[]|null}} [options] The only users who should show it, or everyone when omitted.
+   *   It is not private: every client still receives it.
    * @returns {Promise<boolean>} Whether the message was accepted and sent.
    */
   async broadcast(message, { audience = null } = {}) {
@@ -87,8 +88,8 @@ export class UnitPresentationGateway {
   }
 
   /**
-   * Pass an authenticated host message to the local presenter if its audience and sequence match.
-   * Drop duplicate or older messages from the same host session.
+   * Show a message from the host user if this user is in its audience. `userId` is set by the Foundry server, so
+   * only the host user gets past the sender check. Drop duplicate or older messages from the same host tab.
    * @returns {Promise<boolean>} Whether the presenter was started here.
    */
   async receive(payload, userId) {
@@ -101,8 +102,9 @@ export class UnitPresentationGateway {
   }
 
   /**
-   * Send a stamped message through the transport without awaiting rendering: to the audience's other users alone
-   * when the message names one, otherwise to every other client. receive() still checks the audience on arrival.
+   * Send a stamped message through the transport without waiting for it to render: addressed to the audience's
+   * other users when it names one, otherwise to every other client. socketlib still has the server relay it to
+   * every client, and receive() drops it where the user isn't in the audience.
    */
   #send(delivery) {
     if (!this.transport.ready) return;
@@ -141,7 +143,7 @@ export class UnitPresentationGateway {
     if (hold > 0) await this.delivery.wait(Math.min(hold, MAX_PRESENTATION_HOLD_MS));
   }
 
-  /** Whether a stamped message is new for its host page. */
+  /** Whether a stamped message is new for the host tab that sent it. */
   #admit({ session, sequence }) {
     if (session !== this.#session) {
       this.#session = session;
@@ -190,7 +192,7 @@ function isSupportedPresentationMessage(message) {
   return PRESENTATION_MESSAGE_VALIDATORS.some(accepts => accepts(message));
 }
 
-/** Decode input for UnitPresentationGateway.receive: a delivery broadcast() stamped with its host page session. */
+/** Decode input for UnitPresentationGateway.receive: a delivery broadcast() stamped with the host tab's session id. */
 function readPresentationDelivery(payload) {
   if (!plainRecord(payload) || payload.kind !== PRESENTATION_DELIVERY_KIND) return null;
   if (!exactKeys(payload, PRESENTATION_DELIVERY_KEYS)) return null;

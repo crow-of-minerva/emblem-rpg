@@ -34,7 +34,7 @@ const HAGGLE_EXPERIENCE_PAR = 20;
 /* -------------------------------------------- */
 /**
  * The key a haggle is stored under on the Vendor's `system.haggles`: the haggling unit's party, or the unit itself
- * when it belongs to no party. FoundryTradeRepository resolves the party through projectActorPartyId.
+ * when it belongs to no party.
  */
 export function haggleKey({ partyId, actorUuid } = {}) {
   return partyId ? `party:${partyId}` : `unit:${String(actorUuid ?? '')}`;
@@ -70,10 +70,10 @@ export function effectiveDisposition(base, entries, key) {
 /*  Standing and plans                          */
 /* -------------------------------------------- */
 /**
- * Whether the shop offers Haggle and whether the unit at the counter may take it, for inspectShop in
- * engine/economy/trade.mjs. It is offered only in free exploration. `rostered` says whether the unit belongs to the
- * downtime roster factions at all, and `blocked` names why a rostered unit cannot spend its Downtime Action; both
- * are checked only while the party has not already haggled.
+ * Whether the shop offers Haggle and whether the unit at the counter may take it. It is offered only in free
+ * exploration. `rostered` says whether the unit belongs to the downtime roster factions at all, and `blocked` names
+ * why a rostered unit cannot spend its Downtime Action; both are checked only while the party has not already
+ * haggled.
  * @param {object} standing `exploring`, `haggled`, and the `buyer` with its `actorType`, `commitment` and
  *   `defeated`.
  * @returns {Readonly<{offered: boolean, available: boolean, haggled: boolean, rostered: boolean, blocked: string}>}
@@ -89,11 +89,9 @@ export function resolveHaggleStanding({ exploring, haggled, buyer } = {}) {
 }
 
 /**
- * Validate a haggle for engine/economy/trade.mjs before anything is rolled or written, in order: free exploration,
- * the pair's reach, the party's haggle this downtime, the unit's place in the downtime roster, then its Downtime
- * Action.
- * @param {object} facts FoundryTradeRepository.getHaggleFacts: `buyer`, `vendor` (with `haggles`), `key`, `reach`
- *   and `exploring`.
+ * Validate a haggle before anything is rolled or written, in order: free exploration, the pair's reach, the party's
+ * haggle this downtime, the unit's place in the downtime roster, then its Downtime Action.
+ * @param {object} facts `buyer`, `vendor` (with `haggles`), `key`, `reach` and `exploring`.
  * @returns {{ok: boolean, code: string, data: object}} A refusal, or an accept carrying the haggle key.
  */
 export function planHaggle(facts = {}) {
@@ -114,11 +112,9 @@ export function planHaggle(facts = {}) {
 }
 
 /**
- * What a rolled haggle settles: the shift, the Trading experience, the Vendor's haggles with this key's entry
- * appended (fresh plain rows for FoundryTradeRepository.settleHaggle to write), and the party's disposition at the
- * Vendor before and after.
- * @param {object} input `vendor` from getHaggleFacts (`baseDisposition`, `haggles`), the haggle `key`, and the
- *   check `total`.
+ * The result of a rolled haggle: the shift, the Trading experience, the Vendor's haggles with this key's entry
+ * appended (fresh plain rows, ready to save), and the party's disposition at the Vendor before and after.
+ * @param {object} input The `vendor` (`baseDisposition`, `haggles`), the haggle `key`, and the check `total`.
  * @returns {Readonly<{shift: number, experience: number, haggles: object[], dispositionBefore: number,
  *   dispositionAfter: number}>}
  */
@@ -146,7 +142,7 @@ function haggleShift(total) {
   return (HAGGLE_BANDS.find(band => value >= band.minimum) ?? HAGGLE_BANDS[HAGGLE_BANDS.length - 1]).shift;
 }
 
-/** The flat Trading experience a haggle pays engine/economy/trade.mjs: more for a poorer check total. */
+/** The Trading experience a haggle pays: more for a poorer check total. */
 function haggleExperience(total) {
   return HAGGLE_EXPERIENCE_BASE + Math.max(0, HAGGLE_EXPERIENCE_PAR - Math.floor(total));
 }

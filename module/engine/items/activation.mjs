@@ -87,6 +87,7 @@ export function createItemActivationCommandContribution({
     {
       id: COMMAND_IDS.ITEMS.ACTIVATE,
       authorize: authorize.tokenController(payload => payload.sourceTokenUuid),
+      // A karmic check writes the world's karma ledger, so the use lists that key among the things it writes.
       concurrencyKeys: async context => [...await activations.resourceKeys(context.payload), KARMA_LEDGER_RESOURCE_KEY],
       handler: context => activateItem(context, services)
     },
@@ -110,17 +111,15 @@ async function activateItem(context, services) {
   const refusal = validateActivationRequest(snapshot, intent, services.activations.geometryResolver(snapshot));
   if (refusal) return refusal;
 
+  // The item-use data plus this command's operation, which records every write so a failed use can be undone.
   const owned = { ...snapshot, operation: context.operation ?? null };
   return deliverActivatedItem(context, services, owned, intent, isUnlockedActivation(snapshot));
 }
 
 /**
- * Carry out one item use: lead-in, passives, effects on each target, costs, experience and continuation. Once the
- * use has settled, finish the defeats it claimed, pause for the presentation, and apply the deferred turn end.
- *
- * Every write of the use belongs to `context.operation`, the dispatcher operation CommandDispatcher opened for this
- * command: FoundryItemActivationSettlement and the effect writers capture through it, the dispatcher commits it once
- * this handler accepts, and it restores the whole use when this handler refuses or throws.
+ * Run one item use on the host client: the opening animation, on-use passives, effects on each target, costs, XP
+ * and what the unit does next. Then remove the units it defeated, pause for the animation, and end the turn if the
+ * use ends it. If the handler refuses or throws, every change the use made is undone.
  */
 async function deliverActivatedItem(context, services, snapshot, intent, unlocked) {
   const cinematic = intent.cinematic === true && !unlocked;
@@ -256,9 +255,8 @@ function validateActivationRequest(snapshot, intent, resolveTerrainGeometry) {
 /* -------------------------------------------- */
 
 /**
- * Deliver the use to each target in turn, or once with no target. `reach` collects what the deliveries did: the
- * defeats their effect steps claimed, and the unit impacts EffectExecutionService and Rally report, which
- * settleActivationExperience grades.
+ * Apply the use to each target in turn, or once when it has no target. `reach` collects the units the effects
+ * defeated (`claims`) and what each unit took or gained (`impacts`), which the XP award reads.
  */
 async function deliverActivation(services, snapshot, intent, context, shared, reach) {
   const deliveries = [];
@@ -316,9 +314,8 @@ async function deliverToTarget(services, snapshot, intent, context, target, shar
 }
 
 /**
- * Rally one ally. The caster's affinity and the rank rallyRankFor gives the ally set the bonus (planRallyEffect),
- * and FoundryItemActivationSettlement.applyRally writes it. Rally runs no effect steps, so an ally it newly rallies
- * is reported here as a helpful status.
+ * Rally one ally: the caster's affinity and the ally's Rally rank set the bonus (planRallyEffect). Rally runs no
+ * effect steps, so a newly rallied ally is counted here as a helpful status for XP.
  */
 async function deliverRally(services, snapshot, target, impacts) {
   const landed = target ? await settleRally(services, snapshot, target) : false;
@@ -334,8 +331,8 @@ async function deliverRally(services, snapshot, target, impacts) {
 }
 
 /**
- * Write one Rally, then count it on the caster's record of this map's Rallies through
- * FoundryItemActivationSettlement.recordRally, which is what rallyTargetBlocker's per-unit limit reads next time.
+ * Write one Rally and add it to the caster's count of Rallies on this map, which limits how often each unit can be
+ * rallied (rallyTargetBlocker).
  */
 async function settleRally(services, snapshot, target) {
   const caster = rallyCasterFacts(snapshot.source);
@@ -354,11 +351,10 @@ async function settleRally(services, snapshot, target) {
 }
 
 /**
- * Pay RALLY_SUPPORT_XP between the caster and each unit this use Rallied for the first time this map, read from the
- * caster's record as the snapshot found it. The SUPPORT.GRANT_XP child command (engine/support/commands.mjs,
- * reached through the `support` port in init/system.mjs) writes both sides of each bond under this command's
- * operation, creating the bond for a party member who had none. A refused or failed award is recorded and leaves
- * the Rally standing. A support rank it crosses is told to the requester.
+ * Give RALLY_SUPPORT_XP to the support bond between the caster and each ally rallied for the first time on this
+ * map, creating the bond if they had none. The SUPPORT.GRANT_XP command runs inside this one, so its writes are
+ * undone with the use. A thrown error is logged and a refused grant is ignored; either way the Rally stands. Each
+ * support rank reached is shown to the player who used the item.
  */
 async function settleRallySupport(services, snapshot, deliveries, context) {
   if (!snapshot.envelope.rally) return;
@@ -567,9 +563,9 @@ function activationFactionOf(snapshot) {
 }
 
 /**
- * Finish the defeats the item's effect steps claimed, once the use itself has settled, the same way an attack
- * finishes its own. A unit reached twice keeps one claim. A failure here is reported rather than refused, so the
- * writes the use already made still stand. The removals themselves belong to this command's operation.
+ * After the use, remove the units its effects defeated, the same way an attack does. A unit defeated twice is
+ * handled once. An error here is logged and the use still stands. The removals are undone with the use if a later
+ * step fails.
  */
 async function settleActivationDefeats(services, claims, context) {
   if (!claims.length) return;
@@ -603,9 +599,9 @@ async function settleSanctuary(settlement, snapshot) {
 }
 
 /**
- * Mount or dismount when the used item is a Mount, through the TOGGLE_EQUIPMENT command. It runs as this command's
- * child through `dispatcher.invokeWithin` (the `inventory` port in init/system.mjs), which hands it this operation,
- * so its writes are captured with the use.
+ * Mount or dismount when the used item is a Mount, through the TOGGLE_EQUIPMENT command. No parent is passed:
+ * `dispatcher.invokeWithin` runs it inside whatever command is running, which is this use, so its writes are undone
+ * with the use.
  */
 async function settleMountToggle(services, snapshot) {
   if (!isMountActivation(snapshot.item)) return;
@@ -627,7 +623,7 @@ async function settleActivationCosts(services, snapshot, landed, context) {
 
 /**
  * Read where the unit's movement plan has it standing, before any effect step can move it.
- * settleActivationContinuation measures the walked leg from here. No plan means the use is stale.
+ * settleActivationContinuation measures the movement already spent from here. No plan means the use is out of date.
  */
 async function resolveWalkedLeg(services, snapshot) {
   const state = await services.continuations.getSnapshot(snapshot.source.tokenUuid);
@@ -637,10 +633,8 @@ async function resolveWalkedLeg(services, snapshot) {
 }
 
 /**
- * Decide and stage the caster's continuation from the fresh continuation snapshot. A Spell or staff hands a Canter
- * unit the movement its walked leg left, as resolveExchange in engine/combat/exchanges/resolution.mjs does after an
- * attack. FoundryItemActivationSettlement.settleContinuation passes it to
- * FoundryCombatSettlementRepository.settleSourceContinuation, which writes it under the use's operation.
+ * Decide what the caster does next (end its turn, keep moving, and so on) and save it. After a Spell or a Staff, a
+ * unit with Canter may spend its leftover movement, as it may after an attack.
  */
 async function settleActivationContinuation(services, snapshot, context, walked) {
   const state = await services.continuations.getSnapshot(snapshot.source.tokenUuid);
@@ -676,14 +670,9 @@ async function settleDeferredEndTurn(services, outcome, operation = null) {
 }
 
 /**
- * Grade the use against its Item's entry in the activation XP table and award what it earned. The snapshot's
- * `experience` (projectActivationExperience in projections/items.mjs) supplies the entry, the running encounter and
- * the caster's uses of the entry in it. `impacts` says what the use actually did to each unit, so a resisted or
- * saved target scores nothing whatever the delivery reported. A counted use advances the caster's counter through
- * FoundryItemActivationSettlement.recordExperienceUse. The award goes through the combat progression service as an
- * attack's does, which applies the unit and world multipliers, the per-award cap and the level-up. Both writes
- * belong to this command's operation, so a refused use takes them back. The Steal Ability earns its table XP only
- * through the steal command in engine/economy/trade.mjs, which rolls and takes; activating it as an Item earns none.
+ * Award level XP from the item's entry in the activation XP table, based on what the use actually did to each unit:
+ * a target that resisted or saved scores nothing. The award and the caster's use counter are undone if the use
+ * fails. Steal earns its XP only through the steal command (engine/economy/trade.mjs), not when used as an item.
  */
 async function settleActivationExperience(services, snapshot, impacts) {
   if (isMountActivation(snapshot.item) || isStealAbility(snapshot.item)) return null;
@@ -703,14 +692,14 @@ async function settleActivationExperience(services, snapshot, impacts) {
 }
 
 /**
- * Grade one use against its activation XP entry with resolveActivationExperience, count it when it pays, and award
- * it. `table` is the projected entry, encounter and use count (projectActivationExperience in projections/items.mjs).
- * `recordUse` advances the caster's per-encounter counter under the command's operation, before the award goes
- * through the combat progression service as an attack's does. Item activation and Steal (engine/economy/trade.mjs)
- * both settle here, so both share one counter and one set of rules.
+ * Grade one use against its activation XP entry, count it toward the per-encounter limit when it should count, and
+ * award the XP through the same progression service attacks use (unit and world multipliers, the cap, level-ups).
+ * Item use and Steal both come here, so they share one counter and one set of rules. `table` holds the entry, the
+ * running encounter and the caster's uses of it so far.
  * @param {{progression: object, recordUse: function(object): Promise<boolean>}} ports
  * @param {{table: object, source: object, targets: object[], operation: *, failureCode: string}} use
- * @returns {Promise<object|null>} The progression settlement, or null when the use earned nothing.
+ * @returns {Promise<object|null>} The progression service's result, which can report `ok: false`, or null when the
+ *   use earned nothing.
  */
 export async function settleTableExperience({ progression, recordUse }, { table, source, targets, operation,
   failureCode }) {
@@ -734,11 +723,11 @@ export async function settleTableExperience({ progression, recordUse }, { table,
 }
 
 /**
- * One outcome-facts record per unit the use reached, for resolveActivationExperience: every aimed target, and every
- * unit an impact names, its impacts summed across steps. The caster counts as friendly to itself for what it heals
- * or gains, but its own displacement never counts it: a Swap or a Retrieve that moves the caster is graded on the
- * other unit alone. An Object is on neither side, and so is a Neutral. A unit outside the snapshot, such as an ally
- * an area around the caster caught, is read through the activation projection's getReachedUnits.
+ * One record per unit the use reached, for the XP rules: every aimed target and every unit an effect touched, with
+ * what it took or gained summed across steps. The caster counts as friendly to itself for what it heals or gains,
+ * but moving the caster never counts: a Swap or a Retrieve is graded on the other unit alone. Objects and Neutrals
+ * are on neither side. A unit that was not read at the start of the use, such as an ally caught in an area around
+ * the caster, is read through getReachedUnits.
  */
 async function activationExperienceTargets(services, snapshot, impacts) {
   const units = new Map([snapshot.source, ...snapshot.targets].map(unit => [unit.actorUuid, unit]));
@@ -753,10 +742,11 @@ async function activationExperienceTargets(services, snapshot, impacts) {
 }
 
 /**
- * One unit's outcome facts from its summed impacts; see activationExperienceTargets. Steal grades its mark here too.
+ * One unit's record for the XP rules, from what the use did to it; see activationExperienceTargets. Steal grades
+ * its target here too.
  * @param {{actorUuid: string, actorType: string}} source The caster.
  * @param {object} unit The unit's side, level and pools, with `objectTarget` or `scenery` set for an Object.
- * @param {object[]} impacts Its unit impacts (unitImpact in effects/execution.mjs).
+ * @param {object[]} impacts What each effect step did to it (unitImpact in effects/execution.mjs).
  * @returns {object}
  */
 export function experienceTarget(source, unit, impacts) {

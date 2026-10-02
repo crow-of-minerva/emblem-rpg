@@ -80,14 +80,13 @@ export function presentationHoldMs(message) {
 }
 
 /**
- * Whether a hidden page should still run this message. UnitPresentationGateway asks only while the page is hidden.
+ * Whether a hidden browser tab still runs this message. The presentation gateway asks only while the tab is hidden.
  *
- * Every client applies the messages that release state (releasesState): the processing blocker, the end of an
- * exchange, activation or enemy-phase camera, a cleared defeat fade, a pathfinding refresh and a downtime end. The
- * host also runs the beats in writesForTable, which post chat cards or change tokens for the whole table. Its
- * health and defeat-fade entries have no effect: those beats write nothing, and HealthPresentation drops them on a
- * hidden page. Everything else, notices included, is dropped rather than queued, so a hidden page shows no toast
- * and replays nothing when it returns.
+ * Every client runs the messages that clear or end something, so nothing stays stuck: the "host is busy" indicator,
+ * the end of an attack, activation or enemy-phase camera, a cleared defeat fade, a pathfinding refresh and the end of
+ * a downtime activity. The host also runs the ones that post chat cards or change tokens for the whole table.
+ * Everything else, notices included, is dropped rather than queued, so a hidden tab shows no toast and replays
+ * nothing when it returns.
  * @param {object} message A validated presentation message.
  * @param {{host?: boolean}} [options] Whether this client is the host presenting its own beat.
  * @returns {boolean}
@@ -98,9 +97,9 @@ export function deliversWhileHidden(message, { host = false } = {}) {
 }
 
 /**
- * The delivery object UnitPresentationGateway paces and filters with: the holds, the hidden-page policy, this
- * page's visibility, and a clock a background page can't slow. init/system.mjs builds one and also hands its
- * `wait`, `schedule` and `cancelScheduled` to TokenArtTransitionCoordinator, CombatPresentation and other services.
+ * The settings the presentation gateway uses to time and filter messages: the holds, the hidden-tab rule, this
+ * tab's visibility, and a clock a background tab can't slow. init/system.mjs builds one and also hands its
+ * `wait`, `schedule` and `cancelScheduled` to other services.
  * @param {object} [options]
  * @param {Function} [options.hidden] Whether this page is hidden now.
  * @param {{wait: Function}} [options.clock] The clock holds are waited on.
@@ -119,11 +118,11 @@ export function createPresentationDelivery({ hidden = pageHidden, clock = create
 }
 
 /**
- * Run one callback after a wait on the pacing clock, unless its handle is cancelled first.
+ * Run one callback after a wait on the given clock, unless its handle is cancelled first.
  *
- * The host times table-wide art swaps and reverts this way, so a background page lands them on the beat instead of
- * one throttled wake-up or more later.
- * @param {{wait: Function}} clock The pacing clock.
+ * The host times table-wide art swaps and reverts this way, so a background tab still makes them on time instead of
+ * waiting for the browser's slowed timers.
+ * @param {{wait: Function}} clock The clock to wait on, one whose timers a hidden tab doesn't slow.
  * @param {Function} callback What runs once the wait ends.
  * @param {number} milliseconds How long to wait.
  * @returns {{cancelled: boolean}} The handle cancelScheduled takes.
@@ -145,6 +144,7 @@ function releasesState(message) {
     case ITEM_ACTIVATION_PRESENTATION_KIND: return message.beat === ITEM_ACTIVATION_PRESENTATION_BEATS.END;
     case ENEMY_PHASE_CAMERA_PRESENTATION_KIND: return message.beat === ENEMY_PHASE_CAMERA_BEATS.END;
     case DEFEAT_PRESENTATION_KIND: return message.change === DEFEAT_PRESENTATION_TYPES.CLEAR_FADE;
+    // Effect step kinds are listed in STEP_KINDS (contracts/dsl/effects.mjs).
     case EFFECT_OPERATION_PRESENTATION_KIND: return message.operation?.step?.kind === 'refreshPathfinding';
     case DOWNTIME_PRESENTATION_KIND: return DOWNTIME_END_EVENTS.has(message.event);
     default: return false;
@@ -155,6 +155,7 @@ function writesForTable(message) {
   switch (message?.kind) {
     case COMBAT_PRESENTATION_KIND: return COMBAT_HOST_WRITES.has(message.beat);
     case ITEM_ACTIVATION_PRESENTATION_KIND: return ACTIVATION_HOST_WRITES.has(message.beat);
+    // Effect step kinds are listed in STEP_KINDS (contracts/dsl/effects.mjs).
     case EFFECT_OPERATION_PRESENTATION_KIND: return message.operation?.step?.kind === 'animation';
     case HEALTH_PRESENTATION_KIND: return message.change !== HEALTH_CHANGE_TYPES.HEAL;
     case DEFEAT_PRESENTATION_KIND: return message.change === DEFEAT_PRESENTATION_TYPES.FADE;

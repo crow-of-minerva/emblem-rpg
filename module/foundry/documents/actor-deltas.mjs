@@ -6,9 +6,10 @@ import { admitNativeWrite } from '../adapters/services/authority.mjs';
 /* -------------------------------------------- */
 
 /**
- * The system's ActorDelta class (set in init/registrations.mjs). Foundry saves edits to an unlinked token's actor on
- * its ActorDelta, so the Actor class's guard alone would miss them. Every native write passes admitNativeWrite
- * (services/authority.mjs) first.
+ * The system's ActorDelta class (set in init/registrations.mjs). An edit made through an unlinked token's actor is
+ * already checked by EmblemActor, whose _preUpdate runs before Foundry sends it to the ActorDelta. This class adds
+ * the check for writes made to the ActorDelta directly, and for its deletion. Every native write passes
+ * admitNativeWrite (services/authority.mjs) first.
  */
 export class EmblemActorDelta extends ActorDelta {
   async _preCreate(data, options, user) {

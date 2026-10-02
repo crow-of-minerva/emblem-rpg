@@ -17,7 +17,7 @@ import { diagnosticData, requirePorts } from '../contracts/protocol.mjs';
 /* -------------------------------------------- */
 
 /**
- * The RECONCILE_MODIFIERS command definition. The board hooks in foundry/hooks/board.mjs submit it as maintenance
+ * The RECONCILE_MODIFIERS command definition. The hooks in foundry/hooks/board.mjs submit it as maintenance
  * after Token, Item, Actor and Scene changes.
  */
 export function createModifierCommandContribution({ actors, authority }) {
@@ -31,9 +31,10 @@ export function createModifierCommandContribution({ actors, authority }) {
 }
 
 /**
- * Reconcile aura, terrain and movement modifiers for the requested Scene using game/ plans, merged into one write
- * per actor. A write that finds the boards changed reads them again, so separate hook triggers can't overwrite
- * each other's changes, and the requested scene is always the one read, never the one the host is viewing.
+ * Update aura, terrain and movement modifiers for the requested Scene from the game/ plans, with one write per
+ * actor. If the scene's auras or terrain changed before the write lands, it reads them again, so separate hook
+ * triggers can't overwrite each other's changes. The requested scene is always the one read, never the one the
+ * host is viewing.
  */
 async function reconcileBoardModifiers(context, actors) {
   const sceneUuid = String(context.payload?.sceneUuid ?? '');
@@ -57,7 +58,7 @@ async function reconcileBoardModifiers(context, actors) {
   return refuse(RESULT_CODES.BOARD_MODIFIER_SETTLEMENT_FAILED, { reasonCode: 'board.changed' });
 }
 
-/** Gather what each unit is owed from both boards and the map's scaling, so every unit is written once. */
+/** Gather what each unit is owed from auras, terrain and the map's movement scaling, so every unit is written once. */
 function mergeModifierPlans(auraPlans, terrainPlans, movementPlans = []) {
   const merged = new Map();
   const entry = actorUuid => {
@@ -90,7 +91,7 @@ export function createDoorSightCommandContribution({ doors, authority }) {
 
 /**
  * Apply game/objects/rules.mjs door-wall plans through the Foundry vision writer.
- * Closed doors need Wall documents for sight blocking. Each scene is reconciled on its own, including walls left
+ * Closed doors need Wall documents for sight blocking. Each scene is handled on its own, including walls left
  * by deleted doors, and one failed scene does not stop the others.
  */
 async function reconcileDoorSight(context, doors) {

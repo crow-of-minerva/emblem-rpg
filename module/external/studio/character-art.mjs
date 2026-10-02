@@ -28,13 +28,12 @@ const SLOT_TYPES = Object.freeze({
 /*  Public bridge                               */
 /* -------------------------------------------- */
 /**
- * Open Emblem Character Studio on one of an actor's art slots. Called from the Actor Control Panel's art controls
- * (acp-app.mjs) and the container sheets' image (sheets/containers.mjs). A failure comes back as
- * `{ok: false, code, data}`, which the Actor Control Panel shows with showStudioFailure.
+ * Open Emblem Character Studio on one of an actor's art slots. A failure comes back as `{ok: false, code, data}`,
+ * which the Actor Control Panel shows with showStudioFailure.
  * @param {Actor} actor Actor whose art is being edited.
  * @param {string} slot Art variant: default, armored, cavalry, armoredCavalry or flying.
  * @param {{tabId?: string, entryIndex?: number}} [options] The class tab, and the entry inside it.
- * @returns {Promise<object>} `{ok, code}`, plus the destination and the opened application on success.
+ * @returns {Promise<object>} `{ok, code}`, plus the destination (`tuple`) and the opened application on success.
  */
 export async function openStudioForSlot(actor, slot, options = {}) {
   const destination = studioDestinationForSlot(actor, slot, options);
@@ -66,7 +65,7 @@ export function studioClassSeedUpdate(actor, className) {
 }
 
 /**
- * Open Emblem Sprite Studio on an item's image for GM or trusted players who have access/ownership.
+ * Open Emblem Sprite Studio on an item's image. No permission check happens here; the Studio module decides.
  */
 export async function openStudioForItem(item) {
   if (item?.documentName !== 'Item') return failure(STUDIO_OPEN_CODES.ITEM_REQUIRED);
@@ -92,7 +91,7 @@ export async function openSceneCropForArtState(actor, target, field) {
 /**
  * Turn an art slot, class tab and entry into the destination Character Studio opens on. Refuses a token or
  * compendium actor, an unknown slot, and a tab or entry the actor doesn't have.
- * @returns {object} `{ok: true, tuple}`, or a failure.
+ * @returns {object} `{ok: true, tuple}`, where `tuple` names the class, entry and art type to open, or a failure.
  */
 function studioDestinationForSlot(actor, slot, options = {}) {
   if (!actor) return failure(STUDIO_OPEN_CODES.ACTOR_REQUIRED);

@@ -52,7 +52,7 @@ export function targetingGridColor(name) {
 }
 
 /**
- * Draw the targeting field above the Scene grid.
+ * Draw the targeting field on the map, above the background and tiles and under the Tokens.
  *
  * Cells whose ground is hidden by terrain height draw at half opacity, because only a flying occupant there is
  * still reachable.
@@ -160,7 +160,8 @@ export function disposeAttackTargetingPresentation() {
 /* -------------------------------------------- */
 /**
  * Build one non-interactive canvas overlay and attach it to the first parent that will take it.
- * A raw PIXI container renders under Tokens unless it carries elevation, sortLayer and sort together.
+ * Primary-group children sort by elevation, then sortLayer, then sort. Set all three so the overlay sits above tiles
+ * and drawings and below Tokens.
  * @param {string} name                 Container name, which is also how it is found again.
  * @param {number} sortLayer            Primary-group sort layer.
  * @param {Array} [parents]             Candidate parents in order of preference. With none, it stays detached.
@@ -226,6 +227,10 @@ function destroyTargetingOverlay(container) {
   return null;
 }
 
+/**
+ * Add an overlay to the primary canvas group (`canvas.environment.children[0]`). The fallback puts it in the
+ * rendered group just above the fog layer, where fog cannot cover it.
+ */
 function addToScene(container) {
   const sceneLayer = canvas.environment?.children?.[0];
   if (sceneLayer && !sceneLayer.destroyed) {
@@ -281,8 +286,8 @@ let lockFrame = null;
 /*  Canvas lifecycle                            */
 /* -------------------------------------------- */
 /**
- * On canvasReady, rebuild the empty movement overlay for the new scene and show the control-lock banner for the
- * current lock or driven hold.
+ * On canvasReady, rebuild the empty movement overlay for the new scene and show the "Controlling" banner for the
+ * current movement lock, or for a companion module (such as the Enemy AI) that holds the map for a phase.
  */
 export function onCanvasReadyMovementPresentation(lock = null, localUserId = '', drivenHold = null) {
   destroyMovementOverlay();
@@ -295,7 +300,7 @@ export function onCanvasTearDownMovementPresentation() {
   destroyMovementOverlay();
 }
 
-/** Redraw the control-lock banner when the movement lock or the encounter's driven hold setting changes. */
+/** Redraw the "Controlling" banner when the movement lock or the companion-module hold setting changes. */
 export function onMovementLockSetting(lock, localUserId = '', drivenHold = null) {
   renderMovementLock(lock, localUserId, drivenHold);
 }
@@ -335,7 +340,10 @@ export function movementRulerRefreshMode(token) {
   return token._emblemMovementRulerActive && animating ? 'freeze' : 'normal';
 }
 
-/** Clear a held ruler after the movement animation has finished. */
+/**
+ * Clear a held ruler after the movement animation has finished. The first short wait gives Foundry time to start
+ * the token's move animation; the second lets the token's last animation frame draw before the ruler goes.
+ */
 export function scheduleMovementRulerCleanup(token) {
   if (!token) return;
   const generation = token._emblemMovementRulerGeneration;
@@ -368,7 +376,7 @@ export function drawMovementPlan(snapshot, graph, { attackReach = true } = {}) {
   drawings.push(range);
 }
 
-/** Remove the active movement field without destroying the Scene-owned layer. */
+/** Remove the current movement range and hint icons. The movement overlay itself stays for reuse. */
 export function clearMovementPlan() {
   for (const drawing of drawings) destroyDisplayObject(drawing);
   drawings = [];
@@ -425,11 +433,11 @@ function drawHintSprite(image, hint, gridSize, iconSize, stack) {
 /*  Inspected range                             */
 /* -------------------------------------------- */
 /**
- * Draw one unit's persistent grey reach, which several units may show at once.
+ * Draw one unit's grey reach, which stays up and can be shown for several units at once.
  *
- * Free Exploration has no reach to read: `projectMovementPlan` in `foundry/adapters/projections/movement.mjs`
- * gives every exploring unit an unbounded allowance, so an exploring snapshot draws nothing and takes down
- * whatever that unit had up from before exploration started.
+ * During Free Exploration a unit has unlimited movement (`projectMovementSnapshot` in
+ * `foundry/adapters/projections/movement.mjs`), so nothing is drawn and any grey reach that unit already had is
+ * taken down.
  */
 export function drawGreyMovementGrid(tokenId, snapshot, graph) {
   if (!tokenId) return false;
@@ -461,7 +469,7 @@ export function clearGreyMovementGrid(tokenId) {
   return true;
 }
 
-/** Remove every grey reach on the board. */
+/** Remove every grey reach on the map. */
 export function clearGreyMovementGrids() {
   if (greyReaches.size === 0) return false;
   greyReaches = new Map();
@@ -559,14 +567,15 @@ function dismissMovementRuler(token, generation) {
 }
 
 /* -------------------------------------------- */
-/*  Board-lock banner                           */
+/*  Movement-lock banner                        */
 /* -------------------------------------------- */
 /**
- * Build the banner from the current movement lock and driven hold. No lock means no banner, regardless of local
- * presentation history.
+ * Work out what the "Controlling" banner shows from the movement lock and any companion-module hold. With neither,
+ * there is no banner.
  * @param {object|null} lock The normalized control lock, or null once released.
  * @param {string} localUserId The viewing user, whose own portrait is not repeated back to them.
- * @param {object|null} drivenHold A driver's hold, which outranks the lock for display.
+ * @param {object|null} drivenHold The hold a companion module (such as the Enemy AI) takes for a phase. It is shown
+ *   instead of the lock.
  * @returns {{visible: boolean, user?: string, token?: string, image?: string}}
  */
 export function projectLockBanner(lock, localUserId = '', drivenHold = null) {
@@ -653,6 +662,7 @@ function ensureOverlay() {
   movementOverlay.gridLayer = movementOverlay.addChild(new PIXI.Container());
   movementOverlay.gridLayer.name = GRID_LAYER_NAME;
 
+  // Same placement as addToScene: the primary canvas group, or just above the fog layer.
   const sceneLayer = canvas.environment?.children?.[0];
   if (sceneLayer && !sceneLayer.destroyed) sceneLayer.addChild(movementOverlay);
   else if (canvas.rendered?.addChild) {

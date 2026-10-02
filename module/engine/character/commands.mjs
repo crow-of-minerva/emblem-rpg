@@ -40,7 +40,7 @@ import { recordDiagnostic, diagnosticData, requirePorts } from '../../contracts/
 /**
  * The character command definitions init/system.mjs registers with CommandDispatcher: standard actions, skill
  * checks, equipping and item transfers, journal access, free targeting, the counterattack mode, the hotbar layout,
- * and the equipment and innate-grant reconciliations that foundry/hooks/actors.mjs and foundry/hooks/innate-grants.mjs
+ * and the equipment and innate-grant clean-up jobs that foundry/hooks/actors.mjs and foundry/hooks/innate-grants.mjs
  * submit.
  */
 export function createCharacterCommandContribution(ports) {
@@ -110,6 +110,10 @@ function createStandardActionHandlers({ actors, events }) {
   };
 }
 
+/**
+ * Spend or restore one unit's standard action. The write does not go through `context.operation`, so it is not
+ * recorded for undo; it is the handler's last write, so a refusal never leaves half a change.
+ */
 async function changeStandardAction(context, { actors, events, restore }) {
   const actorUuid = String(context.payload?.actorUuid ?? '');
   let actor;
@@ -147,9 +151,9 @@ async function changeStandardAction(context, { actors, events, restore }) {
 /*  Free targeting                              */
 /* -------------------------------------------- */
 /**
- * Set the staff override that frees one unit's actions from line of sight. It is table administration, not a
- * gameplay action: it spends nothing, and the Token HUD control in ui/apps/foundry/token-hud.mjs is its only
- * caller. A request that matches the state the unit already holds writes nothing and still accepts.
+ * Set the GM override that frees one unit's actions from line of sight (the Token HUD control). It is table
+ * administration, not a gameplay action: it spends nothing. A request that matches the unit's current state writes
+ * nothing and still accepts.
  */
 async function setFreeTargeting(context, { actors }) {
   const actorUuid = String(context.payload?.actorUuid ?? '');
@@ -170,11 +174,10 @@ async function setFreeTargeting(context, { actors }) {
 /*  Counterattack mode                          */
 /* -------------------------------------------- */
 /**
- * Set whether one unit counterattacks, for the swords and dove toggle on the BG3 HUD through
- * api.character.setPacifist. A pacifist unit's cannotCounter fact holds in projectCombatRuleFacts
- * (foundry/adapters/projections/combat-context.mjs). planPacifistChange refuses a non-GM once the unit's turn is
- * spent in a started encounter. A request that matches the mode the unit already holds writes nothing and still
- * accepts.
+ * Set whether one unit counterattacks, for the swords-and-dove toggle on the BG3 HUD (api.character.setPacifist).
+ * A pacifist unit gets the `cannotCounter` combat rule, set in foundry/adapters/projections/combat-context.mjs.
+ * planPacifistChange refuses a non-GM once the unit's turn is spent in a started encounter. A request that matches
+ * the current mode writes nothing and still accepts.
  */
 async function setPacifist(context, { actors, authority }) {
   const actorUuid = String(context.payload?.actorUuid ?? '');
@@ -258,9 +261,9 @@ async function toggleCharacterItem(context, actors, events, authority) {
 }
 
 /**
- * The equipment reconciliation that foundry/hooks/actors.mjs submits on the host after an actor, effect or item
- * change. Equipment effects and lapsed requirements settle first, since unequipping changes what the capacity pass
- * would move. Then the surplus of a unit that outgrew its slots goes to its Convoy. The capacity outcome is the one
+ * The equipment clean-up job foundry/hooks/actors.mjs submits on the host after an actor, effect or item change.
+ * Equipment effects and lapsed requirements are applied first, since unequipping changes what the capacity step
+ * would move. Then the surplus of a unit that outgrew its slots goes to its Convoy. The capacity result is the one
  * reported when it has something to say.
  */
 async function reconcileCharacterEquipment(context, actors, presentation) {
@@ -335,7 +338,7 @@ async function storeSurplusEquipment(actors, actorUuid, itemId, operation = null
   return {};
 }
 
-/** Tell the unit's owners what left their unit. The GM hears it from the reconciliation's own result. */
+/** Tell the unit's owners what left their unit. The GM hears it from this job's own result. */
 async function presentCapacityMove(presentation, actors, actorUuid, outcome) {
   const audience = await actors.getOwnerUserIds(actorUuid);
   if (!audience.length) return;
@@ -354,8 +357,8 @@ async function reconcileCharacterEquipmentEffects(context, actors) {
     const actor = await actors.getInventorySnapshot(actorUuid);
     if (!actor) return refuse(RESULT_CODES.ACTOR_NOT_FOUND);
     if (actor.type !== 'Character') return refuse(RESULT_CODES.CHARACTER_REQUIRED);
-    // Unequip items whose requirements lapsed before equipment-effects.mjs reconciles their modifiers. Like any
-    // piece coming off, a lapsed one takes back the Stn it granted.
+    // Unequip items whose requirements lapsed before equipment-effects.mjs updates their modifiers. Like any
+    // piece coming off, a lapsed one takes back the Stance (Stn) it granted.
     const lapsed = planRequirementUnequips(actor);
     const consequences = lapsed.updates.length
       ? planEquipmentToggleConsequences(await withStanceSource(actors, actor), lapsed.updates)
@@ -469,14 +472,14 @@ async function transferCharacterItem(context, actors, events, authority) {
 }
 
 /**
- * Hand a unit's inventory facts to game/character/equipment-effects.mjs together with its compile source, which the
- * actors port projects only here, when a gear change can move the unit's Stn.
+ * Add the unit's Stance source data, so the equipment rules in game/character/equipment-effects.mjs can tell
+ * whether a gear change alters its Stance (Stn).
  */
 async function withStanceSource(actors, actor) {
   return { ...actor, stanceSource: await actors.getStanceSource(actor.uuid) };
 }
 
-/** The Stn the giver keeps when a piece it has in use leaves by transfer or capacity move, or {} otherwise. */
+/** The Stance the giver keeps when a piece it has in use leaves by transfer or capacity move, or {} otherwise. */
 async function departureResources(actors, source, item) {
   const system = item.system ?? {};
   if (system.isWielded !== true && system.isWorn !== true && system.isEquipped !== true) return {};
@@ -517,7 +520,8 @@ async function grantJournalAccess(context, { journals, authority }) {
 /*  Hotbar layout                               */
 /* -------------------------------------------- */
 /**
- * Serialize hotbar saves per Actor before comparing and writing the layout revision.
+ * Run hotbar saves for one Actor one after another, before comparing and writing the layout revision. Saves are
+ * inspect commands, which run outside the command slot, so this queue is what stops two saves from interleaving.
  * @param {object} ports The character contribution's ports.
  * @returns {Function} The command handler.
  */
@@ -632,10 +636,10 @@ function boundedText(value) {
 /*  Innate grants                               */
 /* -------------------------------------------- */
 /**
- * Reconcile one Character's innate grants: create missing grants from their source items, refresh or adopt existing
- * ones, and remove duplicates and grants the unit no longer qualifies for. planInnateGrants decides the changes, and
- * the character writer's settleInnateGrants applies them in one captured batch. This handles the internal reconcile
- * command, which the lifecycle hook in foundry/hooks/innate-grants.mjs submits to MaintenanceScheduler.
+ * Bring one Character's innate grants up to date: create missing grants from their source items, refresh or adopt
+ * existing ones, and remove duplicates and grants the unit no longer qualifies for. planInnateGrants decides the
+ * changes, and the character writer's settleInnateGrants applies them in one batch recorded for undo. The hook in
+ * foundry/hooks/innate-grants.mjs submits this command to MaintenanceScheduler.
  */
 async function reconcileInnateGrants(context, { actors, events }) {
   const actorUuid = String(context.payload?.actorUuid ?? '');

@@ -1,7 +1,7 @@
 /** @layer engine */
 import { DIAGNOSTIC_SEVERITIES, DIAGNOSTIC_SOURCES, createDiagnostic } from '../contracts/protocol.mjs';
 
-/** Send an engine beat through the injected presentation gateway. Record failures without undoing mechanics. */
+/** Show an animation or message on every client. If that fails, log it and keep the game change. */
 export async function presentSafely(services, message) {
   try {
     return await services.presentation.broadcast(message) !== false;
@@ -38,7 +38,7 @@ export async function runSafelyAsync(services, callback, detail = '') {
   try { await callback(); return true; } catch (error) { recordAbsorbed(services, error, detail); return false; }
 }
 
-/** Record a failure the mechanics absorbed, naming the domain that absorbed it. */
+/** Record a failure the game logic absorbed. `source` names the domain and defaults to combat exchange. */
 export function recordAbsorbed(services, error, detail, source = DIAGNOSTIC_SOURCES.COMBAT_EXCHANGE) {
   return services.diagnostics?.record?.(createDiagnostic({ sourcePath: import.meta.url,
     source,

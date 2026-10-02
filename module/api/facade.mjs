@@ -22,7 +22,7 @@ const TOKEN_ART_VOCABULARY = Object.freeze({
 /*  Public facade                               */
 /* -------------------------------------------- */
 /**
- * Build game.emblemRpg.api. init/system.mjs calls this once with every port. Gameplay commands go through
+ * Build game.emblemRpg.api. init/system.mjs calls this once with every service it needs. Gameplay commands go through
  * CommandGateway, and each result is shown through the notification service before it's returned. Read and
  * presentation services are exposed without their repositories.
  */
@@ -51,7 +51,7 @@ export function createPublicFacade({
     notifications.showResult(result);
     return result;
   };
-  /** Bind the same domain methods to CommandGateway or a CommandDispatcher execution segment. */
+  /** Build the gameplay methods around a command runner: CommandGateway, or an open execution segment (openSegment). */
   const gameplayDomains = run => ({
     character: characterApi({ promotions, execute: run, itemCinematicEnabled }),
     movement: movementApi({ movements, execute: run }),
@@ -100,9 +100,9 @@ export function createPublicFacade({
 /* -------------------------------------------- */
 
 /**
- * Build api.protocol around CommandGateway status queries and CommandDispatcher execution segments.
- * @param {object} ports The facade's gateway, processing view, execution segments, notices, measurement and the
- *   gameplay domains a segment binds.
+ * Build api.protocol around CommandGateway status queries and execution segments.
+ * @param {object} ports The facade's gateway, the host's busy state, execution segments, notices, measurement and
+ *   the gameplay methods a segment builds.
  * @returns {Readonly<object>} `api.protocol`.
  */
 function protocolApi({ gateway, processing, executionSegments, notifications, measurement, gameplayDomains }) {
@@ -115,15 +115,14 @@ function protocolApi({ gateway, processing, executionSegments, notifications, me
     execution: () => processing.snapshot(),
     requestStatus: intent => gateway.requestStatus(String(intent?.requestId ?? '')),
     /**
-     * Ask the open execution segment to stop, through CommandGateway.requestSegmentStop. Only a GM or Assistant
-     * may ask. The driver stops at its next safe point, and an action already running finishes first.
+     * Ask whoever holds the command lock (such as the Enemy AI) to stop, through CommandGateway.requestSegmentStop.
+     * Only a GM or Assistant may ask. It stops before its next action; one already running finishes first.
      * @returns {Promise<{ok: boolean, code: string, data: object}>} `command.segment-stop-requested`, a refusal such
      *   as `command.segment-not-open` or `shared.gm-required`, or `command.outcome-unknown` past the status deadline.
      */
     requestSegmentStop: () => gateway.requestSegmentStop(),
     /**
-     * Pause a host-local driver such as Enemy AI on the pacing clock from init/system.mjs, which keeps time even
-     * in a hidden tab.
+     * Wait the given time with a timer that keeps running when the tab is in the background (for the Enemy AI).
      * @param {number} milliseconds How long to pause.
      * @returns {Promise<void>}
      */
@@ -138,9 +137,10 @@ function protocolApi({ gateway, processing, executionSegments, notifications, me
 /* -------------------------------------------- */
 
 /**
- * Open a CommandDispatcher execution segment for a host-local driver such as Enemy AI, and return domain methods
- * bound to it in data.segment.api. A refusal to open shows no notice, but each action's result is shown as usual.
- * The driver checks stopRequested between actions and closes the handle when it's done.
+ * Let a module on the GM's client, such as the Enemy AI, hold the command lock for a run of actions (an execution
+ * segment), and return gameplay methods that run inside it in data.segment.api. A refusal to open shows no notice,
+ * but each action's result is shown as usual. The caller checks stopRequested between actions and closes the
+ * segment when it's done.
  * @returns {Promise<object>} The opened segment in `data.segment`, or the refusal.
  */
 async function openSegment({ executionSegments, notifications, measurement, gameplayDomains, label }) {
@@ -174,7 +174,7 @@ async function openSegment({ executionSegments, notifications, measurement, game
   }) }) });
 }
 
-/** Pause on the pacing clock init/system.mjs hands the execution segments, which a hidden page cannot slow. */
+/** Wait on the timer init/system.mjs provides, which keeps time in a background tab. */
 function paceOn(executionSegments, milliseconds) {
   return executionSegments.wait(Math.max(0, Number(milliseconds) || 0));
 }
@@ -495,8 +495,8 @@ function boundedExpectation(expected) {
 }
 
 /**
- * The board hold a driving module such as Enemy AI takes for its phase, which other clients show as a banner.
- * Only a full Gamemaster may take or release it.
+ * Lets a module such as the Enemy AI mark the map as busy during its phase; other clients show a banner. Only a
+ * full Gamemaster may take or release it.
  */
 function drivenBoardApi({ drivenBoard, authority }) {
   const gamemaster = () => authority().level === AUTHORITY_LEVELS.GAMEMASTER;
@@ -507,7 +507,7 @@ function drivenBoardApi({ drivenBoard, authority }) {
   });
 }
 
-/** Expose object projections and host commands for lock previews and attempts. */
+/** Preview a locked Object's lock and try to open it. */
 function objectApi({ objectQueries, execute }) {
   return Object.freeze({
     inspectLock: intent => objectQueries.inspectLock(intent),

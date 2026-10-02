@@ -116,7 +116,8 @@ export function enterTerrainMode() {
   _overlay = new PIXI.Container();
   _overlay.name = 'emblem-terrain-builder-overlay';
   _overlay.eventMode = 'static';
-  // Match Foundry grid offsets: cell coordinates are floor(pixel / gridSize), independent of Scene padding.
+  // Cell coordinates are floor(pixel / gridSize). That matches Foundry's grid offsets only because the system forces
+  // Scene padding to 0 (foundry/hooks/scene.mjs).
   _overlay.hitArea = new PIXI.Rectangle(0, 0, canvas.scene.width, canvas.scene.height);
 
   _gridGfx = _overlay.addChild(new PIXI.Graphics());
@@ -131,6 +132,8 @@ export function enterTerrainMode() {
   _overlay.on('pointerup', _onPointerUp);
   _overlay.on('pointerupoutside', _onPointerUp);
 
+  // Added straight to the stage, on top of the canvas groups. Foundry's canvas teardown doesn't remove it;
+  // exitTerrainMode does when the builder closes.
   canvas.stage.addChild(_overlay);
 
   _active = true;
@@ -151,7 +154,10 @@ export function setBuilderGridVisible(visible) {
   if (_gridGfx) _gridGfx.visible = _showGrid;
 }
 
-/** Take the overlay down and reset every piece of state. */
+/**
+ * Take the overlay down and clear the selection, the lock and any drawing in progress. The grid toggle, snap mode,
+ * bone length and listeners are kept for the next open.
+ */
 export function exitTerrainMode() {
   if (!_active) return;
   _active = false;
@@ -183,7 +189,7 @@ export function setWallDrawListener(fn) {
   _wallListener = fn;
 }
 
-/** Set the callback that receives the id of a wall right-clicked away (TerrainBuilder._onWallDelete). */
+/** Set the callback that receives the id of the wall the GM right-clicked to delete (TerrainBuilder._onWallDelete). */
 export function setWallDeleteListener(fn) {
   _wallDeleteListener = fn;
 }
@@ -346,6 +352,7 @@ function _warnLocked() {
  */
 function _onPointerDown(e) {
   if (_mode === 'walls') return _onWallPointerDown(e);
+  // Left-click stops here so Foundry's own canvas selection doesn't start. Right-drag passes through to pan the map.
   if (e.button !== 0) return;
   e.stopPropagation();
   if (_locked) return _warnLocked();
@@ -540,8 +547,9 @@ function _drawPolygonPreview(cursor) {
 /*  Wall Deletion                               */
 /* -------------------------------------------- */
 
-/** Delete the wall nearest the click, through the wall delete listener. */
+/** Delete the wall nearest the right-click, through the wall delete listener. */
 function _handleWallRightClick(e) {
+  // Every right-click stops here, even with no wall nearby, so right-drag doesn't pan the map in wall mode.
   e.stopPropagation();
   const p = e.getLocalPosition(_overlay);
   const wall = _findNearestWall(p.x, p.y);
@@ -602,6 +610,8 @@ function _drawWallPreviewPath(points) {
 /** Wire the keyboard and context-menu handlers wall mode needs. */
 function _addWallListeners() {
   window.addEventListener('keyup', _onWallKeyUp);
+  // Capture phase, so it runs before Foundry's keyboard manager (a bubbling listener on window) and can keep
+  // Escape and Enter from reaching Foundry's keybindings.
   window.addEventListener('keydown', _onWallKeyDown, true);
   canvas.app?.view?.addEventListener('contextmenu', _onCanvasContextMenu);
 }
@@ -619,7 +629,7 @@ function _onWallKeyUp(ev) {
 
 /**
  * While a polygon is being drawn, Escape abandons it and Enter finishes it without joining the last point to the
- * first. Neither key reaches anything else.
+ * first. Neither key reaches anything else, even a text field the GM is typing in.
  */
 function _onWallKeyDown(ev) {
   if (_snapMode !== 'polygon' || !_polyVerts.length) return;
@@ -632,10 +642,7 @@ function _onCanvasContextMenu(ev) {
   if (_active && _mode === 'walls') ev.preventDefault();
 }
 
-/**
- * Redraw the builder's walls after a wall on the viewed scene is created, updated or deleted. The wall hooks in
- * init/hooks.mjs reach it through onTerrainWallDocumentChanged in ui/apps/foundry/scene-controls.mjs.
- */
+/** Redraw the builder's walls after a wall on the viewed scene is created, updated or deleted (from the Wall hooks). */
 export function onTerrainWallChanged() {
   if (!_active) return;
   refreshWallViz();

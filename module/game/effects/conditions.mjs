@@ -12,7 +12,8 @@ const TARGET_ROOT = /(^|[^.\w$])target\b/;
 /**
  * Whether a condition tree (contracts/dsl/conditions.mjs) holds in `context`. `chanceRoll` supplies the draws in
  * [0, 100) for chance nodes: one number for all of them, an object keyed by node path, or a function of the path. A
- * node holds when its draw is below its percent.
+ * node holds when its draw is below its percent. A SafeEvalError from a bad expression is not caught here; callers
+ * catch it.
  */
 export function evaluate(tree, context, chanceRoll = 100, path = 'root') {
   if (isEmpty(tree)) return true;
@@ -71,10 +72,10 @@ export function referencesTarget(tree) {
 }
 
 /**
- * Whether a unit's facts carry a status, for a status leaf in `evaluate`. `buildUnitFacts` in
+ * Whether a unit carries a status, for a status leaf in `evaluate`. `buildUnitFacts` in
  * game/character/compilation.mjs gives a unit both a `statuses` list of the effects it carries and one boolean per
  * system status, and either may hold the answer.
- * @param {object|null} unit   A unit's facts.
+ * @param {object|null} unit   A unit's condition data from buildUnitFacts.
  * @param {string} name        The authored status name.
  * @returns {boolean}
  */
@@ -136,7 +137,7 @@ function containsValue(left, right, ignoreCase) {
   return false;
 }
 
-/** A `distance` compared with "melee" or "ranged" reads the `engagement` fact instead. */
+/** A `distance` compared with "melee" or "ranged" reads `engagement` instead. */
 function compareSubject(left, right) {
   if (!ENGAGEMENT_CHOICES.includes(right)) return left;
   return String(left ?? '').trim().replace(/(^|\.)distance$/, '$1engagement');

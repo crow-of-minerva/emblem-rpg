@@ -4,12 +4,12 @@ import { recordAbsorbed } from '../feedback.mjs';
 /**
  * Grant skill XP through the GRANT_SKILL_EXPERIENCE child command (`services.skills`, wired in init/system.mjs).
  * A failure is recorded and doesn't undo the action that earned the XP.
- * @param {object} services The contribution's ports; only `skills` and `diagnostics` are read.
+ * @param {object} services The calling command's services; only `skills` and `diagnostics` are read.
  * @param {string} actorUuid The unit earning the XP.
  * @param {string} skillKey The skill it goes to.
  * @param {number|{amount: number}} [share] A fraction of the current rank bar, or `{ amount }` for a flat XP amount.
  *   Left out, the child command grants its standard per-roll amount.
- * @param {object} [context] The running command's context, so the grant joins its operation.
+ * @param {object} [context] The running command's context, so the grant shares its undo record.
  * @returns {Promise<boolean>} Whether the grant went through.
  */
 export async function grantSkillExperience(services, actorUuid, skillKey, share = undefined, context = {}) {

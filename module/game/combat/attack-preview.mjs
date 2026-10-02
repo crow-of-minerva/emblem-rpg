@@ -14,12 +14,15 @@ import { finite as number } from '../../lib/core/runtime.mjs';
 /*  Rule constants                              */
 /* -------------------------------------------- */
 
-/** A broken stance costs the defender 4 speed, the same lead an attacker needs for one extra attack. */
+/**
+ * A broken stance costs the defender 4 speed, the same lead an attacker needs for one extra attack. Matches the
+ * Stance Break effect's -4 Agility in config/statuses.mjs; change both together.
+ */
 const BROKEN_STANCE_SPEED_LOSS = 4;
 
 /**
- * The facts this preview passes to the exchange rules without reading them itself. combatant() in exchange.mjs
- * normalizes each one, so they aren't coerced here. Only the facts listed here reach the rules.
+ * Unit stats passed straight through to the combat rules in exchange.mjs, which clean them up themselves.
+ * normalizeSide adds the fields this file reads; any other field is dropped.
  */
 const CARRIED_RULE_FACTS = Object.freeze([
   'attack', 'accuracy', 'evasion', 'crit', 'speed', 'defense', 'resistance', 'breakDamage', 'charisma',
@@ -34,13 +37,12 @@ const CARRIED_RULE_FACTS = Object.freeze([
 /* -------------------------------------------- */
 /**
  * Work out a matchup's preview numbers without rolling: each side's damage, hit and crit chances, attack count, and
- * the attack order. Called from foundry/adapters/projections/attack-targeting.mjs for the Combat Preview window
- * (ui/apps/menus/previews.mjs), the threat overlay and the Enemy AI's measured matchups. The real exchange rolls
+ * the attack order. Used by the Combat Preview window, the threat overlay and the Enemy AI. The real exchange rolls
  * and saves in engine/combat/exchanges/.
- * @param {object} input Detached attacker, defender, weapon, and distance facts. `reachDistance` and
+ * @param {object} input Plain attacker, defender, weapon and distance data. `reachDistance` and
  *   `reachEngagement` are where the host checks range, before any move the attack makes; they default to the fought
  *   `distance` and `engagement`.
- * @returns {Readonly<object>} Immutable combat-preview projection.
+ * @returns {Readonly<object>} The frozen preview numbers for both sides.
  */
 export function calculateAttackPreview(input = {}) {
   const attacker = normalizeSide(input.attacker);
@@ -74,7 +76,7 @@ export function calculateAttackPreview(input = {}) {
 }
 
 /* -------------------------------------------- */
-/*  Side projection                             */
+/*  Per-side preview                            */
 /* -------------------------------------------- */
 function sideProjection(self, target, combat, count) {
   const damage = formulaRange(combat.damageFormula);
@@ -106,10 +108,10 @@ function sideProjection(self, target, combat, count) {
 }
 
 /**
- * Shape one side's facts as calculateAttackPreview receives them: coerce what this file reads, and carry the rest
- * through for the rules. sideProjection, validPreviewWeapons and projectedOnBreakCount rely on this shape.
- * @param {object} [side] Detached side facts from the attack-targeting projections.
- * @returns {object} The preview's own side shape, ready for both this file and exchange.mjs.
+ * Clean up one unit's stats for the preview: the fields this file reads get their proper types, and the stats in
+ * CARRIED_RULE_FACTS pass through unchanged.
+ * @param {object} [side] One unit's plain stats from foundry/adapters/projections/attack-targeting.mjs.
+ * @returns {object} The cleaned-up stats, used by this file and exchange.mjs.
  */
 function normalizeSide(side = {}) {
   const shaped = {};
@@ -178,8 +180,9 @@ function validPreviewWeapons(side, distance, engagement = '') {
 /* -------------------------------------------- */
 /**
  * Whether the planned attacks' break damage would empty the defender's stance. Used by projectedOnBreakCount and by
- * the planning API's measured matchups (`willBreak` in projections/attack-targeting.mjs).
- * @param {{breakDamage?: number, stance?: number, attackCount?: number}} [input] Detached break facts.
+ * the Enemy AI's matchup data (`willBreak` in projections/attack-targeting.mjs).
+ * @param {{breakDamage?: number, stance?: number, attackCount?: number}} [input] Break damage per hit, remaining
+ *   stance and number of attacks.
  * @returns {boolean}
  */
 export function stanceBreaksUnderAttacks({ breakDamage, stance, attackCount } = {}) {
@@ -190,9 +193,8 @@ export function stanceBreaksUnderAttacks({ breakDamage, stance, attackCount } = 
 }
 
 /**
- * The average of a plain XdY±N formula, or null for anything else. Used for the Enemy AI's healing and phase
- * damage estimates (projections/attack-targeting.mjs and projections/board.mjs), and by the item sheet to check
- * that a formula can be read.
+ * The midpoint of a plain XdY±N formula's range, with both ends floored at 0, or null for anything else. Used for
+ * the Enemy AI's healing and phase damage estimates, and by the item sheet to check that a formula can be read.
  * @param {unknown} formula Authored damage or healing formula.
  * @returns {number|null} The average, or null when the text is not a plain formula.
  */

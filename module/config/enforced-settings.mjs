@@ -55,8 +55,8 @@ export const ENFORCED_SEQUENCER_SETTINGS = Object.freeze([
 /*  Enforced BG3 HUD Core settings              */
 /* -------------------------------------------- */
 /**
- * BG3 HUD values applied by foundry/adapters/services/settings-policy.mjs.
- * Each client hides its macro bar, and the host turns on the GM hotbar once for the world.
+ * BG3 HUD values applied by external/bg3-hud/core-runtime.mjs.
+ * Each client hides its macro bar, and the active GM turns on the GM hotbar for the world.
  */
 export const ENFORCED_BG3_HUD_SETTINGS = Object.freeze([
   Object.freeze({ key: 'collapseMacrobar', scope: 'client', value: 'always' }),

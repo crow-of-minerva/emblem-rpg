@@ -1,12 +1,12 @@
 /** @layer engine/recovery */
 
 /**
- * Signal stale combat facts to engine/combat/exchanges/resolution.mjs, which refuses the exchange with
- * `COMBAT_EXCHANGE_STALE` and lets CommandDispatcher restore the operation.
+ * Thrown when combat data changed after it was read. engine/combat/exchanges/resolution.mjs refuses the exchange
+ * with `COMBAT_EXCHANGE_STALE`, and CommandDispatcher undoes the command's writes.
  */
 export class StaleCombatError extends Error {}
 
-/** Name a refused write so the refusal an engine settlement returns carries the reason the writer gave. */
+/** A write that failed, in combat, object, movement, trade or item-use code. `code` says why; the command is undone. */
 export class CombatPersistenceError extends Error {
   constructor(code) {
     super(code);

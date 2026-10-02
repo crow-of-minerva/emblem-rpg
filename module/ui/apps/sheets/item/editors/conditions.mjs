@@ -37,8 +37,7 @@ const notify = createItemEditorNotifier({ sourcePath: import.meta.url, diagnosti
 /**
  * Split a condition tree into the single line every condition preview shows: the root group's operator, then its
  * rules by their authored paths, joined with && or ||. `summarizeCondition`, `conditionLineHtml` and
- * `paintConditionLine` all render these two parts, so the builder's summary, the requirement predicate headers,
- * the weapon damage gates and the effect editor's if steps read alike.
+ * `paintConditionLine` all render these two parts, so every condition preview reads alike.
  * @param {object|null} tree      The tree.
  * @returns {{op: string, text: string}} `op` is empty when the tree holds nothing to evaluate.
  */
@@ -116,7 +115,7 @@ function formatLiteral(value) {
 /* -------------------------------------------- */
 
 /**
- * The counter behind the paint-time node ids, reset on every paint so ids stay small and stable within one render.
+ * Counter for the temporary ids each node gets while the tree is drawn, reset on every redraw so ids stay small.
  * @type {number}
  */
 let _nextNodeId = 0;
@@ -129,7 +128,7 @@ function assignIds(tree) {
   return tree;
 }
 
-/** A copy of the tree with the paint-time ids removed. Callers outside the builder only ever get this copy. */
+/** A copy of the tree with the temporary ids removed. Callers outside the builder only ever get this copy. */
 function stripIds(tree) {
   if (!tree || typeof tree !== 'object') return tree;
   const clone = { ...tree };
@@ -208,8 +207,8 @@ function operatorsForPath(left, current) {
  * A list operator takes its literal as a comma-separated string, which is split on read. The placeholder says so,
  * since nothing else in the row would. A `contains` or `not-contains` comparison adds the "any case" mode, a
  * literal stored with `ignoreCase` that the evaluator in game/effects/conditions.mjs matches without regard to letter
- * case. The mode is offered only beside those operators, so `mountConditionTreeBuilder` repaints the row when its
- * operator changes.
+ * case. The mode is offered only beside those operators, so `mountConditionTreeBuilder` redraws the whole tree when
+ * an operator changes.
  * @param {string} op             The comparison's operator, which decides the modes on offer.
  */
 function renderRightOperand(operand, op) {
@@ -238,7 +237,7 @@ function renderRightOperand(operand, op) {
     </span>`;
 }
 
-/** The leaves that carry their own `negate`. A comparison is negated by its operator and a chance by its share. */
+/** The leaves that carry their own `negate`. A comparison is negated by its operator, a chance by its percent. */
 const NEGATABLE_KINDS = Object.freeze(['truthy', 'status']);
 
 /** The controls a leaf carries: change kind and delete, plus negate on the leaves in `NEGATABLE_KINDS`. */
@@ -379,7 +378,8 @@ export function mountPathPicker(scopeEl, { categories = PATH_CATEGORIES, selecto
 /* -------------------------------------------- */
 
 /**
- * The condition clipboard. Every condition editor shares it, so a condition copied in one can be pasted in another.
+ * The condition clipboard. The modifier and requirement editors share it, so a condition copied in one can be pasted
+ * in the other.
  * @type {object|null}
  */
 let _conditionClipboard = null;
@@ -403,7 +403,8 @@ export function getConditionClipboard() {
 
 /**
  * Turn typed text into the value it most likely means. Booleans, null and numbers are recognised, so a comparison
- * against `true` tests the boolean rather than the string. Anything else stays text.
+ * against `true` tests the boolean rather than the string. Anything else stays text. The field's kind is not
+ * checked, so text that looks like a number is always stored as a number.
  */
 function coerceLiteral(s) {
   if (s === '') return '';
@@ -540,7 +541,7 @@ export function readConditionTree(containerEl) {
  * @param {object} tree      The tree read out of the markup, edited in place.
  * @param {string} action    The edit the clicked control asked for.
  * @param {number|null} nodeId  The node it was clicked on, where the edit names one.
- * @param {HTMLElement} btn  The clicked control, which no edit reads.
+ * @param {HTMLElement} btn  The clicked control (unused).
  * @returns {Promise<object|null>} The edited tree, or null for an unknown action.
  */
 async function applyConditionEdit(tree, action, nodeId, btn) {
@@ -596,8 +597,9 @@ async function applyConditionEdit(tree, action, nodeId, btn) {
  * @param {object} [options.summaryEls]           Summary and JSON elements the builder keeps current.
  * @param {string} [options.rootActionsHtml]      Markup placed first in the root group's action cluster, repainted
  *                                                with the tree. The caller handles its events.
- * @param {string} [options.surface]              Which surface the tree belongs to, for the pasted-JSON check. An
- *                                                opener that doesn't say is the effect editor.
+ * @param {string} [options.surface]              Which editor the condition belongs to (effect, modifier, aura,
+ *                                                requirement or damageType), for checking pasted JSON. Defaults
+ *                                                to effect.
  * @returns {{getTree: Function, isEmpty: Function, setTree: Function, repaint: Function}}
  */
 export function mountConditionTreeBuilder(containerEl, options = {}) {
@@ -749,12 +751,12 @@ export const AURA_TARGET_CATEGORIES = Object.freeze(pickerGroups()
   .filter(group => group.paths.length > 0));
 
 /* -------------------------------------------- */
-/*  Requirement Mirrors                         */
+/*  Requirement Paths                           */
 /* -------------------------------------------- */
 
 /**
- * The picker's optgroups as offered in the requirement editor: every general category, plus one mirror per
- * requirement side, since a requirement evaluates against explicit `caster` and `target` roots.
+ * The picker's optgroups as offered in the requirement editor: every general path (a bare name reads the caster),
+ * plus the same paths under `caster.` and `target.`.
  * @type {ReadonlyArray<object>}
  */
 export const REQUIREMENT_PATH_CATEGORIES = Object.freeze([

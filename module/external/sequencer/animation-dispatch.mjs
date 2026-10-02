@@ -14,7 +14,7 @@ import { pageHidden } from '../../lib/dom/visibility.mjs';
  * Play an authored animation through Sequencer. By default every client runs the same call at once, as when a
  * presentation message reaches the table. Pass `broadcast` when only this client runs it and Sequencer should show
  * it to everyone, `preview` for the animation editor (this client only, nothing saved), and `await` to wait for
- * the effects to finish. Used by CombatPresentation, DowntimePresentation and the item animation editor.
+ * the effects to finish.
  */
 export class AnimationDispatcher {
   static play(anim, ctx, opts = {}) {
@@ -136,8 +136,8 @@ function singleTarget(target) {
 /**
  * Turn an authored location name ('token', 'target', 'target-location' and so on) into something Sequencer can
  * place an effect at: a token, or the pixel center of a grid square. 'target-location' uses the target token when
- * the context has no square. 'target-endpoint' reads a targeting line end point that nothing sets at present, so
- * it always uses the target token too.
+ * the context has no square. 'target-endpoint' is unused: nothing sets the end point it reads, so it falls back to
+ * the target token too.
  */
 function resolveLocation(ref, ctx) {
   if (!ref) return null;
@@ -284,6 +284,8 @@ function applyEffectStep(seq, step, ctx, { local = false } = {}) {
   }
 
   if (step.name) chain = chain.name(step.name);
+  // A plain `persist: true` also saves the effect on the token's prototype, so on a linked token it follows the
+  // actor to other scenes and new tokens.
   if (step.persist === true) {
     chain = chain.persist(true, { persistTokenPrototype: true });
   } else if (step.persist && typeof step.persist === 'object') {
@@ -370,6 +372,7 @@ function buildSequence(steps, ctx, opts = {}) {
   }
   let seq = new Seq();
   const role = playbackRole(opts);
+  // Each client rolls its own random numbers, so a step listing several files may show a different one on each.
   const plan = planAnimationSteps(steps, projectAnimationFacts(ctx), steps.map(() => Math.random()));
   for (const error of plan.errors) {
     reportFoundryValidation(import.meta.url, JSON.stringify(error), `Animation step ${error.index + 1} has an invalid condition expression.`);
@@ -400,10 +403,11 @@ function buildSequence(steps, ctx, opts = {}) {
 
 /**
  * Decide what this client plays. By default every client runs the animation, so each draws its own copy of the
- * passing effects and sounds, and only the active GM plays persistent effects and token animations, which
- * Sequencer syncs to everyone. With `broadcast`, only this client runs it, so it plays everything and Sequencer
- * shows it to the others. A `preview` plays on this client only, with persistent effects made temporary and token
- * animations left out. A hidden page skips the passing effects and sounds.
+ * temporary effects and sounds, and only the host GM's client plays persistent effects and token animations, which
+ * Sequencer then shows to everyone. (`isActiveGm` means the host: the one connected GM, on one tab. It is not
+ * Foundry's `game.users.activeGM`.) With `broadcast`, only this client runs it, so it plays everything and
+ * Sequencer shows it to the others. A `preview` plays on this client only, with persistent effects made temporary
+ * and token animations left out. A hidden tab skips the temporary effects and sounds.
  * @returns {{local: boolean, syncs: boolean, draws: boolean, preview: boolean}}
  */
 function playbackRole(opts) {
@@ -414,8 +418,8 @@ function playbackRole(opts) {
 }
 
 /**
- * Hold this client's sequence while the active GM plays a token animation that is waited on, so the steps after it
- * land together on every client.
+ * Hold this client's sequence while the host GM's client plays a token animation that is waited on, so the steps
+ * after it land together on every client.
  */
 function holdForTokenAnimStep(seq, step) {
   if (!step.waitUntilFinished) return seq;
@@ -426,8 +430,9 @@ function holdForTokenAnimStep(seq, step) {
 }
 
 /**
- * Plain copies of the token, its actor, the targets and the active item, which planAnimationSteps checks authored
- * step conditions against.
+ * Copies of the token, its actor, the targets and the active item, which planAnimationSteps checks authored step
+ * conditions against. `system` is not copied: deepClone returns a data model unchanged, so conditions read the
+ * live actor and item data.
  */
 function projectAnimationFacts(ctx) {
   const token = projectToken(ctx?.token);
@@ -485,7 +490,7 @@ function projectItem(item) {
 }
 
 /**
- * Give every passing effect a name so waitForNamedEffects can wait for it after Sequencer's play promise settles.
+ * Give every temporary effect a name so waitForNamedEffects can wait for it after Sequencer's play promise settles.
  * Authored names are kept, and persistent effects are left out.
  * @returns {{anim: object, names: string[]}} The renamed animation and the names to wait on.
  */
@@ -523,8 +528,8 @@ async function waitForNamedEffects(names, timeoutMs = NAMED_EFFECT_WAIT_CAP_MS) 
 
 /**
  * Play a built sequence. With `opts.await`, the returned promise settles when the sequence ends or after
- * NAMED_EFFECT_WAIT_CAP_MS, whichever comes first. Otherwise a later failure is recorded here, where the
- * diagnostic still names this file.
+ * NAMED_EFFECT_WAIT_CAP_MS, whichever comes first. Sequencer's play promise does not reject, so errors show up
+ * as exceptions while the sequence starts, which are recorded here.
  * @param {string} label What to call this in an error.
  */
 function playPromise(seq, opts, label) {

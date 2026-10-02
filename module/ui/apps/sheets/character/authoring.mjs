@@ -18,6 +18,10 @@ import { readItemCatalog } from '../../../../foundry/adapters/projections/items.
 import { reportFoundryError, FoundryDiagnostics } from '../../../../foundry/adapters/services/diagnostics.mjs';
 
 const notifications = new NotificationService({ diagnostics: new FoundryDiagnostics() });
+/**
+ * The "Blank Novice/Intermediate/Advanced" choices in the Class picker. Their keys must match the Class item's
+ * system fields, since any other key is dropped when the Class is created.
+ */
 const DEFAULT_CLASS_TEMPLATES = Object.freeze({
   Novice: {
     name: 'Novice', tier: 'Novice',
@@ -273,8 +277,8 @@ export async function openAddSupportDialog(actor) {
 }
 
 /**
- * Edit one of the Character's Support bonds and submit the list through commitSupportPartners. The host updates the
- * matching entries on the old and new partner.
+ * Edit one of the Character's Support bonds and submit the list through commitSupportPartners. The GM's client
+ * updates the matching entries on the old and new partner.
  * @param {Actor} actor Character whose bond is being edited.
  * @param {number} index Position of the bond on that Character.
  */
@@ -330,8 +334,8 @@ export async function openSupportEditorDialog(actor, index) {
 }
 
 /**
- * Submit support edits through the host command so both Actors update in one settlement, even when the requester
- * owns only one. The facade already shows a refusal's own notice, so none is added here.
+ * Send support edits as a command the GM's client runs, so both units update together even when the requester owns
+ * only one. Refusals are already shown by the API, so none is added here.
  * @param {Actor} actor Character whose bonds are being replaced.
  * @param {Array<object>} partners The complete replacement list.
  * @returns {Promise<boolean>} Whether the edit was accepted.

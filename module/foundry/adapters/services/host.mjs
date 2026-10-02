@@ -141,14 +141,14 @@ export function resolveViewedScene(sceneUuid = '') {
 /*  Host state                                  */
 /* -------------------------------------------- */
 /**
- * This user's other open pages, as HostPagePresence (socket/host-presence.mjs) hears of them. init/system.mjs
- * wires the presence exchange, and projectHostAuthority reads the count.
+ * The other browser tabs this user has open, as heard over the socket (socket/host-presence.mjs fills it). With two
+ * tabs of the Gamemaster open, neither can be the host client.
  */
 export const HOST_PAGE_PEERS = new HostPageSessions();
 
 /**
- * Work out which page is the command host from the connected users and HOST_PAGE_PEERS, through
- * resolveHostAuthority (contracts/protocol.mjs).
+ * Work out which client is the host client, from the connected users and the number of other tabs this user has
+ * open (resolveHostAuthority in contracts/protocol.mjs).
  * @returns {{state: string, hostUserId: string, hostUserIds: string[], localIsHost: boolean}}
  */
 export function projectHostAuthority() {
@@ -158,8 +158,9 @@ export function projectHostAuthority() {
 }
 
 /**
- * Whether this page is the command host: the only connected Gamemaster, on their only open page. Assistant GMs
- * never host, and nobody does while two Gamemasters, or two pages of one, are connected.
+ * Whether this client is the host client: the only connected Gamemaster, with a single browser tab open. Assistant
+ * GMs never host, and nobody does while two Gamemasters, or two tabs of one, are connected. This is not Foundry's
+ * game.users.activeGM, which core uses for its own GM-only writes.
  * @returns {boolean}
  */
 export function isActiveGm() {
@@ -200,8 +201,8 @@ export function readSetting(key, fallback = null, namespace = SYSTEM_ID) {
 }
 
 /**
- * The key Foundry marks a serialized data operator with (ForcedDeletion and the like). CommandGateway hands it to
- * the payload firewall (socket/firewall.mjs) so an operator counts as one value, not an object to walk into.
+ * The marker Foundry puts on a serialized ForcedDeletion or ForcedReplacement, so the socket payload check
+ * (socket/firewall.mjs) treats such an operator as one value rather than an object to walk into.
  */
 export function dataOperatorIdentifier() {
   return globalThis.foundry?.data?.operators?.OPERATOR_IDENTIFIER ?? null;
@@ -248,7 +249,7 @@ const FLAG_KEY_DOT = '·';
 
 /**
  * Copy a record for a flag, with the dots in every key (UUID keys included) changed to FLAG_KEY_DOT so Foundry
- * doesn't expand them. Used for the terrain spawn state in document-writes/terrain.mjs.
+ * doesn't expand them.
  */
 export function packFlagKeys(value) {
   if (Array.isArray(value)) return value.map(packFlagKeys);
@@ -311,9 +312,8 @@ export function persistedTokenFootprintCells(token, gridSize) {
 }
 
 /**
- * Pixel centre of a token's saved position, counting it at least one square across. Every wall test between two
- * units measures from here: attack targeting and planning (projections/attack-targeting.mjs), the exchange
- * snapshot (projections/combat-exchange.mjs) and item activation (projections/items.mjs).
+ * Pixel centre of a token's saved position, counting it at least one square across. Wall tests between two units
+ * measure from here.
  * @param {object|null} token TokenDocument or placeable.
  * @param {number} gridSize The pixel size of one square.
  * @returns {{x: number, y: number}}
@@ -445,7 +445,7 @@ export function readEffectFlags(effect) {
   return { ...(effect?.flags?.[SYSTEM_ID] ?? {}) };
 }
 
-/** Whether an effect change adds to its target rather than overriding it, in either change vocabulary. */
+/** Whether an effect change adds to its target rather than overriding it, under v14's `type` or the older `mode`. */
 export function isAdditiveEffectChange(change) {
   if (change?.type !== undefined) return change.type === 'add';
   return change?.mode === undefined || change.mode === 'add' || change.mode === 2;
@@ -495,7 +495,7 @@ export function forcedReplacement(path, value) {
   return { [path]: foundry.data.operators.ForcedReplacement.create(value) };
 }
 
-/** Move a token to a grid square with TokenDocument#move, as settlements do. Returns false if the move was refused. */
+/** Move a token to a grid square with TokenDocument#move. Returns false if the move was refused. */
 export async function displaceToken(token, destination, gridSize, options, action = 'displace') {
   const point = { x: Math.round(destination.x) * gridSize, y: Math.round(destination.y) * gridSize };
   return await token.move({ ...point, action }, options) !== false;
@@ -505,8 +505,8 @@ export async function displaceToken(token, destination, gridSize, options, actio
 /*  Canvas Token boundary                       */
 /* -------------------------------------------- */
 /**
- * Token lookups for presentation: the document, and its placeable when this client has its Scene drawn. Built once
- * in init/system.mjs and handed as `tokens` to the health writer and the presenters that animate tokens.
+ * Token lookups for animations and other display code: the document, and its placeable when this client has its
+ * Scene drawn.
  */
 export class FoundryCanvasTokenRepository {
   document(tokenUuid) {
@@ -529,9 +529,8 @@ export class FoundryCanvasTokenRepository {
   }
 
   /**
-   * The tokens the camera frames on this client when a player phase opens (panPhase in
-   * presentation/camera/cinematic.mjs). A player gets their Lord, or their own party units when they have no Lord
-   * on the displayed Scene. A GM gets the whole party.
+   * The tokens the camera frames on this client when a player phase opens. A player gets their Lord, or their own
+   * party units when they have no Lord on the displayed Scene. A GM gets the whole party.
    */
   phaseFocusPlaceables() {
     const user = globalThis.game?.user;

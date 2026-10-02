@@ -20,7 +20,8 @@ export const CONVOY_GOLD_DRAG_TYPE = 'EmblemConvoyGold';
 
 /**
  * The Item flag marking a Convoy's inbound Item, `flags['emblem-rpg'].inbound === true`: owned by the Convoy but not
- * yet delivered, so no gameplay reader of Convoy items sees it until staff deliver it (game/economy/inbound.mjs).
+ * yet delivered, so no gameplay code that reads Convoy items sees it until the GM delivers it
+ * (game/economy/inbound.mjs).
  */
 export const CONVOY_INBOUND_FLAG = 'inbound';
 
@@ -28,8 +29,8 @@ export const CONVOY_INBOUND_FLAG = 'inbound';
 const MAX_TRANSFER_QUANTITY = 9999;
 
 /**
- * The resource key trade commands list with their actors' keys (engine/economy/trade.mjs). Like every resource key,
- * it only records what the command touches. There is no ledger behind it.
+ * The resource key trade commands claim along with their actors' keys (engine/economy/trade.mjs). Like every
+ * resource key, it locks nothing; it records what the command touches. There is no ledger behind it.
  */
 export const ECONOMY_LEDGER_RESOURCE_KEY = 'economy:ledger';
 
@@ -41,8 +42,8 @@ export const ECONOMY_LEDGER_STATES = Object.freeze({
 });
 
 /**
- * What an economy settlement write reports (foundry/adapters/document-writes/economy.mjs): settled, stale (nothing
- * written) or reverted (undone after a failed write). No writer produces `blocked` or `recovery-required`.
+ * What an economy save reports (foundry/adapters/document-writes/economy.mjs): settled, stale (nothing written) or
+ * reverted (undone after a failed write). `blocked` and `recovery-required` are unused.
  */
 export const ECONOMY_SETTLEMENT_OUTCOMES = Object.freeze({
   SETTLED: 'settled',
@@ -77,7 +78,7 @@ const VENDOR_MERCHANDISE_INTENT_KEYS = ['vendorUuid', 'changes'];
 const MERCHANDISE_PATH = /^system\.(acceptedMerchandise|disposition)(\.[A-Za-z]+){0,3}$/;
 const DOCUMENT_ID = /^[A-Za-z0-9]{8,32}$/;
 
-/** Bound one trade or loot request: two placed Tokens and the embedded Item ids leaving each side. */
+/** Check one trade or loot request: two placed Tokens and the embedded Item ids leaving each side. */
 export function normalizeTradeIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, TRADE_INTENT_KEYS)) return null;
   const sourceTokenUuid = tokenUuid(payload.sourceTokenUuid);
@@ -90,7 +91,7 @@ export function normalizeTradeIntent(payload) {
   return Object.freeze({ sourceTokenUuid, targetTokenUuid, giveItemIds, takeItemIds });
 }
 
-/** Bound the two placed Tokens a trade view is read for, before anything is selected. */
+/** Check the two placed Tokens a trade view is read for, before anything is selected. */
 export function normalizeTradePair(payload) {
   if (!plainRecord(payload)) return null;
   const sourceTokenUuid = tokenUuid(payload.sourceTokenUuid);
@@ -99,7 +100,7 @@ export function normalizeTradePair(payload) {
   return Object.freeze({ sourceTokenUuid, targetTokenUuid });
 }
 
-/** Bound one steal request: the thief, the mark, and what is reached for. */
+/** Check one steal request: the thief, the mark, and what is reached for. */
 export function normalizeStealIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, STEAL_INTENT_KEYS)) return null;
   const sourceTokenUuid = tokenUuid(payload.sourceTokenUuid);
@@ -110,7 +111,7 @@ export function normalizeStealIntent(payload) {
   return Object.freeze({ sourceTokenUuid, targetTokenUuid, itemIds });
 }
 
-/** Bound one convoy deposit: the unit giving, the Item leaving it, the Convoy it goes to, and how many units. */
+/** Check one convoy deposit: the unit giving, the Item leaving it, the Convoy it goes to, and how many units. */
 export function normalizeConvoyDepositIntent(payload) {
   if (!plainRecord(payload)) return null;
   const { amount: rawAmount, ...rest } = payload;
@@ -127,7 +128,7 @@ export function normalizeConvoyDepositIntent(payload) {
 const CONVOY_DELIVERY_INTENT_KEYS = ['convoyUuid', 'itemIds', 'gold', 'all'];
 
 /**
- * Bound one staff delivery of a Convoy's inbound content: the Convoy, the inbound Item ids chosen, whether the
+ * Check one GM delivery of a Convoy's inbound content: the Convoy, the inbound Item ids chosen, whether the
  * inbound gold goes too, and whether everything goes. An empty selection passes here. planConvoyDelivery in
  * game/economy/inbound.mjs then finds nothing to deliver, and the command refuses it as empty.
  */
@@ -142,7 +143,7 @@ export function normalizeConvoyDeliveryIntent(payload) {
   return Object.freeze({ convoyUuid, itemIds, gold: payload.gold === true, all: payload.all === true });
 }
 
-/** Bound one vendor stocking: a GM moving one of a unit's possessions onto a Vendor's shelf, optionally counted. */
+/** Check one vendor stocking: a GM moving one of a unit's possessions onto a Vendor's shelf, optionally counted. */
 export function normalizeVendorStockIntent(payload) {
   if (!plainRecord(payload)) return null;
   const { amount: rawAmount, ...rest } = payload;
@@ -156,7 +157,7 @@ export function normalizeVendorStockIntent(payload) {
   return Object.freeze({ sourceActorUuid, itemId, vendorUuid, amount });
 }
 
-/** Bound one convoy withdrawal: the unit receiving, the Convoy paying, and a whole number of gold of at least 1. */
+/** Check one convoy withdrawal: the unit receiving, the Convoy paying, and a whole number of gold of at least 1. */
 export function normalizeConvoyWithdrawalIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, CONVOY_WITHDRAWAL_INTENT_KEYS)) return null;
   const targetActorUuid = actorUuid(payload.targetActorUuid);
@@ -167,7 +168,7 @@ export function normalizeConvoyWithdrawalIntent(payload) {
   return Object.freeze({ targetActorUuid, convoyUuid, amount });
 }
 
-/** Bound the two placed Tokens a shop is read for: the unit at the counter and the Vendor it stands beside. */
+/** Check the two placed Tokens a shop is read for: the unit at the counter and the Vendor it stands beside. */
 export function normalizeShopIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, SHOP_INTENT_KEYS)) return null;
   const buyerTokenUuid = tokenUuid(payload.buyerTokenUuid);
@@ -177,7 +178,7 @@ export function normalizeShopIntent(payload) {
 }
 
 /**
- * Bound one purchase: the buyer and its Token, the shop and its Token, the shelf entry, how many, and the Convoy
+ * Check one purchase: the buyer and its Token, the shop and its Token, the shelf entry, how many, and the Convoy
  * it may be delivered to. The Tokens are named so the host can check that the two still stand together.
  */
 export function normalizeVendorPurchaseIntent(payload) {
@@ -198,7 +199,7 @@ export function normalizeVendorPurchaseIntent(payload) {
   });
 }
 
-/** Bound one sale: the seller and its Token, the shop and its Token, where the goods come from, the Item, how many. */
+/** Check one sale: the seller and its Token, the shop and its Token, where the goods come from, the Item, how many. */
 export function normalizeVendorSaleIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, VENDOR_SALE_INTENT_KEYS)) return null;
   const sellerActorUuid = actorUuid(payload.sellerActorUuid);
@@ -224,7 +225,7 @@ const VENDOR_CHECKOUT_LINE_KEYS = ['itemId', 'quantity'];
 export const VENDOR_CHECKOUT_MODES = Object.freeze({ BUY: 'buy', SELL: 'sell' });
 const VENDOR_CHECKOUT_MAX_LINES = TRADE_MAX_ITEMS;
 
-/** Bound one basket: the mode, the pair at the counter, the Convoy paying or supplying, and its distinct lines. */
+/** Check one basket: the mode, the pair at the counter, the Convoy paying or supplying, and its distinct lines. */
 export function normalizeVendorCheckoutIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, VENDOR_CHECKOUT_INTENT_KEYS)) return null;
   if (!Object.values(VENDOR_CHECKOUT_MODES).includes(payload.mode)) return null;
@@ -243,7 +244,7 @@ export function normalizeVendorCheckoutIntent(payload) {
   });
 }
 
-/** The single-line payload one basket line settles through, shaped as the purchase or sale command reads it. */
+/** The single-line payload one basket line goes through, shaped as the purchase or sale command reads it. */
 export function vendorCheckoutLinePayload(intent, itemId, quantity) {
   const counter = {
     buyerTokenUuid: intent.buyerTokenUuid, vendorUuid: intent.vendorUuid, vendorTokenUuid: intent.vendorTokenUuid,
@@ -270,7 +271,7 @@ function checkoutLines(value) {
 const HAGGLE_INTENT_KEYS = ['buyerActorUuid', 'buyerTokenUuid', 'vendorUuid', 'vendorTokenUuid'];
 
 /**
- * Bound one haggle: the unit at the counter and its Token, and the Vendor and its Token. The Tokens are named so the
+ * Check one haggle: the unit at the counter and its Token, and the Vendor and its Token. The Tokens are named so the
  * host can check that the two still stand together, as a basket does.
  */
 export function normalizeHaggleIntent(payload) {
@@ -284,7 +285,7 @@ export function normalizeHaggleIntent(payload) {
   return Object.freeze({ buyerActorUuid, buyerTokenUuid, vendorUuid, vendorTokenUuid });
 }
 
-/** Bound a merchandise-settings write: a Vendor and the flat dot-path changes the dialog produced. */
+/** Check a merchandise-settings write: a Vendor and the flat dot-path changes the dialog produced. */
 export function normalizeVendorMerchandiseIntent(payload) {
   if (!plainRecord(payload) || !exactKeys(payload, VENDOR_MERCHANDISE_INTENT_KEYS)) return null;
   const vendorUuid = actorUuid(payload.vendorUuid);
@@ -302,10 +303,13 @@ export function normalizeVendorMerchandiseIntent(payload) {
 /* -------------------------------------------- */
 /*  Timing                                      */
 /* -------------------------------------------- */
-/** Theft timings: the wait for the dice, and the pause on the verdict. The engine waits on its own clock. */
+/** Theft timings: the wait for the dice, and the pause on the verdict. The host waits a fixed time. */
 export const STEAL_ATTEMPT_TIMING = Object.freeze({ diceSettleHold: 2600, verdictHold: 500 });
 
-/** Haggle timing: the wait for the Trading check's dice before the shift settles. The engine waits on its own clock. */
+/**
+ * Haggle timing: the wait for the Trading check's dice before the disposition shift is applied. The host waits a
+ * fixed time, not for Dice So Nice.
+ */
 export const HAGGLE_TIMING = Object.freeze({ diceSettleHold: 2600 });
 
 /* -------------------------------------------- */
@@ -322,7 +326,7 @@ export const ECONOMY_PRESENTATION_EVENTS = Object.freeze({
   HAGGLE_SETTLED: 'haggle-settled'
 });
 
-/** Build the verdict the active GM broadcasts: a theft's cue and card, a basket's receipt, or a haggle's card. */
+/** Build the result the GM's client sends to all: a theft's cue and card, a basket's receipt, or a haggle's card. */
 export function economyPresentationMessage(event, data = {}) {
   if (!Object.values(ECONOMY_PRESENTATION_EVENTS).includes(event)) {
     throw new TypeError(`Unknown economy presentation event: ${event}`);
@@ -331,7 +335,7 @@ export function economyPresentationMessage(event, data = {}) {
 }
 
 /**
- * Accept only bounded economy feedback at the presentation socket. A theft or a receipt carries its item list; a
+ * Check an economy message received over the socket. A theft or a receipt carries its item list; a
  * haggle's card carries the numbers EconomyOutcomePresentation prints instead (presentation/interface/chat-cards.mjs).
  */
 export function isEconomyPresentationMessage(value) {

@@ -23,14 +23,15 @@ const DURATION_PENDING = '--:--';
 /*  Performance menu                            */
 /* -------------------------------------------- */
 /**
- * Show an Instrument's lead performers, their songs and the accompaniment a group song needs. interactWithStation
- * (ui/controls/interaction.mjs) opens it with the api.downtime.inspectPerformance view. On submit the window closes
- * and one api.downtime.perform command runs, which shows the banner and posts every performer's roll card and the
- * result card.
+ * Show an Instrument's lead performers, their songs and the accompaniment a group song needs, from the
+ * api.downtime.inspectPerformance view. Begin Performance sends one api.downtime.perform command, which shows the
+ * banner and posts every performer's roll card and the result card. A refusal made on this client, such as a busy
+ * host or a paused table, leaves the window open with the picks; otherwise the window closes while the host runs the
+ * command.
  * @param {object} view The downtime query's performance view (api.downtime.inspectPerformance).
  * @param {{refresh?: Function}} [handlers] Re-reads the view before the window is rebuilt.
- * @returns {Promise<boolean>} Always false in practice: the window closes before the perform command answers, and
- *   the caller ignores the value.
+ * @returns {Promise<boolean>} Resolves when the window closes, which is before the command answers, so the value
+ *   does not report the outcome.
  */
 export async function openPerformanceMenu(view, { refresh = null } = {}) {
   if (menuShown(WINDOW_CLASS)) return false;
@@ -171,7 +172,7 @@ function accompanimentsNeeded(song) {
 
 /**
  * Build the song card: its difficulty and performers, the stats it inspires in stat order, its linked track and the
- * accompaniment it needs. A linked track the view has no facts for is one that no longer resolves.
+ * accompaniment it needs. A linked track missing from the view's `tracks` can no longer be found.
  */
 function songDetail(song, { tracks, durations }, { need, chosen, free }) {
   const bonuses = SONG_STAT_KEYS.map(key => {
@@ -237,6 +238,7 @@ function listNames(names) {
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
+/** Render the body, and write the lead it shows back into the picks, so a lead who became unavailable is replaced. */
 async function render(view, state) {
   const prepared = preparePerformanceView(view, state);
   state.performerUuid = prepared.performers.find(entry => entry.selected)?.actorUuid ?? null;
@@ -298,8 +300,8 @@ function toggleAccompaniment(menu, row) {
 }
 
 /**
- * Close the window, then send the perform command with the lead, the song and the accompanists. The public API's
- * command path shows the result, refusals included, through its notification service.
+ * Send the perform command with the lead, the song and the accompanists. The API shows the result, including any
+ * refusal, as a notification.
  */
 async function beginPerformance(menu) {
   const { view, state } = menu;

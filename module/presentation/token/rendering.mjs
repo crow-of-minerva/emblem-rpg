@@ -60,12 +60,9 @@ export const TOKEN_DODGE_MS = DODGE_OUT_MS + DODGE_HOLD_MS + DODGE_BACK_MS;
 
 const reportedUnconfiguredPorts = new Set();
 /**
- * Report once per session, for each missing function, that configureTokenPresentation or
- * configureTokenEffectPresentation was never called. `presentation/` may not import the `foundry/` diagnostics
- * adapter, and neither configure call passes in diagnostics, so this writes to the console and shows an error
- * notification instead. It never throws. Every caller runs inside the PIXI ticker or a libWrapper override of
- * Foundry's token effect drawing, and PIXI's Ticker#_tick stops scheduling frames once a listener throws, which
- * would freeze the whole canvas.
+ * Warn once, in the console and as an error notification, if init never handed this file one of its Foundry
+ * functions. It never throws: callers include canvas tickers and Foundry's token effect drawing, and a throw there
+ * stops the canvas drawing.
  */
 function warnUnconfiguredPort(port, configureFn) {
   if (reportedUnconfiguredPorts.has(port)) return;
@@ -108,6 +105,7 @@ export function animateTokenFootstep(token) {
       clearFootstepBounce(token);
       return;
     }
+    // PIXI 7 passes a ticker callback a frame delta number, not the ticker, so the milliseconds come from the ticker.
     elapsed += Number(frame?.deltaMS ?? ticker.deltaMS) || (1000 / 60);
     const progress = Math.min(1, elapsed / FOOTSTEP_BOUNCE_MS);
     token._emblemTransientY = -amplitude * (1 - Math.abs((2 * progress) - 1));
@@ -138,6 +136,7 @@ export function animateTokenShake(token, amplitude = 0.11, duration = 420) {
     const apply = () => {
       if (token.mesh && !token.mesh.destroyed) token.mesh.position.x = baseX + currentOffset;
     };
+    // Foundry's position refresh resets the mesh position, so put the offset back after every token refresh.
     const refreshHookId = Hooks.on('refreshToken', refreshed => {
       if (refreshed === token) apply();
     });
@@ -169,9 +168,8 @@ export function animateTokenShake(token, amplitude = 0.11, duration = 420) {
 }
 
 /**
- * Hide a unit's pathfinding arrow and selection brackets while `exchanging` is true, and bring them back when it is
- * false. CombatPresentation hides them through an exchange or activation, the targeting controls while a
- * confirmed attack or activation is being resolved, and the Promote menu while a promotion runs.
+ * Hide a unit's pathfinding arrow and selection brackets while `exchanging` is true (during an attack, activation
+ * or promotion), and bring them back when it is false.
  */
 export function holdPathfindingIndicator(token, exchanging) {
   if (!token?.id) return;
@@ -199,6 +197,7 @@ export function animateTokenDodge(token, attacker) {
       token._emblemTransientY = currentY;
       applyVerticalAdjustment(token);
     };
+    // Foundry's position refresh resets the mesh position, so put the offset back after every token refresh.
     const refreshHookId = Hooks.on('refreshToken', refreshed => {
       if (refreshed === token) apply();
     });
@@ -299,10 +298,7 @@ export function animateTokenDefeatFade(token, durationMs = DEFEAT_PRESENTATION_T
   });
 }
 
-/**
- * Remove the defeat fade from a unit's mesh. HealthPresentation calls it for the clear-fade beat, and
- * onDestroyTokenPresentation when the token is removed.
- */
+/** Remove the defeat fade from a unit's mesh, when the fade is cleared or the token is removed. */
 export function clearTokenDefeatFade(subject) {
   const tokenId = subject?.id ?? subject?.document?.id;
   const entry = tokenId ? tokenDefeatFades.get(tokenId) : null;
@@ -375,9 +371,9 @@ export function onRefreshTokenPresentation(token) {
 }
 
 /**
- * Sort airborne Token meshes above ground units during rendering, without writing Scene sort values. Presentation
- * cannot import isAirborneActor from foundry/adapters/projections/combat-context.mjs, so this reads the same two
- * facts: a Character's compiled airborne status, and any other Actor's flying type.
+ * Draw airborne token meshes above ground units, without writing the scene's sort values. This file can't import
+ * isAirborneActor from foundry/adapters/projections/combat-context.mjs, so it makes the same two checks: a
+ * Character's airborne status, and any other actor's flying unit type.
  */
 function applyAirborneSort(token) {
   const mesh = token?.mesh;
@@ -386,13 +382,15 @@ function applyAirborneSort(token) {
   const airborne = actor?.type === 'Character'
     ? actor.system.statuses.airborne === true
     : actor?.system?.unitType?.flying === true;
+  // Foundry's state refresh sets mesh.sort back to the document's sort, so the refreshToken hook, which runs after
+  // it, sets this again.
   mesh.sort = token.document.sort + (airborne ? AIRBORNE_SORT_OFFSET : 0);
   return airborne;
 }
 
 /**
- * Reapply nearest sampling after Foundry replaces a token mesh texture. A movement write or a turn replaces none,
- * and every refresh while the Token walks applies the sampling anyway, so neither schedules the retries.
+ * Reapply nearest sampling after Foundry replaces a token mesh texture. A move or a rotation change doesn't replace
+ * the texture, and every refresh while the token moves reapplies the sampling anyway, so those updates skip it.
  */
 export function onUpdateTokenPresentation(tokenDocument, changes = null) {
   const keys = Object.keys(changes ?? {});
@@ -419,7 +417,7 @@ export function onUpdateActorTokenPresentation(actor) {
   }
 }
 
-/** Reapply nearest filtering when Foundry rebuilds status icons for an ActiveEffect. */
+/** When an actor's ActiveEffect changes, lay out its tokens' status icons again and reapply pixel-art sampling. */
 export function onActiveEffectTokenPresentation(effect) {
   const actorUuid = effect?.parent?.uuid;
   if (!actorUuid) return;
@@ -430,7 +428,7 @@ export function onActiveEffectTokenPresentation(effect) {
   }
 }
 
-/** Suppress Foundry’s hover frame during Token presentation refresh. */
+/** Keep Foundry's hover frame hidden when a token is hovered. */
 export function onHoverTokenPresentation(token) {
   hideCoreTokenDecorations(token);
 }
@@ -476,7 +474,10 @@ function applyNearestTokenScaling(token) {
   applyNearestEffectScaling(token, nearest);
 }
 
-/** Cover the short v14 window where a draw or animated update replaces the current PIXI texture. */
+/**
+ * Foundry can swap a token's texture just after a draw or update, so apply pixel-art sampling now and again at
+ * 50 ms and 250 ms.
+ */
 function scheduleNearestTokenScaling(subject) {
   const token = tokenPlaceable(subject);
   const tokenId = token?.id ?? subject?.id;
@@ -572,7 +573,11 @@ function tokenPlaceable(subject) {
 /* -------------------------------------------- */
 /*  Core suppression                            */
 /* -------------------------------------------- */
-/** Hide the native hover, control, and target graphics without removing Foundry's internal containers. */
+/**
+ * Hide Foundry's hover and control border and its target arrows and pips on every token, without removing the
+ * containers, because the system draws its own selection brackets and target reticle. Foundry's state, border and
+ * target refreshes draw and show them again, so this runs on every refresh.
+ */
 function hideCoreTokenDecorations(token) {
   if (!token) return;
   if (token.border) {
@@ -626,8 +631,8 @@ function refreshTokenTurnGreyout(token, acting = actingPhaseFactions(token?.scen
 /*  Control indicators                          */
 /* -------------------------------------------- */
 /**
- * Show an inspection frame without controlling the Token. Keep only one and preserve an existing pathfinding
- * arrow.
+ * Show the selection frame on the token a player clicked, without taking control of it. Only one token has this
+ * frame at a time, and an existing pathfinding arrow stays.
  */
 export function showFacadeSelection(token) {
   const tokenId = token?.id ?? null;
@@ -638,12 +643,12 @@ export function showFacadeSelection(token) {
   return true;
 }
 
-/** The token the pretend selection frame is on, so a key press can act on the unit the player last pressed. */
+/** The token that frame is on, so a key press can act on the unit the player last clicked. */
 export function facadeSelectedTokenId() {
   return facadeSelectionTokenId;
 }
 
-/** Take the pretend selection down, leaving a real selection's own frame in place. */
+/** Take that frame down, leaving a real selection's own frame in place. */
 export function clearFacadeSelection() {
   const tokenId = facadeSelectionTokenId;
   if (!tokenId) return false;
@@ -666,7 +671,7 @@ function refreshControlIndicator(token, controlled = token?.controlled) {
   if (!selectionIndicators.has(token.id)) showSelectionIndicator(token);
 }
 
-/** The frame stands for the GM's own selection and for the pretend selection a player's press leaves behind. */
+/** The frame shows the GM's own selection, and the token a player last clicked (see showFacadeSelection). */
 function wearsSelectionFrame(token, controlled) {
   if (facadeSelectionTokenId === token.id) return true;
   return controlled === true && game.user.isGM === true;
@@ -858,6 +863,7 @@ function clearTokenIndicators() {
   for (const tokenId of [...targetIndicators.keys()]) clearTargetIndicator({ id: tokenId });
 }
 
+/** canvas.stage doesn't sort its children, so zIndex has no effect: the layers stack in the order they were made. */
 function overlayLayer(name, zIndex) {
   let layer = canvas.stage.children.find(child => child.name === name);
   if (!layer) {
@@ -959,7 +965,9 @@ export function configureTokenEffectPresentation(configuration = {}) {
 
 /**
  * Draw Emblem's status icons in place of Foundry's token effects. init/hooks.mjs installs it as a libWrapper
- * override of Token#_drawEffects, so `this` is the Token.
+ * override of Token#_drawEffects, so `this` is the Token. It follows core v14 `_drawEffects`, except: the icons come
+ * from projectEffects (armour and mount entries dropped), wield icons come first and the overlay last, each icon
+ * keeps its effect and gets pixel-art sampling, and the layout runs once before the icons are shown.
  */
 export async function drawEmblemTokenEffects() {
   this.effects.renderable = false;

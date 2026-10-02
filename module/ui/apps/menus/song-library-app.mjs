@@ -128,8 +128,7 @@ export class SongLibraryApp extends LibraryApp {
 
   /**
    * Send the whole library through api.downtime.saveSongLibrary, with `removed` listing the built-ins it no longer
-   * holds. The command only checks that list's shape, because FoundryDowntimeRepository.saveSongLibrary works out
-   * the removals again from the songs.
+   * holds. The server works out the removals itself from the songs and only checks that `removed` is well formed.
    */
   async _saveLibrary(songs) {
     const removed = missingBuiltins(songs, this._builtins).map(song => song.id);

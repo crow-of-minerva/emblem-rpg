@@ -12,8 +12,8 @@ import { sanitizeException, sanitizeTileEffect, tileEffectIsActive } from '../..
 import { capitalize } from '../../../../lib/dom/html.mjs';
 
 /**
- * The header classes every row list shares. The three editors reuse the spawn row's chrome, so CSS styles all of
- * them from one rule set.
+ * The header classes every row list shares. All three lists reuse the spawn row's header markup, so one set of CSS
+ * rules styles them.
  */
 const TITLE_CLASS = 'terrain-spawn-title';
 const DELETE_CLASS = 'terrain-spawn-del';
@@ -23,12 +23,11 @@ const DELETE_CLASS = 'terrain-spawn-del';
 /* -------------------------------------------- */
 
 /**
- * Normalise one authored spawn array.
+ * Normalise one spawn array.
  *
  * An end round of zero means "no end", which is why it is passed through untouched. Any other value is pulled up to
- * the start round, so an authored window can never come out inverted and silently spawn nothing. Also used by
- * `_spawnSig` in app.mjs to compare spawn lists across a selection.
- * @param {object} raw            Authored spawn data.
+ * the start round, so a spawn window can never come out inverted and silently spawn nothing.
+ * @param {object} raw            Spawn data as typed or saved.
  * @returns {object}
  */
 export function sanitizeTerrainSpawn(raw) {
@@ -45,25 +44,28 @@ export function sanitizeTerrainSpawn(raw) {
   };
 }
 
-/** Display label for a tile effect type. The healing case returns what `capitalize` would give anyway. */
+/** Display label for a tile effect type. */
 const tileEffectTypeLabel = (type) => (type === 'healing' ? 'Healing' : capitalize(type));
 
 /* -------------------------------------------- */
-/*  Row descriptors                             */
+/*  Row specs                                   */
 /* -------------------------------------------- */
 
 /**
  * What one repeated list in the Selection trays holds.
  *
- * `TerrainRowEditor` owns the mechanics every list shares (building rows, adding, removing, renumbering and
- * reading them back), and a descriptor supplies only what differs:
+ * `TerrainRowEditor` does what every list shares (building, adding, removing, renumbering and reading rows), and
+ * each row spec supplies only what differs:
  * - `listSelector`, `rowSelector` and `rowClass` place the rows in `templates/editors/terrain-builder.hbs`.
- * - `markup` and `hydrate` build one row. `styles/emblem-rpg.css` styles their classes.
- * - `read` collects a row's controls and `sanitize` normalises them, which is also how a stored list is normalised.
- * - `isActive` decides whether a row carries anything: an inactive row is marked invalid and dropped on read.
- * - `label` titles a row, `decorate` adjusts it for its own contents, and `renumberRow` replaces both when a row
- *   titles itself asynchronously, as a spawn row does from its resolved Actor.
+ * - `markup` builds one row's HTML and `hydrate` fills its controls from a saved entry. `styles/emblem-rpg.css`
+ *   styles their classes.
+ * - `read` collects a row's controls and `sanitize` normalises them, which is also how a saved list is normalised.
+ * - `isActive` decides whether a row carries anything. Inactive rows are dropped on read; exception and tile effect
+ *   rows are also marked invalid.
+ * - `label` titles a row and `decorate` adjusts it for its own contents. `renumberRow` replaces the title and the
+ *   invalid mark for a row that titles itself later, as a spawn row does from its Actor.
  * - `changeClasses` name the controls whose edits retitle the row.
+ * - `wire(row, context)` adds the row's own listeners once it is built; `context` holds `renumber` and `hooks`.
  * @typedef {object} TerrainRowSpec
  */
 export const TERRAIN_ROW_SPECS = Object.freeze({
@@ -142,7 +144,7 @@ export const TERRAIN_ROW_SPECS = Object.freeze({
       behavior: row.querySelector('.terrain-spawn-behavior')?.value
     }),
 
-    /** Collapse, the spawn window clamp and the Actor lookup, which the shared editor knows nothing about. */
+    /** The collapse button, keeping End Round at or after Start Round, and the Actor lookup. */
     wire(row, { hooks }) {
       const cell = (cls) => row.querySelector(`.${cls}`);
       cell('terrain-spawn-collapse').addEventListener('click', () => row.classList.toggle('is-collapsed'));
@@ -161,7 +163,7 @@ export const TERRAIN_ROW_SPECS = Object.freeze({
       void resolveSpawnRow(row, hooks);
     },
 
-    /** A spawn row is titled by its Actor, so renumbering only restates the fallback and re-resolves. */
+    /** A spawn row is titled by its Actor, so renumbering only updates the fallback title and looks it up again. */
     renumberRow(row, label, { hooks }) {
       row.dataset.spawnLabel = label;
       void resolveSpawnRow(row, hooks);
@@ -320,9 +322,9 @@ export const TERRAIN_ROW_SPECS = Object.freeze({
 /**
  * One repeated list in the Selection trays.
  *
- * `TerrainBuilder` owns three of these, one per descriptor above. Rows are built and removed in place rather than
- * through a re-render, so adding or removing one never reloads the other trays from the Scene and discards unsaved
- * fields. `readAll` is what `TerrainBuilder._readPerSquareForm` stores in the per-square form.
+ * `TerrainBuilder` owns three of these, one per entry of `TERRAIN_ROW_SPECS`. Rows are built and removed in place
+ * rather than through a re-render, so adding or removing one never reloads the other trays from the Scene and
+ * discards unsaved fields. `readAll` gives the list's value for the per-square form.
  */
 export class TerrainRowEditor {
   #spec;
@@ -333,7 +335,7 @@ export class TerrainRowEditor {
    * @param {TerrainRowSpec} spec                 One entry of `TERRAIN_ROW_SPECS`.
    * @param {object} options
    * @param {function(): HTMLElement|null} options.root   The builder's current element, re-read on every call.
-   * @param {object} [options.hooks]              Host lookups a descriptor needs, such as the spawn Actor resolver.
+   * @param {object} [options.hooks]              Foundry lookups a row spec needs, such as the spawn Actor resolver.
    */
   constructor(spec, { root, hooks = {} }) {
     this.#spec = spec;
@@ -398,7 +400,7 @@ export class TerrainRowEditor {
     return { renumber: () => this.renumber(), hooks: this.#hooks };
   }
 
-  /** Build one row: its markup, its stored values, the shared delete and retitle wiring, then the descriptor's own. */
+  /** Build one row: its markup, its saved values, the shared delete and retitle wiring, then the row spec's `wire`. */
   #node(data = {}) {
     const spec = this.#spec;
     const entry = spec.sanitize(data);
@@ -420,7 +422,7 @@ export class TerrainRowEditor {
 }
 
 /* -------------------------------------------- */
-/*  Descriptor helpers                          */
+/*  Row helpers                                 */
 /* -------------------------------------------- */
 
 /** The `<option>` markup of one row select. */
@@ -451,10 +453,10 @@ function syncExceptionRow(row, renumber) {
 }
 
 /**
- * Resolve the spawn Actor for its row label and AI behavior picker. Recheck the UUID after awaiting to discard
- * stale lookups.
+ * Look up a spawn row's Actor to title the row and enable the behavior picker. If the UUID changed during the lookup,
+ * the result is dropped.
  * @param {HTMLElement} row               Spawn row.
- * @param {object} hooks                  Supplies `resolveSpawnReference`, the terrain projection the app injects.
+ * @param {object} hooks                  Supplies `resolveSpawnReference`, which app.mjs passes in.
  * @returns {Promise<void>}
  */
 async function resolveSpawnRow(row, hooks) {

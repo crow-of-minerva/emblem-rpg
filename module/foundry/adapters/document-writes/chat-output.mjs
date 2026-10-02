@@ -3,10 +3,13 @@ import { resolveAvatarScale, skillRankLabel } from '../../../game/character/rule
 import { isActiveGm } from '../services/host.mjs';
 import { reportFoundryError } from '../services/diagnostics.mjs';
 
-/** How long a card whose creation never finishes holds up the next card before the queue moves on. */
+/** The longest a card holds up the next one, counted from when the card was queued, not from when it started. */
 const CARD_ORDER_BOUND_MS = 10000;
 
-/** Foundry's message modes, with the roll-mode names v14 still maps onto them. */
+/**
+ * Foundry's message modes, with the old roll-mode names mapped onto them. Unlike Foundry, which maps `roll` to the
+ * user's default message mode, `roll` is treated as public here.
+ */
 const MESSAGE_MODES = Object.freeze({
   public: 'public', publicroll: 'public', roll: 'public', ic: 'public', ooc: 'public',
   gm: 'gm', gmroll: 'gm', blind: 'blind', blindroll: 'blind', self: 'self', selfroll: 'self'
@@ -49,7 +52,7 @@ export class FoundryChatOutput {
   /**
    * Create the ChatMessage after any cards already queued, with the requester's author and visibility. Returns
    * null on any client but the active GM's. `waitForDice` doesn't wait: it only marks a roll card, so the dice
-   * sound plays even with no rolls attached. Dice So Nice animates on its own, and the engine clock paces play.
+   * sound plays even with no rolls attached. Dice So Nice animates on its own, and the engine handles the timing.
    */
   async create({ actorUuid, content, alias = '', rolls = null, rollReference = '', waitForDice = false, whisper = [],
     requester = null }) {
@@ -76,8 +79,9 @@ export class FoundryChatOutput {
 }
 
 /**
- * Resolve requester attribution and whispers for FoundryChatOutput. If the requester is unknown,
- * keep private rolls staff-only and omit the author instead of publishing them to the table.
+ * Resolve requester attribution and whispers for FoundryChatOutput. If the requester is unknown, a private roll is
+ * whispered to the GMs instead of shown to the table. Its blank author fails validation, so Foundry records the
+ * creating GM as the author.
  */
 function requesterVisibility(requester) {
   if (!requester) return null;
@@ -92,7 +96,10 @@ function requesterVisibility(requester) {
   return { author, blind, ...(whisper.length ? { whisper: [...whisper] } : {}) };
 }
 
-/** Create cards one after another in the order they were asked for, so no card overtakes an earlier one. */
+/**
+ * Create cards one after another in the order they were asked for. A card stops holding up the next one 10 seconds
+ * after it was queued, so in a long burst, or behind a creation that hangs, later cards can overtake.
+ */
 function inCardOrder(work) {
   const created = cardTail.then(work);
   let timer = null;
@@ -123,7 +130,7 @@ export class FoundryProgressionChatOutput {
     }));
   }
 
-  /** Announce a skill rank climbed by use, projecting the portrait and die labels the card renderer draws. */
+  /** Announce a skill rank climbed by use, with the portrait and die labels the card shows. */
   async createSkillRankUp({ actorUuid, actorName, skillKey, skillLabel, total, ranksGained }) {
     if (typeof this.renderSkillRankUp !== 'function') return null;
     const actor = await fromUuid(actorUuid).catch((diagnosticError) => { reportFoundryError(import.meta.url, diagnosticError, 'actor'); return null; });

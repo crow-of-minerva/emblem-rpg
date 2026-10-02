@@ -17,14 +17,13 @@ const ATTACK_ITEM_SUBTYPES = new Set(['Weapon', 'Attack', 'Staff', 'Weapon Art']
 /**
  * Whether Sanctuary stops an item use from picking this unit. A hostile action can't pick a Sanctuary unit: an
  * attack, or a Single or Multiple use whose target type is not Friendly. An area shape (Line, Cone, Location, Area)
- * still catches it, a Friendly use still reaches it, and a caster may still target itself.
- * validateActivationTargets in game/items/activation.mjs refuses the pick with it, on the clicking client and on the
- * host. projectItemUsability in foundry/adapters/projections/attack-targeting.mjs uses it to answer
- * api.combat.canUse, which is how the Enemy AI learns it can't target the unit.
+ * still catches it, a Friendly use still reaches it, and a caster may still target itself. Checked on the clicking
+ * client and on the host client, and behind api.combat.canUse, which is how the Enemy AI learns it can't target the
+ * unit.
  * @param {{attack?: boolean, targetType?: string, rngType?: string}} aim How the use picks its targets: the
- *   activation facts from deriveActivationEnvelope, or itemSanctuaryAim's reading of an item.
+ *   activation details from deriveActivationEnvelope, or itemSanctuaryAim's reading of an item.
  * @param {string} sourceActorUuid The acting unit.
- * @param {{actorUuid?: string, sanctuary?: boolean, objectTarget?: boolean}} target One picked unit's facts.
+ * @param {{actorUuid?: string, sanctuary?: boolean, objectTarget?: boolean}} target One picked unit's data.
  * @returns {boolean}
  */
 export function sanctuaryBlocksPick(aim = {}, sourceActorUuid = '', target = {}) {
@@ -35,10 +34,9 @@ export function sanctuaryBlocksPick(aim = {}, sourceActorUuid = '', target = {})
 }
 
 /**
- * Build the aim sanctuaryBlocksPick checks from an item's detached facts, with the same defaults
- * deriveActivationEnvelope gives an item that authored none. Used by projectItemUsability
- * (foundry/adapters/projections/attack-targeting.mjs).
- * @param {{system?: object}} item Detached Item facts.
+ * Build the aim sanctuaryBlocksPick checks from an item's data, with the same defaults deriveActivationEnvelope
+ * gives an item that authored none. Used by projectItemUsability (foundry/adapters/projections/attack-targeting.mjs).
+ * @param {{system?: object}} item Plain item data.
  * @returns {{attack: boolean, targetType: string, rngType: string}}
  */
 export function itemSanctuaryAim(item = {}) {

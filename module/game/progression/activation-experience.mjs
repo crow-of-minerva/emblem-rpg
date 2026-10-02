@@ -39,16 +39,14 @@ export function activationExperienceKey(name) {
 }
 
 /**
- * Parse the `exp-data.json` file that foundry/adapters/services/json-files.mjs reads. A key may bundle several Item
+ * Parse the `exp-data.json` file that foundry/adapters/services/json-files.mjs reads. A key may list several Item
  * names separated by commas, and each name gets its own copy of the entry. An entry with an unusable field is
- * skipped and an unknown field is ignored, each with a warning, so one typo never disables the rest of the table.
- * A valid declaration of a name declared before replaces the earlier one, with one console-only notice per name;
- * an invalid one is skipped and leaves the earlier one. A payload that is not a table at all throws, and the reader
- * falls back to the next file.
+ * skipped and an unknown field is ignored, each with a warning. A later valid entry for a name replaces an earlier
+ * one, with one console notice per name. A payload that is not a table at all throws, and the reader falls back to
+ * the next file.
  * @param {*} payload Parsed file contents: `{items: {[itemNames]: entry}}`.
- * @param {Array<[string, *]>} [itemPairs] The `items` members in source order, repeated keys included, as the
- *   reader scans them from the file's text. A parsed object keeps only the last of two identical keys, and puts
- *   integer-like keys first, so its own order is the fallback.
+ * @param {Array<[string, *]>} [itemPairs] The `items` members in file order, repeated keys included, as the reader
+ *   scans them from the file's text. Without it the parsed object's own order is used.
  * @returns {{entries: ReadonlyMap<string, object>, warnings: string[], notices: string[]}} Entries keyed by
  *   activationExperienceKey; `warnings` for skipped entries and ignored fields, `notices` for repeated names.
  */
@@ -127,14 +125,15 @@ function isNonNegativeNumber(value) {
 
 /**
  * Raw level XP one Item activation earns its caster, before the unit's and the world's multipliers. The item
- * activation snapshot (foundry/adapters/projections/items.mjs) carries the entry found by the Item's name. The
+ * activation data (foundry/adapters/projections/items.mjs) carries the entry found by the Item's name. The
  * activation engine (engine/items/activation.mjs) reports what the action did to each target and hands a positive
  * result to the combat progression service. An Item with no entry, an activation outside a running encounter and
- * an entry already used `limit` times this encounter earn nothing.
+ * an entry already used `limit` times this encounter earn nothing. Otherwise the award is at least the entry's
+ * `min`, even when no target counted.
  * @param {object} input
  * @param {object|null} input.entry The parsed table entry, or null when the Item has none.
  * @param {number} input.casterLevel The caster's level.
- * @param {object[]} input.targets One outcome-facts record per target the activation reached.
+ * @param {object[]} input.targets One record per target the activation reached, saying what it did to that target.
  * @param {boolean} input.encounterRunning Whether an encounter is running on the caster's scene.
  * @param {number} input.usesThisEncounter XP-granting uses of this entry the caster has made this encounter.
  * @returns {{experience: number, countsTowardLimit: boolean}} `countsTowardLimit` says to advance the use counter.

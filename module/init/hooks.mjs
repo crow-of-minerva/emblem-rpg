@@ -235,13 +235,10 @@ import { reportFoundryError, FoundryDiagnostics, observeFoundryErrors } from '..
 /* -------------------------------------------- */
 
 /**
- * Run one consumer of a fan-out hook handler and keep going when it throws.
- *
- * Foundry hands a document update to every interested part of the system through a single handler below, so one
- * failing consumer must not skip the rest: the throw is reported through foundry/adapters/services/diagnostics.mjs
- * and the caller reads `undefined` for that step.
- * @param {string} name Which consumer failed, for the diagnostic.
- * @param {Function} run The consumer.
+ * Run one step of a hook handler. If it throws, report the error and return undefined so the handler's later steps
+ * still run.
+ * @param {string} name Which step failed, for the diagnostic.
+ * @param {Function} run The step.
  * @returns {*} Whatever the consumer returned, or undefined when it threw.
  */
 function guarded(name, run) {
@@ -253,6 +250,7 @@ function guarded(name, run) {
   }
 }
 
+/** Hooks to subscribe, one per key of `lifecycle` and `globalHandlers` below; a handler left off never runs. */
 const LIFECYCLE_HOOK_CATALOG = Object.freeze(['init', 'setup', 'socketlib.ready', 'ready']);
 const GLOBAL_HOOK_CATALOG = Object.freeze([
   'bg3HudReady',
@@ -480,6 +478,7 @@ export function installSystemHooks() {
       disposeTokenBars();
     },
     collapseSidebar: () => {
+      // Wait for the sidebar's collapse animation before measuring where the round warning goes.
       setTimeout(() => anchorRoundWarning(), 350);
       onCollapseSidebarNotifications();
     },
@@ -661,6 +660,7 @@ export function installSystemHooks() {
       onPreUpdateTokenRotation(...args);
       objects.onPreUpdateFixtureToken(args[0], args[1]);
       const allowed = onPreUpdateTokenMovement(...args);
+      // True only for a step along the unit's planned path; other moves keep their facing.
       if (allowed === true) applyMovementFacing(...args);
       return allowed;
     },
@@ -701,6 +701,7 @@ export function installSystemHooks() {
     },
     sequencerReady: () => refreshTerrainRuntime(),
     sightRefresh: () => {
+      // A GM sees every enemy, so only a player's tracker can change when sight does.
       if (!game.user.isGM) rerenderTrackerForSightRefresh();
     },
     sequencerEffectManagerReady: () => openTerrainEffectGate(),
@@ -713,8 +714,8 @@ export function installSystemHooks() {
       onBg3HudDocumentChanged(...args);
     },
     /**
-     * Every consumer of an Actor update, each behind `guarded` so one throwing consumer can't skip the rest. The
-     * stance settlement's result is returned, but Foundry ignores it: updateActor is raised with Hooks.callAll.
+     * Every step runs through `guarded`, so one that throws doesn't skip the rest. The stance step's result is
+     * returned, but Foundry ignores it: updateActor is raised with Hooks.callAll.
      */
     updateActor: (...args) => {
       guarded('threat', () => runtime.threat.onUpdateActor(args[0], args[1]));
@@ -830,10 +831,11 @@ export function installSystemHooks() {
 }
 
 /* -------------------------------------------- */
-/*  Board cursor facts                          */
+/*  Map cursor state                            */
 /* -------------------------------------------- */
 /**
- * Read targeting and movement state for ui/controls/board-cursor.mjs.
+ * Whether this client is picking a target or dragging a unit, which decides the mouse cursor over the map
+ * (ui/controls/board-cursor.mjs).
  */
 function readBoardCursorFacts() {
   const plan = inspectMovementPlan();
@@ -890,7 +892,10 @@ const TOKEN_EFFECT_WRAPPERS = Object.freeze([
   'foundry.canvas.placeables.Token.prototype._refreshEffects'
 ]);
 
-/** Whether a refreshToken pass only refreshes visibility, which Foundry does every frame and the handlers can skip. */
+/**
+ * Whether a refreshToken pass only refreshes visibility. Foundry raises those on every vision refresh, which is every
+ * frame while something animates, and the handlers can skip them.
+ */
 function visibilityOnlyRefresh(flags) {
   const raised = Object.keys(flags).filter(flag => flags[flag]);
   return raised.length === 1 && raised[0] === 'refreshVisibility';
@@ -906,7 +911,11 @@ function tokenOutlineSettingChanged(setting) {
   return setting.key === `${SYSTEM_ID}.${TOKEN_OUTLINE_COLOUR_SETTING}`;
 }
 
-/** Replace Token#_drawEffects and Token#_refreshEffects with the system's (presentation/token/rendering.mjs). */
+/**
+ * Replace Token#_drawEffects and Token#_refreshEffects with the system's (presentation/token/rendering.mjs). As
+ * libWrapper OVERRIDEs, core's effect-icon drawing never runs, and another module that also overrides these
+ * methods will conflict.
+ */
 function initializeTokenEffectRendering() {
   if (!globalThis.libWrapper) {
     reportFoundryError(import.meta.url, null, 'Emblem RPG | libWrapper is required for Token effect presentation.');
@@ -949,7 +958,7 @@ function scheduleTerrainRefresh() {
 }
 
 /**
- * Redraw the displayed Scene's terrain from its flags: the terrain presentation, spawn images, placeables and, once
+ * Redraw the displayed Scene's terrain from its flags: the terrain overlay, spawn images, placeables and, once
  * Sequencer is ready, the looping terrain effects. scheduleTerrainRefresh debounces Scene and wall changes into one
  * call 100 ms later.
  */

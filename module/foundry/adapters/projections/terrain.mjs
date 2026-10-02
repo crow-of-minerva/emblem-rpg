@@ -120,8 +120,7 @@ export function readTerrainMovement(scene, profile, { airborne = false, mounted 
 
 /**
  * Whether an obstacle lies under a token's saved position, so a flier there couldn't land (landingBlocked in
- * game/movement/pathfinding.mjs). The item and shop projections read it to decide whether an action may set a
- * flier down.
+ * game/movement/pathfinding.mjs).
  * @param {object} token TokenDocument or placeable.
  * @returns {boolean}
  */
@@ -138,11 +137,11 @@ export function projectLandingBlocked(token) {
 }
 
 /**
- * The whole map's terrain as a planner routes over it: its Defend objective squares, its teleports, its
- * elevations, and whether straight-line distance is still a lower bound on travel. The Enemy AI reads it as
+ * The whole map's terrain for the Enemy AI planner: its Defend objective squares, its teleports, its elevations,
+ * and whether straight-line distance is still a lower bound on travel. The Enemy AI reads it as
  * game.emblemRpg.api.terrain.getBoard.
  * @param {string} [sceneUuid] Scene to read, defaulting to the displayed one.
- * @returns {Readonly<object>|null} Frozen terrain board, or null when the Scene can't be found.
+ * @returns {Readonly<object>|null} Frozen terrain data, or null when the Scene can't be found.
  */
 export function projectTerrainMeasurementBoard(sceneUuid = '') {
   const scene = resolveViewedScene(sceneUuid);
@@ -163,6 +162,7 @@ export function projectTerrainMeasurementBoard(sceneUuid = '') {
     travelBoundedByDistance: terrainBoundsTravelByDistance({
       terrainCosts: movement.costs, terrainTeleports: movement.teleports
     }),
+    // Scene padding is always 0 (hooks/scene.mjs), so the map's size in squares is its pixel size over the grid size.
     columns: Math.ceil((Number(scene.width) || 0) / gridSize),
     rows: Math.ceil((Number(scene.height) || 0) / gridSize)
   });
@@ -181,7 +181,7 @@ export function readZoneCells(zoneId, scene = globalThis.canvas?.scene) {
 
 /**
  * How many of the Scene's walls the Terrain Builder can edit, and how many of those block movement and sight. A
- * locked Door's own walls belong to door reconciliation, so they are left out.
+ * locked Door's own walls are managed by the Door, so they are left out.
  */
 export function readBuilderWallCounts(scene = globalThis.canvas?.scene) {
   const counts = { total: 0, move: 0, sight: 0 };
@@ -200,8 +200,7 @@ export function suggestZoneColor(scene = globalThis.canvas?.scene) {
 }
 
 /**
- * The Scene's records of the terrain edits spells have made, keyed by cell. FoundryTerrainRepository reads them, and
- * readTerrainEditPresentation describes one for the Terrain Builder.
+ * The Scene's records of the terrain edits spells have made, keyed by cell.
  */
 export function readTerrainEditRecords(scene = globalThis.canvas?.scene) {
   return readTerrainFlag(scene, TERRAIN_EDIT_RECORDS_FLAG);
@@ -298,8 +297,7 @@ export async function readTerrainSpawnImages(grid, { includeHidden = false } = {
 /* -------------------------------------------- */
 /**
  * What a line-of-sight test over an area reads: terrain heights and blockers, the cells units occupy (and which of
- * them are airborne), and, for each origin cell in `centers`, the cells walls hide from it. Used by the item area
- * projections in items.mjs and by projectGeometrySight.
+ * them are airborne), and, for each origin cell in `centers`, the cells walls hide from it.
  */
 export function projectSight(scene, { cells, centers, losRule = 'normal', ground = false, units = [] }) {
   const terrain = projectTerrainSight(scene, ground);
@@ -331,8 +329,8 @@ export function projectSight(scene, { cells, centers, losRule = 'normal', ground
 const TERRAIN_SIGHT = new WeakMap();
 
 /**
- * The terrain heights and blockers a sight test reads. One activation snapshot tests sight two or three times, so
- * the result is cached against the terrain grid copy it came from and reused until the Scene changes.
+ * The terrain heights and blockers a sight test reads. One item use tests sight two or three times, so the result
+ * is cached against the terrain grid copy it came from and reused until the scene changes.
  */
 function projectTerrainSight(scene, ground) {
   const grid = readTerrainGrid(scene);
@@ -357,8 +355,10 @@ function projectTerrainSight(scene, ground) {
 }
 
 /**
- * Ask Foundry’s collision backend which cells are blocked from the origin. For an unviewed walled Scene,
- * report all other cells blocked because the backend only knows the displayed Scene’s walls.
+ * Ask Foundry’s collision backend which cells are blocked from the origin. For a scene with walls that this client
+ * isn't viewing, report every other cell blocked, because the backend only knows the walls of the scene on the
+ * canvas. With no level given, testCollision uses the canvas's current Level (v14), so units on different Levels
+ * of one scene are tested as if on the same one.
  */
 function wallBlockedFrom(scene, center, cells, gridSize) {
   const blocked = new Set();
@@ -381,10 +381,9 @@ function wallBlockedFrom(scene, center, cells, gridSize) {
 }
 
 /**
- * The sight facts for a geometry requirement that needs line of sight, cast from its anchor over the cells it
- * covers. The combat and movement projections give it to createGeometryResolver (game/targeting/shapes.mjs) as its
- * `sight` port, and document-writes/effect-execution.mjs and ui/controls/targeting.mjs call it directly.
- * @param {object} board The mover’s movement snapshot, naming its Scene and bounds.
+ * Line-of-sight data for a placement requirement that needs sight, cast from `anchor` over the cells it covers.
+ * createGeometryResolver (game/targeting/shapes.mjs) takes it as its `sight` option.
+ * @param {object} board The mover’s movement data (projectMovementSnapshot), naming its scene and size.
  * @param {object} anchor The square or footprint the geometry is measured from.
  * @param {{width: number, height: number}} footprint The placed unit’s footprint.
  * @param {object} spec Normalized geometry spec.
@@ -398,7 +397,7 @@ export function projectGeometrySight(board, anchor, footprint, spec) {
 }
 
 /* -------------------------------------------- */
-/*  Projection helpers                          */
+/*  Helpers                                     */
 /* -------------------------------------------- */
 function terrainEditRemainingLabel(record) {
   if (record.respawnRemaining !== null && record.respawnRemaining !== undefined) {

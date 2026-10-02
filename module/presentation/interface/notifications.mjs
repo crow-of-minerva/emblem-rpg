@@ -19,9 +19,8 @@ export { NOTIFICATION_IDS, NOTIFICATIONS };
 const REFUSAL_LEVELS = Object.freeze(['warn', 'error']);
 
 /**
- * Player text for the `data.reasonCode` values that mean the game changed under a command before it finished.
- * CommandDispatcher puts a refused command's writes back before it answers, so these ask the player to choose the
- * action again instead of logging a diagnostic.
+ * Messages for actions refused because the game changed mid-action, keyed by `data.reasonCode`. Nothing was
+ * changed, so the player just chooses the action again.
  */
 const COMMAND_REFUSAL_TEXT = Object.freeze({
   'health.aggregate-missing': 'That unit or its equipment changed. Choose the action again.',
@@ -32,7 +31,7 @@ const COMMAND_REFUSAL_TEXT = Object.freeze({
 /**
  * Show notifications by id: look the text up in notification-catalog.mjs and pass it to Foundry's
  * ui.notifications. Warnings and errors also play the error sound. A catalog entry with a `backend`, and a result
- * that carries a diagnostic or `diagnosticRecovery`, go to the diagnostics log instead of a toast.
+ * that carries a diagnostic, go to the diagnostics log instead, which shows its own generic error toast.
  */
 export class NotificationService {
   static #shownResults = new WeakSet();
@@ -65,6 +64,7 @@ export class NotificationService {
 
   #showResult(result) {
     const definition = NOTIFICATIONS[result?.code];
+    // The same result object can reach this from more than one place; show it once.
     if (result && typeof result === 'object') {
       if (NotificationService.#shownResults.has(result)) return;
       NotificationService.#shownResults.add(result);
@@ -83,6 +83,7 @@ export class NotificationService {
       ui.notifications?.warn?.(refusal);
       return;
     }
+    // A stale attack always shows its own warning, even if its reasonCode names an entry that is logged instead.
     const backend = result.code === NOTIFICATION_IDS.COMBAT_EXCHANGE_STALE ? definition.backend
       : NOTIFICATIONS[result.data?.reasonCode]?.backend ?? definition.backend;
     if (backend || result.data?.diagnosticRecovery) {
@@ -213,7 +214,8 @@ export function presentInventoryRefusal(notifications, message) {
 }
 
 /**
- * Tell a unit's owner what the capacity reconciliation moved, from the notice the host addressed to them.
+ * Tell a unit's owner which items were moved to the Convoy because the unit was over capacity, from the notice the
+ * host addressed to them.
  * @param {{show: Function}} notifications This client's notification service.
  * @param {object} message A validated capacity notice.
  * @returns {boolean} Whether the notice was shown.

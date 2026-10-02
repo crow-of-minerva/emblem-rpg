@@ -35,7 +35,8 @@ export class PromotionPresentation {
   /**
    * Present one promotion beat the host sent: the flourish over the unit, or the stat panel.
    * @param {object} message A validated progression presentation message.
-   * @returns {Promise<boolean>} Whether this client started the beat.
+   * @returns {Promise<boolean|undefined>} False when this client skips the beat. A started flourish returns true at
+   *   once; the stat panel resolves when it has finished.
    */
   async show(message) {
     if (message?.beat === PROGRESSION_PRESENTATION_BEATS.PROMOTION_FLOURISH) {

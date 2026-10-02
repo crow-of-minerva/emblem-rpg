@@ -40,7 +40,7 @@ function characterFieldShapes() {
   const derivedString = initial => new F.StringField({ initial, persisted: false });
   const derivedBoolean = initial => new F.BooleanField({ initial, persisted: false });
 
-  /** A stat node: `base` is authored, the rest are contributions the compiler totals. */
+  /** A stat: `base` is set on the sheet, and the other parts are bonuses that preparation adds into `total`. */
   const stat = (initial = 0) => new F.SchemaField({
     base: number(initial, { integer: true }),
     mod: number(0, { integer: true }),
@@ -279,8 +279,8 @@ export class CharacterDataModel extends foundry.abstract.TypeDataModel {
       statuses: new F.SchemaField(statusFields),
       combat: derivedBoolMap(COMBAT_FLAG_KEYS),
       /**
-       * The counterattack mode the BG3 HUD toggle sets through api.character.setPacifist. It is persisted beside the
-       * derived `combat` map, which preparation rebuilds, and projectCombatRuleFacts reads it as cannotCounter.
+       * The counterattack mode the BG3 HUD toggle sets through api.character.setPacifist. It is saved data beside the
+       * derived `combat` map, which preparation rebuilds, and the combat rules read it as "cannot counter".
        */
       pacifist: new F.BooleanField({ initial: false }),
       innateUnitType: savedBoolMap(UNIT_TYPE_KEYS),
@@ -343,9 +343,9 @@ function difficultyTargetActor(actor) {
 /* -------------------------------------------- */
 
 /**
- * Fill a Character's derived fields from compileCharacterData, during EmblemActor#prepareDerivedData. Chance
- * modifiers use only the rolls the host's action scope supplied.
- * @returns {Readonly<object>} The drawn chance rolls this preparation replayed, by modifier key and node path.
+ * Fill a Character's derived fields from compileCharacterData, during EmblemActor#prepareDerivedData.
+ * Percent-chance modifiers count only if the host rolled them for the current command.
+ * @returns {Readonly<object>} The chance rolls this preparation used, by modifier key and condition path.
  */
 export function prepareCharacterData(actor) {
   const projected = projectCharacterSource(actor);
@@ -365,6 +365,7 @@ export function prepareCharacterData(actor) {
   Object.assign(system.resources.stn, compiled.resources.stn);
   Object.assign(system.resources.energy, compiled.resources.energy);
   Object.assign(system.equipment, compiled.equipment);
+  // The saved max is the sheet's value; preparation replaces it with that value raised by any effect granting more.
   for (const [key, pool] of Object.entries(compiled.special)) {
     if (system.special[key]) system.special[key].max = pool.max;
   }

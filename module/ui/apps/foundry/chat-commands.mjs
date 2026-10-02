@@ -5,7 +5,7 @@ export const CHAT_COMMANDS = Object.freeze({ '/release': 'release', '/unstuck': 
 const LABELS = Object.freeze({ release: '/release', unstuck: '/unstuck' });
 
 /**
- * The two staff recovery chat commands: /release and /unstuck. init/system.mjs builds them, and the chatMessage hook
+ * The two GM recovery chat commands: /release and /unstuck. init/system.mjs builds them, and the chatMessage hook
  * in init/hooks.mjs calls onChatMessage. Chat only asks, through game.emblemRpg.api.recovery. The host checks the user
  * and carries out the command.
  */
@@ -13,10 +13,9 @@ export function createRecoveryChatCommands({ api, notify, localUser, diagnostics
   const runners = Object.freeze({ release, unstuck });
 
   /**
-   * Free the table from a token-control hold through a forced api.recovery.clearLock (RECOVERY.CLEAR_LOCK on the
-   * host). It releases the movement lock even while its holder is connected, and also a lock left after a GM restore
-   * closed the plan. The host posts the timeout notice to chat itself, so this speaks only when that post failed or
-   * the host refused.
+   * Release the movement lock so the table can act again, even if the player holding it is still connected, or if
+   * a GM restore left it behind. The host posts the chat notice itself; this only speaks if that post failed or the
+   * host refused.
    */
   async function release(argumentsText) {
     if (argumentsText) { notify.usage('Use /release.'); return null; }
@@ -32,9 +31,9 @@ export function createRecoveryChatCommands({ api, notify, localUser, diagnostics
   }
 
   /**
-   * Free the table from a stuck processing state. A forced RECOVERY.CLEAR_BUSY makes CommandDispatcher abandon
-   * whatever command holds execution, which lifts every client's processing blocker. Token control stays with its
-   * holder until /release frees it.
+   * Clear a stuck "processing" state. The host client gives up on whatever action is running, which lifts the
+   * processing block on every client. If that action had saved an undo record, the host client reloads and undoes
+   * it on startup. The movement lock stays where it is until /release frees it.
    */
   async function unstuck(argumentsText) {
     if (argumentsText) { notify.usage('Use /unstuck.'); return null; }

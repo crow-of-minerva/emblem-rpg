@@ -77,7 +77,7 @@ export function calculateSavingThrowDifficulty(attributes, savingThrowDc = {}) {
 /**
  * Shape a prepared unit's saving-throw modifiers from its flat `system.saves` bonuses and its `system.statuses`.
  * Each save key keeps its flat bonus, and `withheld` lists the attributes whose own value the unit adds to no save.
- * The item-activation target projection builds `saveModifiers` here, so an activation's save and the confirm
+ * Item activation builds each target's `saveModifiers` here, so an activation's save and the confirm
  * window's forecast read the same modifiers.
  * @param {Record<string, number>} [saves] Flat save bonuses by attribute key.
  * @param {Record<string, boolean>} [statuses] The unit's compiled status flags.
@@ -96,7 +96,7 @@ export function projectSavingThrowModifiers(saves = {}, statuses = {}) {
 }
 
 /**
- * Build a saving-throw plan for the Foundry dice adapter from detached facts. The attribute's own value is left out
+ * Build a saving-throw plan for the Foundry dice adapter from detached data. The attribute's own value is left out
  * when `saveModifiers.withheld` names it. Its flat save bonus and the advantage mode still apply.
  */
 export function buildSavingThrow(input = {}) {
@@ -153,8 +153,9 @@ export function resolveCheckTotals(totals, mode, dc = null) {
 }
 
 /**
- * The exact chance a check succeeds as declared, before any karma. The dice adapter (foundry/adapters/dice/checks.mjs)
- * books it on the karma ledger, and the lock, crossing and item-activation previews show it.
+ * The chance a check succeeds as declared, before any karma. It assumes a plain d20, even when the world uses the
+ * two-random-numbers model. The dice adapter (foundry/adapters/dice/checks.mjs) books it on the karma ledger, and
+ * the lock, crossing and item-activation previews show it.
  */
 export function checkSuccessChance(check) {
   if (!Number.isFinite(check.dc)) return 0;
@@ -286,7 +287,7 @@ export function resolveAttackCheck({
   });
 }
 
-/** Calculate the exact chance of beating Evasion with d20, Accuracy, and optional Blessed d4. */
+/** The chance of beating Evasion with a d20, Accuracy and an optional Blessed d4, assuming a plain d20 roll. */
 function attackSuccessChance({ accuracy, evasion, blessed = false, advantage = false, disadvantage = false }) {
   const threshold = number(evasion) + 1 - number(accuracy);
   const dice = blessed === true ? [20, 4] : [20];
@@ -321,7 +322,7 @@ export function nextKarmaDebt(currentDebt, promisedChance, success) {
  * One karmic roll's booking on the karma ledger. An exchange keeps its attacks' bookings in order
  * (engine/combat/exchanges/blows.mjs) until it commits, when bookKarmaSequence in foundry/adapters/dice/karma.mjs
  * writes them. A skill check (foundry/adapters/dice/checks.mjs) books its own as it rolls. `before` and `after` are
- * reported in the result. Recovery restores the whole ledger setting from the operation's capture instead.
+ * reported in the result. If the action is rolled back, the saved ledger is restored as a whole.
  * @typedef {object} KarmaBooking
  * @property {string} key The karma group booked: `player`, `enemy` or `neutral`.
  * @property {number} chance The success chance the attempt was promised, from 0 to 1.
@@ -335,7 +336,7 @@ export function nextKarmaDebt(currentDebt, promisedChance, success) {
  * Replay an exchange's bookings in order over the ledger as it stands now, for bookKarmaSequence in
  * foundry/adapters/dice/karma.mjs when the exchange commits. Each booking reads the debt the one before it left.
  * @param {Record<string, number>} ledger Persisted debts by karma group.
- * @param {ReadonlyArray<KarmaBooking>} bookings The operation's bookings, in order.
+ * @param {ReadonlyArray<KarmaBooking>} bookings The exchange's bookings, in order.
  * @returns {Readonly<{debts: Readonly<Record<string, number>>, bookings: ReadonlyArray<KarmaBooking>}>} The groups
  *   the bookings touched at their replayed debt, and each booking with the debt it read and left in that replay.
  */
@@ -353,8 +354,9 @@ export function planKarmaBookings(ledger = {}, bookings = []) {
 }
 
 /**
- * The debts planKarmaBookings leaves for the groups the bookings touch. The combat-exchange projection reads them so
- * each attack rolls against the debt the exchange's earlier attacks left.
+ * The debts planKarmaBookings leaves for the groups the bookings touch.
+ * foundry/adapters/projections/combat-exchange.mjs reads them so each attack rolls against the debt the exchange's
+ * earlier attacks left.
  */
 export function replayKarmaBookings(ledger = {}, bookings = []) {
   return planKarmaBookings(ledger, bookings).debts;

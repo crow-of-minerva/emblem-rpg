@@ -6,11 +6,9 @@ import { reportFoundryError } from '../../foundry/adapters/services/diagnostics.
 /* -------------------------------------------- */
 
 /**
- * Send a press on the BG3 HUD's swords and dove pair to the host. buildCounterModePair in
- * presentation/interface/bg3-hud.mjs emits the `counter-mode` action, and onBg3HudAction in init/hooks.mjs passes
- * the HUD unit's uuid here, which names a Token's synthetic Actor for an unlinked unit. The host's
- * `character.counter.set-pacifist` rechecks ownership and the after-turn lock, the facade shows its result, and the
- * HUD redraws the pair from the written `system.pacifist`.
+ * Ask the host to turn this unit's counterattacks on or off (the swords and dove buttons on the BG3 HUD). For an
+ * unlinked unit the uuid names the token's synthetic actor. The host rechecks ownership and the after-turn lock,
+ * and the HUD redraws the buttons from the saved `system.pacifist`.
  * @param {{actorUuid: string, pacifist: boolean}} intent The unit, and whether it should stop counterattacking.
  * @returns {Promise<object|null>} The command result, or null when the call threw.
  */

@@ -71,12 +71,11 @@ export function applyMovementFacing(tokenDocument, changes, options = {}) {
 /*  Movement repository                         */
 /* -------------------------------------------- */
 /**
- * Reads and writes for engine/movement: movement snapshots, the board lock, a plan's anchor and preview position,
- * flight state, teleports and terrain crossings.
+ * Reads and writes for engine/movement: a unit's movement state, the movement lock, where a planned move started
+ * (its anchor) and its preview position, flight state, teleports and terrain crossings.
  *
- * Every write that matters takes the `operation` its command received from CommandDispatcher and captures the
- * Actor, Token and board-lock setting it will change before touching them. The dispatcher restores them if the
- * command is refused or throws.
+ * Most writes take the running command's `operation` (its undo record) and record the Actor, Token and
+ * movement-lock setting they will change before writing, so these are put back if the command is refused or throws.
  */
 export class FoundryMovementRepository {
   constructor({
@@ -90,8 +89,8 @@ export class FoundryMovementRepository {
   }
 
   /**
-   * CommandDispatcher lock keys for a move: the shared board, plus the Scenes and Actors of the moving unit, the
-   * unit whose plan holds the board lock, and their Guard-bond partners.
+   * What a move locks while it runs: `movement:board` (all movement), plus the scenes and actors of the moving unit,
+   * the unit holding the movement lock, and their Guard partners.
    */
   async resourceKeys(tokenUuid = '') {
     const lock = this.getLock();
@@ -116,7 +115,7 @@ export class FoundryMovementRepository {
     ];
   }
 
-  /** Return the current world lock as plain data. */
+  /** Return the current movement lock as plain data. */
   getLock() {
     return normalizeLock(game.settings.get(SYSTEM_ID, USER_LOCK_SETTING));
   }
@@ -126,7 +125,7 @@ export class FoundryMovementRepository {
     return key === `${SYSTEM_ID}.${USER_LOCK_SETTING}`;
   }
 
-  /** The hold a companion module has on the board, or null. No player may move while it stands. */
+  /** The hold a companion module has taken on play, or null. No player may move while it is held. */
   getDrivenHold() {
     return projectDrivenHold();
   }
@@ -137,7 +136,7 @@ export class FoundryMovementRepository {
     return token ? projectMovementSnapshot(token) : null;
   }
 
-  /** Measure one unit's reachable board synchronously, for a planner deciding where to send it. */
+  /** Measure the squares one unit can reach, synchronously, for a planner deciding where to send it. */
   getField(tokenUuid, options = {}) {
     return projectMovementField(String(tokenUuid ?? ''), options);
   }
@@ -147,7 +146,7 @@ export class FoundryMovementRepository {
     return projectMovementCrossings(String(tokenUuid ?? ''));
   }
 
-  /** Read the boards a Shove or a Retrieve is judged on: the caster's, and the moved unit's without the caster. */
+  /** Read the movement state a Shove or Retrieve is checked on: the caster's, and the moved unit's minus the caster. */
   getForcedMovementBoards(sourceTokenUuid, targetTokenUuid) {
     return projectForcedMovementBoards(String(sourceTokenUuid ?? ''), String(targetTokenUuid ?? ''));
   }
@@ -158,9 +157,9 @@ export class FoundryMovementRepository {
   }
 
   /**
-   * Move along a validated route, wait for the walk animation's duration, then check the saved position and place
-   * the Token at the destination if the move fell short. The wait is timed, because rendering on the host's canvas
-   * isn't a reliable sign of arrival.
+   * Move along a validated route, wait for the walk animation's duration, then check the saved position. If the
+   * move fell short, put the Token at the destination directly; `placed` says whether that landed. The wait is
+   * timed, because rendering on the host client's canvas isn't a reliable sign of arrival.
    */
   async walk(snapshot, path = [], operation = null) {
     const token = await resolveToken(snapshot.tokenUuid);
@@ -185,7 +184,7 @@ export class FoundryMovementRepository {
     return { arrived: false, placed: placed !== false && samePosition(token._source, destination) };
   }
 
-  /** Take the board lock and record where the move starts (its anchor). A holder resuming their own plan keeps it. */
+  /** Take the movement lock and record where the move starts (its anchor). A user resuming their own plan keeps it. */
   async begin(snapshot, userId, operation = null) {
     const token = await resolveToken(snapshot.tokenUuid);
     const actor = token?.actor;
@@ -238,7 +237,7 @@ export class FoundryMovementRepository {
     }
   }
 
-  /** Project the map's permission and every placed Character's flight and mount facts. */
+  /** Read the map's movement permission and each placed Character's flight and mount state. */
   async getPermissionBoard(sceneUuid) {
     const scene = await resolveScene(sceneUuid);
     if (!scene) return null;
@@ -261,11 +260,9 @@ export class FoundryMovementRepository {
   }
 
   /**
-   * Record, in one capture, everything a terrain crossing touches: the Token that steps down, the unit's turn block
-   * and grounded status, the board lock a settled crossing releases, and the karma ledger its check books. The
-   * crossing commands in engine/movement/commands.mjs call this before the check rolls, so the captures made by
-   * the writers that follow (crossTerrain, settleCrossingTurn and FoundryCharacterCheckService) add nothing new.
-   * A fall's damage is captured by FoundryHealthRepository when it reaches the Actor.
+   * Record everything a terrain crossing can change before its check is rolled: the Token, the unit's turn and
+   * Grounded state, the movement lock and the karma ledger. Fall damage is recorded by FoundryHealthRepository
+   * when it lands.
    */
   async captureCrossing(snapshot, operation = null) {
     if (!operation) return true;
@@ -292,7 +289,7 @@ export class FoundryMovementRepository {
     }
   }
 
-  /** Whether this user controls the unit's live plan and holds the board lock. */
+  /** Whether this user controls the unit's live plan and holds the movement lock. */
   canUserPlan(snapshot, userId) {
     const lock = this.getLock();
     return snapshot.movementPlanning
@@ -304,8 +301,8 @@ export class FoundryMovementRepository {
   /**
    * Commit the preview position with the movement charge engine/movement worked out, then keep the plan open or
    * close it. A resumed leg writes only the Actor's turn. A close goes through closeMovementPlan
-   * (document-writes/movement-settlements.mjs), which also releases the board lock and settles the plan's end. A
-   * cancelled close removes the effects that lapse on cancel, and a confirmed one keeps them.
+   * (document-writes/movement-settlements.mjs), which also releases the movement lock and finishes the plan's end.
+   * A cancelled close removes the effects that lapse on cancel, and a confirmed one keeps them.
    */
   async commit(snapshot, resolution, {
     resume = true, endTurn = !resume, canter = false, charges = true, anchor = false,
@@ -341,8 +338,8 @@ export class FoundryMovementRepository {
   }
 
   /**
-   * Settle a teleport hop once the unit has walked onto the pad (settleTeleportHop in movement-settlements.mjs).
-   * The command's operation already holds the walk, so a refused hop puts the unit back where the walk started,
+   * Carry out a teleport hop once the unit has walked onto the pad (settleTeleportHop in movement-settlements.mjs).
+   * The command's undo record already holds the walk, so a refused hop puts the unit back where the walk started,
    * not just on the pad.
    */
   async teleport(snapshot, resolution, charge, operation = null) {
@@ -355,7 +352,7 @@ export class FoundryMovementRepository {
   }
 
   /**
-   * Restore the anchor, either keeping the committed plan or releasing it completely.
+   * Put the unit back where its move started (the anchor), either keeping the plan open or releasing it completely.
    *
    * Exploration has no anchor to return to, so a plan closed there leaves the unit where it stands. Releasing
    * the plan is a cancel, so the effects authored to lapse with a cancelled move go with it.
@@ -397,7 +394,7 @@ export class FoundryMovementRepository {
     return true;
   }
 
-  /** Release a lock whose Token disappeared before ordinary cancellation could settle. */
+  /** Release a lock whose Token disappeared before it could be cancelled normally. */
   async releaseOrphan(tokenUuid, userId, operation = null) {
     const lock = this.getLock();
     if (lock?.tokenUuid !== tokenUuid || lock?.holderId !== userId) return false;
@@ -410,7 +407,7 @@ export class FoundryMovementRepository {
   /*  Terrain crossings                           */
   /* -------------------------------------------- */
 
-  /** Read one live plan as the crossing settlement reads it: the plan, and the unit rolling the check. */
+  /** Read one live plan for a terrain crossing: the plan, and the unit rolling the check. */
   async getCrossingSnapshot(tokenUuid) {
     const movement = await this.getSnapshot(tokenUuid);
     if (!movement) return null;
@@ -435,7 +432,7 @@ export class FoundryMovementRepository {
   }
 
   /**
-   * Move to the crossing destination without wall checks or movement cost. Report native vetoes as refusals
+   * Move to the crossing destination without wall checks or movement cost. Report a Foundry veto as a refusal
    * so the engine cannot end the turn or apply fall damage for a move that never happened.
    */
   async crossTerrain(snapshot, destination, { operation = null } = {}) {
@@ -487,10 +484,10 @@ export class FoundryMovementRepository {
   /*  Interrupted plans                           */
   /* -------------------------------------------- */
 
-  /** Lock keys for stale-plan recovery, which may restore the holder's Actor and Token as well as clear the lock. */
+  /** Lock keys for stale-plan recovery, which may restore the locked unit's Actor and Token and clear the lock. */
   recoveryKeys() { return this.resourceKeys(''); }
 
-  /** Project an abandoned lock and its persisted movement anchor, without writing anything. */
+  /** Read an abandoned lock and the saved start of its plan, without writing anything. */
   async getStaleRecoverySnapshot({ force = false } = {}) {
     const lock = this.getLock();
     if (!lock || (!force && !lockIsStale(lock))) return null;
@@ -525,8 +522,8 @@ export class FoundryMovementRepository {
   }
 
   /**
-   * Release a plan whose holder left the table: send the Token back to its anchor, clear the turn and drop the
-   * board lock. A forced release is a cancellation, so it also runs the cancel cleanup a live cancel runs.
+   * Release a plan whose user left the table: send the Token back to its anchor, clear the turn and drop the
+   * movement lock. A forced release is a cancellation, so it also runs the cancel cleanup a live cancel runs.
    *
    * When the lock's unit carries a plan the lock did not start (another controller or start time), only a forced
    * release goes ahead: it closes that plan where the Token stands, because its anchor was not recorded under this
@@ -588,9 +585,8 @@ export class FoundryMovementRepository {
   }
 
   /**
-   * Snap every open plan on one Scene back to its anchor and drop the board lock. Called when an encounter starts
-   * or a phase opens (applyPhaseTurns in engine/combat/encounters/phases.mjs), and by the GM restore and repair
-   * tools (engine/development.mjs).
+   * Move every unit with an open plan on one scene back to where its plan started and drop the movement lock. Turn
+   * state is left to the caller. Used when an encounter starts or a phase opens, and by the GM's repair tools.
    */
   async recoverScenePlans(sceneUuid, operation = null) {
     const scene = await resolveScene(sceneUuid);
@@ -627,17 +623,14 @@ export class FoundryMovementRepository {
     };
   }
 
-  /**
-   * No-ops that nothing calls. The operation that captured a Scene reset in recoverScenePlans already handles
-   * undoing or keeping it, so there is nothing left for these to do.
-   */
+  /** No-ops. The command's undo record already undoes or keeps a recoverScenePlans reset. */
   restoreScenePlans() { return Promise.resolve(true); }
 
   commitScenePlans() { return Promise.resolve(true); }
 }
 
 /* -------------------------------------------- */
-/*  Plan facts                                  */
+/*  Plan helpers                                */
 /* -------------------------------------------- */
 
 /**
@@ -667,8 +660,8 @@ function scenePlanRecord(token) {
 }
 
 /**
- * Whether the abandoned plan still stands exactly as the stale-lock projection read it. A conflict snapshot records
- * no anchor or square, so it stands while the unit still carries a plan the lock did not start.
+ * Whether the abandoned plan is still exactly as getStaleRecoverySnapshot read it. A conflict records no start or
+ * position, so it holds while the unit still has a plan the lock did not start.
  */
 function staleRecoveryStillCurrent(token, actor, snapshot) {
   const turn = actor?.system?.turn ?? {};
@@ -683,7 +676,7 @@ function staleRecoveryStillCurrent(token, actor, snapshot) {
     && (Number(turn.movementAnchorY) || 0) === snapshot.anchorPosition?.y;
 }
 
-/** Calculate Foundry’s walk animation duration for the engine pacing clock, bounded by DRIVEN_WALK_TIMING. */
+/** Foundry's walk animation duration, so a walk can be waited out on a timer, capped by DRIVEN_WALK_TIMING. */
 function walkAnimationMs(cells) {
   const speed = Number(globalThis.CONFIG?.Token?.movement?.defaultSpeed) || 6;
   let squares = 0;

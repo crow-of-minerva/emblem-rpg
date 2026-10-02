@@ -51,12 +51,13 @@ const CURSORS = Object.freeze({
   'nesw-resize': ['resize-nesw.svg', 12, 12, 'nesw-resize'],
   'ne-resize': ['resize-nesw.svg', 12, 12, 'ne-resize'],
   'sw-resize': ['resize-nesw.svg', 12, 12, 'sw-resize'],
-  // Cursor assets selected by processing, targeting and movement state classes.
+  // Cursors the stylesheet shows while the host is busy, while picking a target and while moving a unit.
   locked: ['locked.svg', 6, 5, 'not-allowed'],
   target: ['target.svg', 16, 16, 'crosshair'],
   walk: ['boot.svg', 3, 19, 'move']
 });
 
+/** The --cursor-* variable each CSS cursor keyword is rewritten to. `auto` becomes the text cursor everywhere. */
 const KEYWORD_VARIABLES = Object.freeze({
   auto: 'text',
   default: 'default',
@@ -365,6 +366,10 @@ function patchLegacyApplication() {
  * The same fades for ApplicationV2 windows. A re-render keeps its scroll positions, and Actor and Item sheets play
  * the expand and collapse sounds. Render arguments reach Foundry exactly as given, so the legacy
  * `render(force, options)` form keeps its options (the page a journal link opens, a document's render context).
+ *
+ * `render` and `close` are replaced on the ApplicationV2 prototype itself, not through libWrapper, so every window
+ * from core and every module gets them. A close waits FADE_OUT_MS and then runs with core's own close animation off.
+ * This runs at `init`, so a libWrapper wrapper registered afterwards wraps this replacement.
  */
 function patchApplicationV2() {
   const ApplicationV2 = foundry.applications.api.ApplicationV2;

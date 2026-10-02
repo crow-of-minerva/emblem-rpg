@@ -24,7 +24,7 @@ const AURA_PATH_BY_STAT = Object.freeze(Object.fromEntries(
 const DEFAULT_AURA_RANGE = 1;
 
 /**
- * The unit facts buildUnitFacts in game/character/compilation.mjs derives from what a unit wields, wears or has
+ * The unit fields buildUnitFacts in game/character/compilation.mjs derives from what a unit wields, wears or has
  * equipped: its gear slots and their records, the unit types a mount or a wielded Spell grants, and the totals its
  * equipment and Class feed.
  */
@@ -56,7 +56,8 @@ export function resolveAuraTarget(rawTarget) {
 
 /**
  * Whether an aura's target rule lets it reach this receiver. Friendly leaves out the emitter and Friendly+Self
- * includes it. Hostile leaves out Neutrals.
+ * includes it. Hostile reaches every unit in another faction group, so it reaches Neutrals, and a Neutral unit's
+ * Hostile aura reaches both sides.
  * @param {string} sourceFaction Emitting unit's faction.
  * @param {string} targetFaction Receiving unit's faction.
  * @param {string} targetType Authored target rule.
@@ -75,7 +76,7 @@ function auraTargetAllowed(sourceFaction, targetFaction, targetType, isSelf) {
 /**
  * A text summary of a unit's aura emissions. The board hook (foundry/hooks/board.mjs) compares it before and after
  * an item write to tell an ordinary write from a change to an aura.
- * @param {object[]} emissions Projected aura emissions for one unit.
+ * @param {object[]} emissions One unit's aura emissions.
  * @returns {string}
  */
 export function auraEmissionSignature(emissions) {
@@ -99,7 +100,7 @@ export function auraEmissionSignature(emissions) {
  * theirs. The board hook in foundry/hooks/board.mjs uses this to recompute a scene's auras after an equip change
  * only when some aura could see it. A path that reaches gear some other way counts for both, so an unusual
  * expression causes an extra recompute rather than a stale aura.
- * @param {object[]} emissions Projected aura emissions for one unit.
+ * @param {object[]} emissions One unit's aura emissions.
  * @returns {Readonly<{self: boolean, target: boolean}>}
  */
 export function auraGearReads(emissions) {
@@ -129,8 +130,8 @@ function collectGearReads(node, reads) {
 }
 
 /**
- * Mark the gear one authored expression reads. The aura context spreads the emitter's facts at the root beside
- * `self`, `caster`, `item` (the emitting Item) and `target`, so a bare fact is the emitter's own.
+ * Mark the gear one authored expression reads. The aura context spreads the emitter's fields at the root beside
+ * `self`, `caster`, `item` (the emitting Item) and `target`, so a bare name is the emitter's own.
  */
 function collectExpressionGearReads(text, reads) {
   for (const [path] of text.replace(EXPRESSION_STRINGS, "''").matchAll(EXPRESSION_PATHS)) {
@@ -149,12 +150,12 @@ function collectExpressionGearReads(text, reads) {
 /*  Contributions                               */
 /* -------------------------------------------- */
 /**
- * The aura bonuses one placed unit receives from every unit on the board. Called by planAuraFields and by the board
- * projection (foundry/adapters/projections/board.mjs). A unit's own aura ignores distance. A non-stackable modifier
- * counts once per item name, refinement suffix ignored, so copies of the same relic don't stack.
- * @param {{units: object[]}} board Detached snapshot of the placed units.
+ * The aura bonuses one placed unit receives from every unit on the map. A unit's own aura ignores distance. A
+ * non-stackable modifier counts once per item name, refinement suffix ignored, so copies of the same relic don't
+ * stack; the first emitter in the unit list wins.
+ * @param {{units: object[]}} board The units on the map.
  * @param {string} receiverTokenUuid Token receiving the auras.
- * @returns {object[]} Frozen contribution facts.
+ * @returns {object[]} Frozen contributions, one per aura bonus received.
  */
 export function collectAuraContributions(board, receiverTokenUuid) {
   const units = Array.isArray(board?.units) ? board.units : [];
@@ -184,8 +185,8 @@ export function collectAuraContributions(board, receiverTokenUuid) {
  * writer's settleModifierFields saves them. Every stat is summed from zero, so an expired or out-of-range aura
  * leaves no stale bonus. A plan names only the stats whose value differs from the saved one, and a unit with no
  * change is left out.
- * @param {{units: object[]}} board Detached snapshot of the placed units.
- * @returns {object[]} The `{actorUuid, fields}` intents.
+ * @param {{units: object[]}} board The units on the map.
+ * @returns {object[]} One `{actorUuid, fields}` update per changed unit.
  */
 export function planAuraFields(board) {
   const units = Array.isArray(board?.units) ? board.units : [];

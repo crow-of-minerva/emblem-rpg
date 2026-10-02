@@ -3,14 +3,14 @@ import { COMMAND_LANES } from '../commands.mjs';
 import { boundedText, exactKeys, plainRecord } from '../protocol.mjs';
 
 export const EXECUTION_PRESENTATION_KIND = 'execution';
-/** How long a command must hold execution before ExecutionAnnouncer shows the processing blocker. */
+/** How long a command must run before ExecutionAnnouncer shows the "please wait" overlay. */
 export const BLOCKER_ENGAGE_MS = 150;
 const VIEW_KEYS = Object.freeze(['hostSession', 'generation', 'owner']);
 const OWNER_KEYS = Object.freeze(['commandId', 'lane', 'userName', 'since', 'segment']);
 
 /**
- * Build the processing-blocker message broadcast by ExecutionAnnouncer. It carries display state, not permission
- * to execute commands.
+ * Build the message ExecutionAnnouncer sends to show or hide the "please wait" overlay on every client. It carries
+ * display state, not permission to run commands.
  */
 export function executionMessage({ hostSession, generation, owner }) {
   const message = { kind: EXECUTION_PRESENTATION_KIND, hostSession, generation,
@@ -19,14 +19,14 @@ export function executionMessage({ hostSession, generation, owner }) {
   return Object.freeze(message);
 }
 
-/** Validate the execution status returned through CommandGateway. A broadcast has the same fields plus a kind. */
+/** Check the host's running-command status returned through CommandGateway; a broadcast adds a kind. */
 export function isExecutionView(value) {
   return plainRecord(value) && exactKeys(value, VIEW_KEYS) && VIEW_KEYS.every(key => Object.hasOwn(value, key))
     && boundedText(value.hostSession, 128) && Number.isSafeInteger(value.generation) && value.generation >= 0
     && (value.owner === null || isExecutionOwner(value.owner));
 }
 
-/** Validate execution broadcasts before the presentation layer updates its processing blocker. */
+/** Check an overlay message before the client updates its "please wait" overlay. */
 export function isExecutionMessage(value) {
   if (!plainRecord(value) || value.kind !== EXECUTION_PRESENTATION_KIND) return false;
   const { kind, ...view } = value;

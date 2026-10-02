@@ -56,7 +56,7 @@ function styleFor(tier) {
  * that could reach it, coloured by how hard that hostile would hit (graded by engine/combat/threat.mjs). With a
  * hostile selected and an intent provider set, one line shows the unit it plans to attack instead.
  *
- * Nothing is measured until the board has been quiet for SETTLE_QUIET_MS, so a burst of writes causes one rebuild.
+ * Nothing is measured until the map has been quiet for SETTLE_QUIET_MS, so a burst of updates causes one rebuild.
  * Reach is then measured in small slices per frame, and one line is graded per frame.
  */
 export class ThreatIndicators {
@@ -98,7 +98,7 @@ export class ThreatIndicators {
   #intentRequest = null;
 
   /**
-   * Takes the threat assessment, the checks for a busy board, an open action window and a running encounter, and
+   * Takes the threat assessment, the checks for a busy map, an open action window and a running encounter, and
    * the clock, ticker, token layer and drawing layer to use.
    */
   constructor({ diagnostics = null,
@@ -160,8 +160,9 @@ export class ThreatIndicators {
   }
 
   /**
-   * The board changed (a token moved, appeared or fell, for example): measure reach again once it settles. Grades
-   * are kept, and the lines stay up while the set of threatening hostiles is rechecked, so they don't flicker.
+   * Something on the map changed (a token moved, appeared or fell, for example): measure reach again once it goes
+   * quiet. Grades are kept, and the lines stay up while the set of threatening hostiles is rechecked, so they don't
+   * flicker.
    */
   invalidate() {
     this.#dirty = true;
@@ -169,7 +170,7 @@ export class ThreatIndicators {
   }
 
   /**
-   * The matchups changed (reach stats, items, the selected unit's HP, or an action on the board), so every grade is
+   * The matchups changed (reach stats, items, the selected unit's HP, or an action on the map), so every grade is
    * stale. The lines fade out while reach and grades are recomputed, instead of changing colour one by one.
    */
   invalidateGrades() {
@@ -248,7 +249,10 @@ export class ThreatIndicators {
     }
   }
 
-  /** One animation frame: settle the board if it is quiet, advance every line, redraw what changed. */
+  /**
+   * One animation frame: measure reach once the map is quiet, advance every line, redraw what changed. PIXI passes
+   * the frame's `deltaTime` as a number, so the elapsed time comes from the ticker's `deltaMS`.
+   */
   #frame(frame) {
     if (!this.#glow || this.#glow.destroyed || !this.#core || this.#core.destroyed) return this.stop();
     const active = Boolean(this.#selected) && !this.#selected.destroyed && this.#encounterActive()
@@ -263,7 +267,7 @@ export class ThreatIndicators {
     if (!active && !visible) this.stop();
   }
 
-  /** A plain copy of the internal state. Only tests read it. */
+  /** A plain copy of the internal state, for inspecting from the console. */
   inspectState() {
     return {
       running: this.#running, viewOnly: this.#viewOnly, dirty: this.#dirty, regrade: this.#regrade,
@@ -332,7 +336,7 @@ export class ThreatIndicators {
 
   /**
    * Start measuring hostiles for the selected unit. Returns false when there is nothing to measure, so the caller
-   * can land an empty result at once.
+   * can empty the list of lines at once.
    */
   #openBuild({ keepAnimation }) {
     const inspection = this.#assess.beginInspection(this.#selectedUuid());
@@ -346,7 +350,7 @@ export class ThreatIndicators {
     return this.#building !== null;
   }
 
-  /** Measure hostiles until this frame's time budget runs out. Returns true once all are measured and landed. */
+  /** Measure hostiles until this frame's time budget runs out. Returns true once all are measured and the lines set. */
   #advanceBuild(budget) {
     const building = this.#building;
     const deadline = this.#now() + budget;
@@ -499,7 +503,7 @@ export class ThreatIndicators {
   }
 
   /**
-   * Ask the provider what the selected hostile intends, once per selection and again each time the board settles
+   * Ask the provider what the selected hostile intends, once per selection and again each time the map goes quiet
    * after a change. A newer question aborts the one in flight instead of queueing behind it, and only the answer to
    * the current request is drawn.
    */

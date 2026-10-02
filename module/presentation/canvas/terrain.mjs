@@ -75,7 +75,7 @@ function rebuildTerrainVisualization(state = { cells: [], zones: {} }, diagnosti
  *
  * The letters drawn by the Terrain Builder's annotations stay hidden in play. This is the play-time layer, and it
  * shows a pair only once one of its ends is somewhere the unit could stand.
- * @param {readonly object[]} pads Projected pads carrying their square, letter, price and exit.
+ * @param {readonly object[]} pads Teleport pads with their square, letter, price and exit.
  * @param {Iterable<string>} reachable Cell keys the movement plan covers.
  * @returns {number} How many squares were lit.
  */
@@ -177,7 +177,7 @@ export function setTerrainVisualizationVisible(visible) {
   if (markings) markings.visible = annotationsVisible;
 }
 
-/** Draw the scene's terrain when a square-grid canvas becomes ready. */
+/** Draw the scene's terrain when the canvas becomes ready. */
 export function onCanvasReadyTerrainPresentation(state, diagnostics = null) {
   rebuildTerrainVisualization(state, diagnostics);
 }
@@ -764,6 +764,10 @@ function ensureAnnotationOverlay() {
   return annotationOverlay;
 }
 
+/**
+ * Destroy both terrain containers. This also takes down the movement controls' teleport letters and crossing
+ * arrows, which are drawn inside the annotation container.
+ */
 function destroyOverlay() {
   spawnGeneration += 1;
   destroyDisplayObject(overlay);

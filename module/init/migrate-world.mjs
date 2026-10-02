@@ -10,16 +10,15 @@ import { NOTIFICATION_IDS } from '../presentation/interface/notification-ids.mjs
 const MIGRATOR = Object.freeze({ pack: `${SYSTEM_ID}.macros`, id: 'H2ZGhJFCQBBXc0Qy' });
 
 /**
- * Bring a world an earlier build wrote up to this build's schema. completeStartup in init/system.mjs calls this on
- * the command host once gameplay is admitted, when stampWorldSchema reports the world behind. The host holds an
- * execution segment for the whole run, so every client shows the hourglass and refuses gameplay, saves and staff
- * edits, and the host's own ProcessingBlocker startup hold stays up because ready() has not settled. The GM sees a
- * notice while it runs and another when it ends. A run that reaches the end records the new schema version even when
- * the macro reports documents it could not migrate, because the same failure would lock the table again on every
- * load; the GM is told to fix them and run the macro by hand. A run that stops early records nothing and runs again
- * on the next load.
+ * Bring an older world up to this version's schema by running the Migrate World Content macro. completeStartup in
+ * init/system.mjs calls this on the host client once commands are accepted, when stampWorldSchema reports the world
+ * behind. The host holds the command lock for the whole run, so every client shows the hourglass and refuses
+ * gameplay and edits. The GM sees a notice while it runs and another when it ends. A run that reaches the end
+ * records the new version even when some documents failed, so the same failure doesn't block every load; the GM is
+ * told to fix them and run the macro by hand. A run that stops early records nothing and runs again next load.
  * @param {object} ports
- * @param {Function} ports.openSegment Opens the host's execution segment, resolving `data.segment` or the refusal.
+ * @param {Function} ports.openSegment Takes the command lock on the host client, resolving `data.segment` or the
+ *   refusal.
  * @param {Function} ports.recordSchema Records the current schema version (stampMigratedWorldSchema).
  * @param {object} ports.notifications NotificationService.
  * @param {object} ports.diagnostics Diagnostics sink.
@@ -57,7 +56,7 @@ export async function migrateWorldContent({ openSegment, recordSchema, notificat
   return true;
 }
 
-/** Hold the host's execution segment around `work`, and close it whatever `work` does. */
+/** Hold the command lock while `work` runs, and release it whatever `work` does. */
 async function underSegment(openSegment, work) {
   const opened = await openSegment();
   const segment = opened?.data?.segment;

@@ -14,7 +14,7 @@ export const SYSTEM_VERSION = '1.0.2a';
  */
 export const SCHEMA_VERSION = 3;
 
-/** Delay used by ui/controls/movement.mjs to bridge key presses before native WASD repeat starts. */
+/** Milliseconds between the steps a held movement key repeats until the browser's own key repeat takes over. */
 export const MOVEMENT_HOLD_REPEAT_DELAY_MS = 125;
 
 /**

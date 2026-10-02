@@ -135,8 +135,8 @@ export function unparsedJsonErrors(unparsed, noun) {
  * The display state an editor keeps while its dialog is open: which cards are collapsed, which conditions are folded
  * away, and the text of any field an author has typed but not finished.
  *
- * None of it belongs to the authored data, so it is held here against an id minted per card and written into the
- * card's markup as `data-card-id`. Reading a list back binds each newly parsed card object to the id its element
+ * None of it belongs to the authored data, so it is held here against an id made for each card and written into the
+ * card's markup as `data-card-id`. Reading a list back links each newly read card object to the id its element
  * carried, so a flag follows its card through a reorder and is never saved with it.
  */
 export class CardListState {
@@ -151,7 +151,7 @@ export class CardListState {
 
   #minted = 0;
 
-  /** This card's id, minting one the first time the editor renders it. */
+  /** This card's id, creating one the first time the editor renders it. */
   identify(card) {
     if (!card || typeof card !== 'object') return '';
     const known = this.#ids.get(card);
@@ -161,7 +161,7 @@ export class CardListState {
     return id;
   }
 
-  /** Bind a card just parsed out of the DOM to the id its element carried, minting one when it had none. */
+  /** Link a card just read from the DOM to the id its element carried, or create one when it had none. */
   adopt(card, id) {
     if (!card || typeof card !== 'object') return '';
     if (!id) return this.identify(card);
@@ -277,7 +277,10 @@ export function createCardList({
       return cards;
     },
 
-    /** Renumber the cards of a list an editor changed in place instead of repainting. */
+    /**
+     * Renumber the cards of a list an editor changed in place instead of repainting. Unlike `read`, this numbers
+     * every matching card inside the list, nested ones included.
+     */
     reindex(listEl) {
       if (!listEl) return;
       listEl.querySelectorAll(cardSelector).forEach((element, index) => {

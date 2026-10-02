@@ -36,6 +36,8 @@ function itemFieldShapes() {
     addToBase: bool(false),
     roundDown: bool(false)
   });
+  // Each damage type has an on/off flag and an optional `<type>ConditionTree`: a condition that must also hold for
+  // the weapon to deal that type. Code listing a weapon's damage types must test `=== true` to skip the trees.
   const damageTypeFields = Object.fromEntries(DAMAGE_TYPES.flatMap(key => [
     [key, bool(false)],
     [`${key}ConditionTree`, new F.ObjectField({ required: false, nullable: true, initial: null })]

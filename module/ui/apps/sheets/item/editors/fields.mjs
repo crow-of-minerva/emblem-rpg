@@ -21,10 +21,10 @@ import { escapeHtml, optionMarkup } from '../../../../../lib/dom/html.mjs';
 import { getTooltip } from '../../../../tooltips.mjs';
 
 /* -------------------------------------------- */
-/*  Class Stems                                 */
+/*  Base CSS Class                              */
 /* -------------------------------------------- */
 
-/** The class stem a field's variant classes are built from: the first class in `fieldClass`. */
+/** The base CSS class a field's extra classes are built from: the first class in `fieldClass`. */
 function variantOf(fieldClass) {
   return String(fieldClass ?? '').trim().split(/\s+/)[0] || 'ed-field';
 }
@@ -74,10 +74,11 @@ function checkField(field, fieldClass, variant, input) {
  * @param {*} value                               Its current value.
  * @param {object} [options]
  * @param {string} [options.idPrefix]             Prefix for the control's element id, for uniqueness.
- * @param {string} [options.fieldClass]           The editor's field classes. The first is the variant stem.
+ * @param {string} [options.fieldClass]           The editor's field classes. The first is the base class.
  * @param {string} [options.numberStep]           The `step` a number input takes.
  * @param {boolean} [options.emptyOption]         Prepend a blank option to a selector.
- * @param {boolean} [options.keepOrphan]          Keep a selected value that is not among the options.
+ * @param {boolean} [options.keepOrphan]          Keep a selected value that is not among the options, shown as
+ *                                                "<value> (legacy)" so the author sees it is no longer offered.
  * @returns {string}
  */
 export function renderField(field, value, {
@@ -444,8 +445,8 @@ function reachPhrase(g, verb) {
 }
 
 /**
- * One English sentence describing a geometry, in the same words the panel's controls use. Shown in the panel and
- * in the effect editor's step summary.
+ * One English sentence describing a geometry, in the same words the panel's controls use. Shown in the effect
+ * editor's step summary.
  * @param {*} raw                                 The geometry, normalized here.
  * @param {{context?: 'requirement'|'step'}} [options]
  * @returns {string}
@@ -586,9 +587,10 @@ function renderExtraRow(g, isReq) {
 /* -------------------------------------------- */
 
 /**
- * Render the placement panel for a spec: a template row over three rows of three cells. Conditional controls
- * (the custom footprint, the custom budget amount) are rendered hidden rather than omitted, so showing them later
- * only unhides them and the panel isn't redrawn.
+ * Render the placement panel for a spec: three rows of three cells. The template selector and summary line are
+ * built here but not put in the panel, so neither shows. Conditional controls (the custom footprint, the custom
+ * budget amount) are rendered hidden rather than omitted, so showing them later only unhides them and the panel
+ * isn't redrawn.
  * @param {object} spec                                   The spec, normalized for display.
  * @param {object} [options]
  * @param {string} [options.context]                      Where the panel is used.
@@ -612,7 +614,7 @@ export function renderTerrainGeometryPanel(spec, { context = 'requirement' } = {
 }
 
 /**
- * Read geometry for contract normalization. Empty numbers read as undefined, a teleport drops its budget, a
+ * Read the panel back into a placement rule. Empty numbers read as undefined, a teleport drops its budget, a
  * non-custom budget drops its amount, and fields belonging to the other editor context are removed.
  * @param {HTMLElement} panelEl           The panel.
  * @returns {object}                      The spec.
@@ -695,9 +697,8 @@ function clampDistance(panelEl, changed) {
 }
 
 /**
- * Recheck the forced selectors and conditional controls, and rewrite the summary line. The summary is built from
- * the normalized spec so it describes what will actually happen, while the visibility rules read the raw values,
- * since those are what the user just chose.
+ * Recheck the forced selectors and conditional controls. The visibility rules read the raw values, since those are
+ * what the user just chose. The summary line is rewritten only if the panel has one, and the panel doesn't draw it.
  */
 function refreshPanel(panelEl) {
   const context = panelEl.dataset.tgContext === 'step' ? 'step' : 'requirement';
@@ -717,7 +718,8 @@ function refreshPanel(panelEl) {
 
 /**
  * Write a template's geometry into the panel. Forced selectors are released first so the template's own values
- * become the ones remembered. Choosing Custom changes nothing.
+ * become the ones remembered. Choosing Custom changes nothing. The panel doesn't draw its template selector, so
+ * nothing calls this today.
  */
 function applyPreset(panelEl, key) {
   const preset = presetGeometry(key);
@@ -728,8 +730,9 @@ function applyPreset(panelEl, key) {
 }
 
 /**
- * Bind the geometry events once per dialog root, so panels drawn later work without new bindings. Choosing a
- * template fills the panel, and editing any field afterwards switches the template selector back to Custom.
+ * Bind the geometry events once per dialog root, so panels drawn later work without new bindings. The template
+ * selector branches (fill the panel from a template, switch back to Custom on an edit) do nothing while the panel
+ * doesn't draw that selector.
  * @param {HTMLElement} rootEl    The dialog root.
  */
 export function bindTerrainGeometryPanels(rootEl) {
