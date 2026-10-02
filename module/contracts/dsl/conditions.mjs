@@ -148,6 +148,17 @@ export function conditionPaths(tree) {
   }
 }
 
+/**
+ * Whether a tree reads the other unit: a path under `target`, a status check on the target, or the distance or
+ * engagement with it. Phase triggers and the use item trigger have no other unit for these to read.
+ */
+export function readsOtherUnit(tree) {
+  return conditionPaths(tree).some(path => {
+    const segments = path.split('.');
+    return segments[0] === 'target' || ['distance', 'engagement'].includes(segments.at(-1));
+  });
+}
+
 /** Reduce a status name to lower-case letters and digits, the way the evaluator matches statuses. */
 function statusKey(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');

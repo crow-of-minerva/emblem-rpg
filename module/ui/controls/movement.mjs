@@ -332,22 +332,6 @@ export function clearInspectedReaches() {
 }
 
 /**
- * Redraw the local movement overlay after an effect changed how far its owner can go.
- * @param {string} tokenUuid Token whose allowance changed.
- * @returns {Promise<boolean>} Whether this client held that plan and redrew it.
- */
-export async function refreshMovementPlanOverlay(tokenUuid) {
-  const plan = activeMovementPlan();
-  if (!plan || plan.snapshot.tokenUuid !== String(tokenUuid ?? '')) return false;
-  const snapshot = await liveSnapshot(plan);
-  if (!snapshot || activeMovementPlan() !== plan) return false;
-  plan.snapshot = snapshot;
-  plan.graph = buildMovementGraph(snapshot);
-  if (!movementIsSuspended()) drawPlanField(snapshot, plan.graph);
-  return true;
-}
-
-/**
  * Rebuild the open plan's grid and any inspected reaches when another unit on this Scene moves (the overlay
  * refresh in init/hooks.mjs).
  */

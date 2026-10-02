@@ -17,7 +17,7 @@ import { canonicalJson, digest } from '../../lib/core/runtime.mjs';
 /* -------------------------------------------- */
 
 const PRESENTATION_STEPS = new Set([
-  'animation', 'floatingText', 'playVoice', 'playResist', 'refreshPathfinding'
+  'animation', 'floatingText', 'playVoice', 'playResist'
 ]);
 const CONTROL_STEPS = new Set(['wait']);
 

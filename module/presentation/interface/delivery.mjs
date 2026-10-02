@@ -144,8 +144,6 @@ function releasesState(message) {
     case ITEM_ACTIVATION_PRESENTATION_KIND: return message.beat === ITEM_ACTIVATION_PRESENTATION_BEATS.END;
     case ENEMY_PHASE_CAMERA_PRESENTATION_KIND: return message.beat === ENEMY_PHASE_CAMERA_BEATS.END;
     case DEFEAT_PRESENTATION_KIND: return message.change === DEFEAT_PRESENTATION_TYPES.CLEAR_FADE;
-    // Effect step kinds are listed in STEP_KINDS (contracts/dsl/effects.mjs).
-    case EFFECT_OPERATION_PRESENTATION_KIND: return message.operation?.step?.kind === 'refreshPathfinding';
     case DOWNTIME_PRESENTATION_KIND: return DOWNTIME_END_EVENTS.has(message.event);
     default: return false;
   }

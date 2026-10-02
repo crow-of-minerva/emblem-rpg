@@ -28,7 +28,7 @@ import {
 import { STATUS_EFFECTS, STATUS_KEYS, STATUS_NAMES, statusLabel } from '../../../../../config/statuses.mjs';
 import { triggerLabel } from '../../../../../config/triggers.mjs';
 import { DAMAGE_TYPES } from '../../../../../contracts/domains/damage.mjs';
-import { isEmpty as conditionIsEmpty } from '../../../../../contracts/dsl/conditions.mjs';
+import { isEmpty as conditionIsEmpty, readsOtherUnit } from '../../../../../contracts/dsl/conditions.mjs';
 import {
   conditionLineHtml,
   conditionTemplateGroups,
@@ -97,7 +97,7 @@ export const STEP_KIND_LABELS = Object.freeze({
   damage: 'Damage', heal: 'Heal', modShield: 'Shield', applyEffect: 'Apply status', removeEffect: 'Remove status',
   setFaction: 'Change faction', animation: 'Animation', floatingText: 'Floating text', moveToken: 'Move token',
   spawnToken: 'Spawn token', restoreAction: 'Restore actions',
-  playResist: 'Resist popup', playVoice: 'Voice line', refreshPathfinding: 'Refresh pathfinding',
+  playResist: 'Resist popup', playVoice: 'Voice line',
   unequip: 'Unequip weapon', guard: 'Guard', terrainEdit: 'Edit terrain', if: 'If', wait: 'Wait'
 });
 
@@ -119,7 +119,6 @@ const STEP_KIND_MEANINGS = Object.freeze({
   restoreAction: 'gives a unit its actions back',
   playResist: 'shows the resist popup over a unit',
   playVoice: 'plays one of the unit\'s voice lines',
-  refreshPathfinding: 'rebuilds the movement grid around a unit',
   unequip: 'puts away the weapon a unit wields',
   guard: 'runs the guard exchange on the target',
   terrainEdit: 'changes the squares in an area',
@@ -136,7 +135,7 @@ const ADD_STEP_GROUPS = Object.freeze([
   { label: 'Combat', kinds: ['damage', 'heal', 'modShield'] },
   { label: 'Statuses', kinds: ['applyEffect', 'removeEffect'] },
   { label: 'Board', kinds: [
-    'moveToken', 'terrainEdit', 'spawnToken', 'setFaction', 'restoreAction', 'refreshPathfinding',
+    'moveToken', 'terrainEdit', 'spawnToken', 'setFaction', 'restoreAction',
     'unequip'
   ] },
   { label: 'Presentation', kinds: ['animation', 'floatingText', 'playResist', 'playVoice'] },
@@ -507,7 +506,6 @@ const FIELDS_BY_KIND = {
       label: 'line', tooltip: 'editor.voice.category' },
     { name: 'skipIfSelf', type: 'checkbox', label: 'skip when self', tooltip: 'editor.voice.skip-self' }
   ],
-  refreshPathfinding: [WHO],
   unequip: [{ ...WHO, tooltip: 'editor.unequip.who' }],
   guard: [],
   wait: [{ name: 'ms', type: 'text', label: 'wait', placeholder: '500', unit: 'ms', tooltip: 'editor.wait.ms' }],
@@ -978,7 +976,6 @@ function stepSummaryText(step) {
     case 'playVoice':
       return `${voiceCategoryLabel(step.category)} line from ${who}${step.skipIfSelf ? ', not when self' : ''}`;
     case 'playResist':   return `resist popup on ${who}`;
-    case 'refreshPathfinding': return `refresh pathfinding for ${who}`;
     case 'moveToken':    return moveSummary(step);
     case 'spawnToken':   return `spawn ${step.name || step.actorUuid || '?'} at ${locationSummary(step.location)}`;
     case 'restoreAction': {
@@ -1568,6 +1565,17 @@ function conditionTemplateOptions() {
   return `<option value="">template...</option>${groups}`;
 }
 
+/** Hide the condition templates that read the other unit when the trigger has no other unit. */
+function fitConditionTemplates(select, trigger) {
+  const noOtherUnit = TRIGGER_CAPABILITIES[trigger]?.target === 'none';
+  for (const option of select.options) {
+    option.hidden = noOtherUnit && readsOtherUnit(conditionTemplateTree(option.value));
+  }
+  for (const group of select.querySelectorAll('optgroup')) {
+    group.hidden = [...group.children].every(option => option.hidden);
+  }
+}
+
 /* -------------------------------------------- */
 /*  Validation                                  */
 /* -------------------------------------------- */
@@ -1983,6 +1991,12 @@ function attachStepChanges(dialogEl, state, repaint) {
     repaint();
   });
 
+  // The condition builder redraws the template select on every edit, so it is fitted to the trigger on focus.
+  dialogEl.addEventListener('focusin', (ev) => {
+    const sel = ev.target.closest('select[data-cond-template]');
+    if (sel) fitConditionTemplates(sel, currentTrigger(dialogEl));
+  });
+
   dialogEl.addEventListener('change', async (ev) => {
     const sel = ev.target.closest('select[data-cond-template]');
     if (!sel) return;
@@ -2238,7 +2252,6 @@ function makeStepDefault(kind) {
     case 'restoreAction': return { kind, target: 'target', actions: ['standard'] };
     case 'playResist':   return { kind, target: 'target' };
     case 'playVoice':    return { kind, target: 'target', category: 'select' };
-    case 'refreshPathfinding': return { kind, target: 'target' };
     case 'unequip':      return { kind, target: 'target' };
     case 'guard':        return { kind, target: 'target' };
     case 'terrainEdit':  return { kind, overwrite: true };

@@ -64,7 +64,8 @@ const EXCHANGE_LOCKED_KINDS = new Set(['moveToken', 'setFaction', 'unequip', 're
 /**
  * Whether the add-step picker offers a step kind on a trigger. A trigger that runs mid-exchange leaves out the kinds
  * above, except restoring actions on a kill and the one move a pre-combat trigger allows. A spawn needs a
- * clicked square, so a trigger without one leaves it out. An unknown trigger offers every kind.
+ * clicked square, so a trigger without one leaves it out. Restoring actions is left out on phase begin and phase end,
+ * where it would change nothing. An unknown trigger offers every kind.
  */
 export function stepKindOffered(kind, trigger) {
   const cap = TRIGGER_CAPABILITIES[trigger];
@@ -73,6 +74,7 @@ export function stepKindOffered(kind, trigger) {
     return (kind === 'restoreAction' && trigger === 'onKill') || (kind === 'moveToken' && trigger === 'preCombat');
   }
   if (kind === 'spawnToken') return cap.location !== 'none';
+  if (kind === 'restoreAction') return trigger !== 'onPhaseBegin' && trigger !== 'onPhaseEnd';
   return true;
 }
 

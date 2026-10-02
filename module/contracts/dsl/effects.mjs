@@ -6,7 +6,7 @@ import { GUARD_BOND_REFUSALS } from '../domains/combat.mjs';
 import { ITEM_ACTIVATION_SUPPORT } from '../domains/items.mjs';
 import { normalizeGeometry, validateGeometry } from './terrain-geometry.mjs';
 import { isPlainObject } from '../../lib/core/runtime.mjs';
-import { validate as validateConditionTree } from './conditions.mjs';
+import { readsOtherUnit, validate as validateConditionTree } from './conditions.mjs';
 import { oneOf, placeOf, say, warn as warnAt } from './messages.mjs';
 
 /* -------------------------------------------- */
@@ -24,7 +24,6 @@ export const STEP_KINDS = Object.freeze([
   'animation', 'floatingText', 'playVoice',
 
   'moveToken', 'spawnToken', 'restoreAction', 'playResist',
-  'refreshPathfinding',
   'unequip',
   'guard',
   'terrainEdit',
@@ -99,7 +98,7 @@ const STEP_PHRASES = Object.freeze({
   removeEffect: 'removes a status', setFaction: 'changes a faction', animation: 'plays an animation',
   floatingText: 'shows floating text', moveToken: 'moves a token', spawnToken: 'spawns a token',
   restoreAction: 'restores actions', playResist: 'shows the resist popup', playVoice: 'plays a voice line',
-  refreshPathfinding: 'refreshes pathfinding', unequip: 'unequips a weapon', guard: 'starts a guard',
+  unequip: 'unequips a weapon', guard: 'starts a guard',
   terrainEdit: 'edits terrain', if: 'checks a condition', wait: 'waits'
 });
 
@@ -301,7 +300,6 @@ const STEP_KEYS_BY_KIND = {
   restoreAction: new Set([...SHARED_KEYS, 'target', 'actions']),
   playResist:    new Set([...SHARED_KEYS, 'target']),
   playVoice:     new Set([...SHARED_KEYS, 'target', 'category', 'skipIfSelf']),
-  refreshPathfinding: new Set([...SHARED_KEYS, 'target']),
   unequip:       new Set([...SHARED_KEYS, 'target']),
   guard:         new Set([...SHARED_KEYS, 'target']),
   terrainEdit:   new Set([...SHARED_KEYS, 'target',
@@ -533,9 +531,6 @@ function validateStep(step, path) {
         fail('plays a voice line from a category the system does not know');
       }
       break;
-    case 'refreshPathfinding':
-      needsUnit();
-      break;
     case 'unequip':
       needsUnit();
       break;
@@ -653,12 +648,12 @@ const SAVE_TRIGGERS = new Set(['onFailedSave', 'onSucceedSave']);
 const CHECK_TRIGGERS = new Set(['onFailedCheck', 'onSucceedCheck']);
 const AIMED_RNG_TYPES = new Set(ITEM_ACTIVATION_SUPPORT.aimedRngTypes);
 /** Step kinds that change a unit, so a slain unit can't take them. */
-const CORPSE_STEPS = new Set(['heal', 'applyEffect', 'moveToken', 'setFaction']);
+const CORPSE_STEPS = new Set(['damage', 'heal', 'modShield', 'applyEffect', 'removeEffect', 'moveToken', 'setFaction']);
 /** Step kinds that change who stands where or on which side, which the exchange checked only when it opened. */
 const MID_EXCHANGE_FORBIDDEN = new Set(['moveToken', 'setFaction', 'unequip', 'restoreAction']);
 /** Steps that only show something, so running them once per target is harmless. */
 const DISPLAY_STEPS = new Set([
-  'animation', 'floatingText', 'playVoice', 'playResist', 'refreshPathfinding', 'wait'
+  'animation', 'floatingText', 'playVoice', 'playResist', 'wait'
 ]);
 
 /** Run the carrier rules on one entry, adding to `errors` and `warnings`. */
@@ -676,6 +671,9 @@ function validateEntryContext(entry, carrier, path, out) {
     fail(path, 'uses a use item trigger but names no item to watch for');
   }
   checkOutcomeTrigger(trigger, carrier, path, fail, warn);
+  if (cap.target === 'none' && readsOtherUnit(entry.condition)) {
+    fail(`${path}.condition`, `reads the other unit, but ${TRIGGER_PHRASES[trigger]} has no other unit`);
+  }
 
   const location = locationSupport(cap, carrier);
   const ctx = { trigger, cap, location, multiTarget: cap.repeats === 'perTarget' && multiTargetShape(carrier) };
@@ -756,7 +754,8 @@ const TARGET_USES = Object.freeze({
 
 /** How a step that changes a unit reads with that unit as its object, as in `heals the other unit`. */
 const UNIT_CHANGES = Object.freeze({
-  heal: 'heals', applyEffect: 'puts a status on', moveToken: 'moves', setFaction: 'changes the faction of'
+  damage: 'damages', heal: 'heals', modShield: 'changes the shield of', applyEffect: 'puts a status on',
+  removeEffect: 'removes a status from', moveToken: 'moves', setFaction: 'changes the faction of'
 });
 
 /** Run the trigger rules on one step: what the trigger supplies, and what repeats or piles up. */
@@ -772,6 +771,9 @@ function checkStep(step, at, topLevel, { trigger, cap, location, multiTarget }, 
       if (namesTarget(ref)) {
         fail(`${at}.${key}`, `${TARGET_USES[key]} the other unit, but ${named} has no other unit. Use self`);
       }
+    }
+    if (kind === 'if' && readsOtherUnit(step.condition)) {
+      fail(at, `checks the other unit, but ${named} has no other unit`);
     }
   }
 
@@ -805,6 +807,12 @@ function checkStep(step, at, topLevel, { trigger, cap, location, multiTarget }, 
       ? 'moves a token. On a pre-combat trigger the only move allowed is a top level move of self by rule, '
         + 'anchored on the other unit'
       : `${STEP_PHRASES[kind]}. That is not allowed on ${named}`);
+  }
+
+  if (kind === 'restoreAction' && trigger === 'onPhaseBegin') {
+    fail(at, 'gives back actions, but every unit already has its actions when a phase begins');
+  } else if (kind === 'restoreAction' && trigger === 'onPhaseEnd') {
+    fail(at, 'gives back actions at the end of the phase, when the unit can no longer use them');
   }
 
   if (kind === 'guard' && trigger !== 'onActivation') {

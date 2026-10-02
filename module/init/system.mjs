@@ -309,7 +309,6 @@ import {
   inspectHoveredMovementToken,
   inspectMovementPlan,
   isHeldMovementRepeating,
-  refreshMovementPlanOverlay,
   resumeMovementAfterTargeting,
   settleMovementAnimation,
   suspendMovementForTargeting
@@ -711,10 +710,6 @@ export function createSystemRuntime() {
       if (message.kind === STANCE_BREAK_PRESENTATION_KIND) return stancePresentation.show(message);
       if (message.kind === HEALTH_PRESENTATION_KIND) return healthPresentation.show(message);
       if (message.kind === DEFEAT_PRESENTATION_KIND) return healthPresentation.show(message);
-      if (message.kind === EFFECT_OPERATION_PRESENTATION_KIND
-        && message.operation?.step?.kind === 'refreshPathfinding') {
-        return refreshMovementPlanOverlay(message.runtime?.self?.tokenUuid ?? '');
-      }
       if (message.kind === BANNER_PRESENTATION_KIND) return banners.show(message);
       if (message.kind === PROGRESSION_PRESENTATION_KIND) {
         return message.beat === PROGRESSION_PRESENTATION_BEATS.PROMOTION_STATS
