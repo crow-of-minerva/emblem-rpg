@@ -3,11 +3,12 @@ import { resolveActivationConsumption } from './activation.mjs';
 
 /*
  * The rules for retractable item uses. A use of an item marked retractable (`system.retractable`) is saved on the
- * unit's `system.turn.retraction` until the unit moves or acts again, so the player can press Cancel to take it back.
+ * unit's `system.turn.retraction` until the unit acts again or its turn ends. Cancel takes it back, and also undoes a
+ * walk made since it in the same movement plan.
  * The field holds JSON text of `{pending, memory}`: `pending` is the one use that can still be taken back (its undo
- * record, item, whether it landed, and the movement spent and token position at the time), and `memory` maps each
- * retractable item used this turn to its passed skill check and dice, so using it again after taking it back rolls
- * nothing new. It is text so the undo records save and write it back as one value.
+ * record, item, whether it landed, and the movement spent, token position and movement plan at the time), and
+ * `memory` maps each retractable item used this turn to its passed skill check and dice, so using it again after
+ * taking it back rolls nothing new. It is text so the undo records save and write it back as one value.
  */
 
 /**
@@ -40,17 +41,46 @@ export function serializeRetraction({ pending = null, memory = {} } = {}) {
 }
 
 /**
- * Whether the unit has a use it can take back, and whether it has moved since that use.
- * @param {object|null} retraction The parsed field (parseRetraction).
- * @param {{movementSpent?: number, x?: number, y?: number}} unit Its movement spent and token position in pixels now.
- * @returns {{pending: boolean, moved: boolean, itemUuid: string}}
+ * The parts of the unit's turn a kept use saves and Cancel compares: the movement spent, and the open movement
+ * plan's start time and anchor in pixels. With no plan open the start time is 0, which no open plan has.
+ * @param {object} turn The unit's `system.turn`.
+ * @returns {{movementSpent: number, planStartedAt: number, anchorX: number, anchorY: number}}
  */
-export function retractionStanding(retraction, { movementSpent = 0, x = 0, y = 0 } = {}) {
+export function retractionTurn(turn = {}) {
+  const planning = turn?.movementPlanning === true;
+  return {
+    movementSpent: Number(turn?.movementSpent) || 0,
+    planStartedAt: planning ? Number(turn.movementPlanStartedAt) || 0 : 0,
+    anchorX: Number(turn?.movementAnchorX) || 0,
+    anchorY: Number(turn?.movementAnchorY) || 0
+  };
+}
+
+/**
+ * Whether the unit has a use it can take back, whether it has moved since that use, and whether taking it back can
+ * first return the unit to the use's square (`returnable`): only while the walk since is uncommitted, in the same
+ * open plan.
+ * @param {object|null} retraction The parsed field (parseRetraction).
+ * @param {object} turn The unit's `system.turn` now.
+ * @param {{x?: number, y?: number}} position Its token's position now, in pixels.
+ * @returns {{pending: boolean, moved: boolean, returnable: boolean, itemUuid: string,
+ *   position: {x: number, y: number}|null}} `position` is the token's position at the use, in pixels.
+ */
+export function retractionStanding(retraction, turn = {}, { x = 0, y = 0 } = {}) {
   const pending = retraction?.pending;
-  if (!pending) return { pending: false, moved: false, itemUuid: '' };
-  const moved = (Number(pending.movementSpent) || 0) !== (Number(movementSpent) || 0)
-    || Number(pending.x) !== Number(x) || Number(pending.y) !== Number(y);
-  return { pending: true, moved, itemUuid: String(pending.itemUuid ?? '') };
+  if (!pending) return { pending: false, moved: false, returnable: false, itemUuid: '', position: null };
+  const now = retractionTurn(turn);
+  const spentSince = (Number(pending.movementSpent) || 0) !== now.movementSpent;
+  const moved = spentSince || Number(pending.x) !== Number(x) || Number(pending.y) !== Number(y);
+  const samePlan = now.planStartedAt !== 0 && (Number(pending.planStartedAt) || 0) === now.planStartedAt
+    && Number(pending.anchorX) === now.anchorX && Number(pending.anchorY) === now.anchorY;
+  return {
+    pending: true,
+    moved,
+    returnable: moved && !spentSince && samePlan,
+    itemUuid: String(pending.itemUuid ?? ''),
+    position: { x: Number(pending.x) || 0, y: Number(pending.y) || 0 }
+  };
 }
 
 /**

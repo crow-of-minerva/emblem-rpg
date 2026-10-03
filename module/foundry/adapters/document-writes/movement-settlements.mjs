@@ -3,9 +3,7 @@ import { USER_LOCK_SETTING } from '../../../config/settings.mjs';
 import { GUARD_BOND_EFFECT_NAME } from '../../../contracts/domains/combat.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { TELEPORT_SETTLEMENT_OUTCOMES } from '../../../contracts/domains/terrain.mjs';
-import {
-  GROUNDED_BY_STANCE_BREAK_FLAG, planMovementCancelEffects, planMovementSpend
-} from '../../../game/movement/input-policy.mjs';
+import { GROUNDED_BY_STANCE_BREAK_FLAG, planMovementSpend } from '../../../game/movement/input-policy.mjs';
 import { collectionValues, structurallyEqual } from '../../../lib/core/runtime.mjs';
 import { clone } from '../services/host.mjs';
 import { reportFoundryError } from '../services/diagnostics.mjs';
@@ -91,14 +89,6 @@ export function movementRestoreOptions() {
   return { animate: false, emblemMovementRestore: true };
 }
 
-/** The ids of the effects authored to lapse when a move is cancelled. */
-function movementCancelEffectIds(actor) {
-  return planMovementCancelEffects(collectionValues(actor?.effects).map(effect => Object.freeze({
-    id: String(effect?.id ?? ''),
-    removeWhenPathfindingEnds: effect?.flags?.[SYSTEM_ID]?.removeWhenPathfindingEnds === true
-  })));
-}
-
 /* -------------------------------------------- */
 /*  Movement lock                               */
 /* -------------------------------------------- */
@@ -147,12 +137,11 @@ export function lockIsStale(lock) {
 /* -------------------------------------------- */
 
 /**
- * Other documents closing a plan can change besides the unit's own Actor and Token: Guard partners and their bond
- * effects, and effects that end on cancel. FoundryMovementRepository records them with the rest before the first
- * write.
+ * Other documents closing a plan can change besides the unit's own Actor and Token: the unit's Guard partners and
+ * their bond effects. FoundryMovementRepository records them with the rest before the first write.
  */
-export function planEndCaptures(actor, token, { guardBonds = null, cancelled = false } = {}) {
-  const deleting = cancelled ? movementCancelEffects(actor) : [];
+export function planEndCaptures(actor, token, { guardBonds = null } = {}) {
+  const deleting = [];
   const documents = [];
   const bond = token ? guardBonds?.bondOf?.(token) ?? null : null;
   for (const partner of [bond?.guarded, bond?.guarder].filter(Boolean)) {
@@ -163,12 +152,10 @@ export function planEndCaptures(actor, token, { guardBonds = null, cancelled = f
 }
 
 /**
- * Finish a plan that has just closed: remove the effects that lapse when a move is cancelled, then break a Guard
- * bond the unit no longer stands in (FoundryGuardBondRepository in document-writes/tokens.mjs). A failed write
- * throws.
+ * Finish a plan that has just closed: break a Guard bond the unit no longer stands in (FoundryGuardBondRepository in
+ * document-writes/tokens.mjs). A failed write throws.
  */
-export async function settlePlanEnd(actor, token, { cancelled = false, guardBonds = null, operation = null } = {}) {
-  if (cancelled) await removeMovementCancelEffects(actor, operation);
+export async function settlePlanEnd(actor, token, { guardBonds = null, operation = null } = {}) {
   await guardBonds?.recheck([token.uuid], { operation });
 }
 
@@ -178,12 +165,12 @@ export async function settlePlanEnd(actor, token, { cancelled = false, guardBond
  * @returns {Promise<boolean>} false if the token, turn or lock changed while closing, or the turn write didn't take.
  */
 export async function closeMovementPlan({
-  token, actor, changes, guardBonds = null, cancelled = false, operation = null
+  token, actor, changes, guardBonds = null, operation = null
 }) {
   const before = movementState(actor);
   const lock = movementLockNow();
   const position = { x: token._source.x, y: token._source.y };
-  const cleanup = planEndCaptures(actor, token, { guardBonds, cancelled });
+  const cleanup = planEndCaptures(actor, token, { guardBonds });
   await operation?.capture({
     documents: [movementActorCapture(actor), token, ...cleanup.documents],
     deleting: cleanup.deleting,
@@ -193,7 +180,7 @@ export async function closeMovementPlan({
     || !structurallyEqual(movementLockNow(), lock)) return false;
   await actor.update(clone(changes), {});
   if (!turnChangesLanded(actor, changes)) return false;
-  await releaseLockAndSettlePlanEnd(actor, token, { cancelled, guardBonds, operation });
+  await releaseLockAndSettlePlanEnd(actor, token, { guardBonds, operation });
   return true;
 }
 
@@ -280,24 +267,8 @@ function teleportTurnChanges(snapshot, resolution, charge, destination) {
 }
 
 /* -------------------------------------------- */
-/*  Cancellation cleanup                        */
+/*  Guard bonds                                 */
 /* -------------------------------------------- */
-
-/** Delete the effects authored to lapse with a cancelled move, recording them for undo first. */
-async function removeMovementCancelEffects(actor, operation = null) {
-  const effects = movementCancelEffects(actor);
-  if (!effects.length) return Object.freeze([]);
-  const ids = effects.map(effect => String(effect.id));
-  await operation?.capture({ deleting: effects });
-  await actor.deleteEmbeddedDocuments('ActiveEffect', ids, {});
-  if (ids.some(id => actor.effects.get(id))) throw new Error('movement.cancel-effects-refused');
-  return Object.freeze(ids);
-}
-
-function movementCancelEffects(actor) {
-  const ids = new Set(movementCancelEffectIds(actor).map(String));
-  return collectionValues(actor?.effects).filter(effect => ids.has(String(effect?.id ?? '')));
-}
 
 /** The Guard bond effects FoundryGuardBondRepository deletes when a bond breaks, recorded before the recheck runs. */
 function guardBondEffects(actor) {

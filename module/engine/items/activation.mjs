@@ -54,7 +54,9 @@ import {
 import { earnsCharacterExperience, resolveWeaponExperience } from '../../game/progression/rules.mjs';
 import { resolveActivationExperience } from '../../game/progression/activation-experience.mjs';
 import { isStealAbility } from '../../game/economy/trade.mjs';
-import { groundsOnInteraction, planForcedLanding } from '../../game/movement/input-policy.mjs';
+import {
+  groundsOnInteraction, planForcedLanding, planMovementSettlement
+} from '../../game/movement/input-policy.mjs';
 import {
   canRallyTarget, planRallyEffect, rallyCasterFacts, ralliesOn, rallyRankFor
 } from '../../game/support/rules.mjs';
@@ -217,15 +219,19 @@ async function settleRetraction(services, snapshot, context, deliveries, { kept,
 
 /**
  * Take back the unit's kept retractable use (ITEMS.RETRACT): every write it made is undone, which gives its bonus
- * action back. It is refused when nothing is kept or the unit has moved since the use. What the use rolled stays
- * remembered, so using the item again this turn rolls the same.
+ * action back. A unit that walked on from the use in the same open plan is first put back on the use's square, in
+ * the same undo record. It is refused when nothing is kept or the unit has moved in a way this can't undo. What the
+ * use rolled stays remembered, so using the item again this turn rolls the same.
  */
 async function retractItem(context, services) {
   const tokenUuid = String(context.payload?.tokenUuid ?? '');
   const standing = await services.retractions.getStanding(tokenUuid);
   if (!standing?.pending) return refuse(RESULT_CODES.ITEM_RETRACTION_NONE);
-  if (standing.moved) return refuse(RESULT_CODES.ITEM_RETRACTION_MOVED);
+  if (standing.moved && !standing.returnable) return refuse(RESULT_CODES.ITEM_RETRACTION_MOVED);
   try {
+    if (standing.moved && !await returnToUseSquare(services.movements, tokenUuid, context.operation ?? null)) {
+      return refuse(RESULT_CODES.ITEM_RETRACTION_MOVED);
+    }
     if (await services.retractions.retract(tokenUuid, context.operation ?? null) !== true) {
       return refuse(RESULT_CODES.ITEM_RETRACTION_FAILED);
     }
@@ -237,6 +243,20 @@ async function retractItem(context, services) {
     tokenUuid, actorUuid: standing.actorUuid, itemUuid: standing.itemUuid,
     requestId: context.requestId, userId: context.userId
   });
+}
+
+/**
+ * Put the unit back on the square of its kept use, as movement.rollback puts it back on its anchor, with the plan
+ * left open. False when it can't: the walk since the use is committed, or the plan is a canter or exploration.
+ */
+async function returnToUseSquare(movements, tokenUuid, operation) {
+  const snapshot = await movements.getSnapshot(tokenUuid);
+  const use = snapshot?.retraction;
+  if (use?.returnable !== true) return false;
+  if (!planMovementSettlement({ canter: snapshot.canterPathfinding, exploring: snapshot.exploring }).rollback) {
+    return false;
+  }
+  return movements.cancel(snapshot, { keepPlanning: true, restoreAnchor: true, position: use.position, operation });
 }
 
 function validateActivationRequest(snapshot, intent, resolveTerrainGeometry) {

@@ -146,9 +146,9 @@ export function projectMovementSnapshot(token, { ignoreTokenIds = [], nextTurn =
     attackRanges,
     anchorPosition: Object.freeze({ ...anchorPosition }),
     sourcePosition: Object.freeze({ ...currentPosition }),
-    // Whether the unit has a retractable item use the Cancel key can take back, and whether it moved since.
-    retraction: Object.freeze(retractionStanding(parseRetraction(turn.retraction),
-      { movementSpent, ...currentPosition }))
+    // Whether the unit has a retractable item use the Cancel key can take back, whether it moved since, and whether
+    // taking it back also returns the unit to the use's square (`position`, in pixels).
+    retraction: projectRetraction(turn, currentPosition)
   });
 }
 
@@ -191,6 +191,12 @@ export function scenePermission(scene) {
 /** Whether a unit is mounted, read from the Mount status alone. */
 function actorIsMounted(actor) {
   return actor?.system?.statuses?.mounted === true;
+}
+
+/** The unit's kept retractable item use (retractionStanding), frozen like the rest of the movement data. */
+function projectRetraction(turn, position) {
+  const standing = retractionStanding(parseRetraction(turn.retraction), turn, position);
+  return Object.freeze({ ...standing, position: standing.position && Object.freeze({ ...standing.position }) });
 }
 
 /* -------------------------------------------- */

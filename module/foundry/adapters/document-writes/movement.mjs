@@ -307,12 +307,10 @@ export class FoundryMovementRepository {
    * Commit the preview position with the movement charge engine/movement worked out, then keep the plan open or
    * close it. A resumed leg writes only the Actor's turn. A close goes through closeMovementPlan
    * (document-writes/movement-settlements.mjs), which also releases the movement lock and finishes the plan's end.
-   * A cancelled close removes the effects that lapse on cancel, and a confirmed one keeps them. A commit that ends
-   * the turn makes the unit's kept retractable item use final (commitRetraction).
+   * A commit that ends the turn makes the unit's kept retractable item use final (commitRetraction).
    */
   async commit(snapshot, resolution, {
-    resume = true, endTurn = !resume, canter = false, charges = true, anchor = false,
-    cancelled = false, operation = null
+    resume = true, endTurn = !resume, canter = false, charges = true, anchor = false, operation = null
   } = {}) {
     const token = await resolveToken(snapshot.tokenUuid);
     const actor = token?.actor;
@@ -337,7 +335,7 @@ export class FoundryMovementRepository {
       changes['system.turn.continuationRequestId'] = '';
     }
     if (!resume) {
-      return closeMovementPlan({ token, actor, changes, guardBonds: this.guardBonds, cancelled, operation });
+      return closeMovementPlan({ token, actor, changes, guardBonds: this.guardBonds, operation });
     }
     await operation?.capture({ documents: [movementActorCapture(actor)] });
     await actor.update({ ...changes }, {});
@@ -360,28 +358,30 @@ export class FoundryMovementRepository {
 
   /**
    * Put the unit back where its move started (the anchor), either keeping the plan open or releasing it completely.
+   * With the plan kept open it may stop on another square of the plan's walk instead (`position`, in pixels), as
+   * taking back a retractable item use does.
    *
-   * Exploration has no anchor to return to, so a plan closed there leaves the unit where it stands. Releasing
-   * the plan is a cancel, so the effects authored to lapse with a cancelled move go with it.
+   * Exploration has no anchor to return to, so a plan closed there leaves the unit where it stands.
    */
-  async cancel(snapshot, { keepPlanning = false, restoreAnchor = true, operation = null } = {}) {
+  async cancel(snapshot, { keepPlanning = false, restoreAnchor = true, position = null, operation = null } = {}) {
     const token = await resolveToken(snapshot.tokenUuid);
     const actor = token?.actor;
     if (!token || !actor || !snapshotStillCurrent(token, actor, snapshot)) return false;
     const cleanup = keepPlanning
       ? { documents: [], deleting: [] }
-      : planEndCaptures(actor, token, { guardBonds: this.guardBonds, cancelled: true });
+      : planEndCaptures(actor, token, { guardBonds: this.guardBonds });
     await operation?.capture({
       documents: [movementActorCapture(actor), token, ...cleanup.documents],
       deleting: cleanup.deleting,
       settings: [USER_LOCK_SETTING]
     });
     const previewPosition = { x: token._source.x, y: token._source.y };
+    const destination = position ?? snapshot.anchorPosition;
     const displaced = restoreAnchor
-      && (previewPosition.x !== snapshot.anchorPosition.x || previewPosition.y !== snapshot.anchorPosition.y);
+      && (previewPosition.x !== destination.x || previewPosition.y !== destination.y);
     if (displaced) {
-      const moved = await token.move({ ...snapshot.anchorPosition, action: 'displace' }, movementRestoreOptions());
-      if (moved === false || !samePosition(token, snapshot.anchorPosition)) {
+      const moved = await token.move({ ...destination, action: 'displace' }, movementRestoreOptions());
+      if (moved === false || !samePosition(token, destination)) {
         throw new Error('movement.cancel-move-refused');
       }
     }
@@ -396,7 +396,7 @@ export class FoundryMovementRepository {
     };
     await actor.update({ ...changes }, {});
     if (!turnChangesLanded(actor, changes)) throw new Error('movement.cancel-write-refused');
-    await releaseLockAndSettlePlanEnd(actor, token, { cancelled: true, guardBonds: this.guardBonds, operation });
+    await releaseLockAndSettlePlanEnd(actor, token, { guardBonds: this.guardBonds, operation });
     return true;
   }
 
@@ -566,7 +566,7 @@ export class FoundryMovementRepository {
 
   /** The writes a stale release makes, in the order a live cancel makes them. */
   async #releaseStalePlan(token, actor, snapshot, { closes, cancels, displaced, operation }) {
-    const cleanup = planEndCaptures(actor, token, { guardBonds: this.guardBonds, cancelled: cancels });
+    const cleanup = planEndCaptures(actor, token, { guardBonds: this.guardBonds });
     await operation?.capture({
       documents: [token, actor && movementActorCapture(actor), ...cleanup.documents].filter(Boolean),
       deleting: cleanup.deleting,
@@ -592,7 +592,7 @@ export class FoundryMovementRepository {
       await game.settings.set(SYSTEM_ID, USER_LOCK_SETTING, null);
       return;
     }
-    await releaseLockAndSettlePlanEnd(actor, token, { cancelled: true, guardBonds: this.guardBonds, operation });
+    await releaseLockAndSettlePlanEnd(actor, token, { guardBonds: this.guardBonds, operation });
   }
 
   /**

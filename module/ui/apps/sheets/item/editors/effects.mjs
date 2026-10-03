@@ -199,7 +199,6 @@ function customStatusTemplate() {
         removeWhenAttacked: false,
         removeOnHostileAction: false,
         removeOnHostileTargeted: false,
-        removeWhenPathfindingEnds: false,
         stackable: false,
         stackCount: 1,
         stackLimit: null,
@@ -1077,6 +1076,45 @@ function jsonFieldText(step, field, stored) {
   return stepCards.state.text(stepCards.state.identify(step), field) || stored();
 }
 
+/** How many characters a line of a custom status's JSON may run to before an object or array is split. */
+const COMPACT_JSON_WIDTH = 100;
+
+/** Write a JSON value on one line, with a space after each colon and comma. */
+function inlineJson(value) {
+  if (Array.isArray(value)) return `[${value.map(inlineJson).join(', ')}]`;
+  if (value && typeof value === 'object') {
+    const parts = jsonEntries(value).map(([key, item]) => `${JSON.stringify(key)}: ${inlineJson(item)}`);
+    return parts.length ? `{ ${parts.join(', ')} }` : '{}';
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/** An object's entries as JSON.stringify keeps them: undefined values and functions are left out. */
+function jsonEntries(value) {
+  return Object.entries(value).filter(([, item]) => item !== undefined && typeof item !== 'function');
+}
+
+/**
+ * Write a value as JSON indented by two spaces, keeping any object or array on one line when it fits within
+ * COMPACT_JSON_WIDTH. Each change of a custom status then reads as one row.
+ * @param {string} [indent]       The indentation of the line the value starts on.
+ * @param {number} [lead]         How many characters come before the value on that line, after the indentation.
+ */
+function compactJson(value, indent = '', lead = 0) {
+  const inline = inlineJson(value);
+  // The extra character leaves room for the comma that follows a value inside a list or object.
+  if (!value || typeof value !== 'object' || indent.length + lead + inline.length < COMPACT_JSON_WIDTH) return inline;
+  const inner = `${indent}  `;
+  if (Array.isArray(value)) {
+    return `[\n${value.map(item => inner + compactJson(item, inner)).join(',\n')}\n${indent}]`;
+  }
+  const lines = jsonEntries(value).map(([key, item]) => {
+    const label = `${JSON.stringify(key)}: `;
+    return inner + label + compactJson(item, inner, label.length);
+  });
+  return `{\n${lines.join(',\n')}\n${indent}}`;
+}
+
 /** The class a JSON textarea has while its text doesn't parse. `.dialog-editor textarea.is-invalid` styles it. */
 function jsonFieldMark(step, field) {
   return stepCards.state.text(stepCards.state.identify(step), field) ? ' class="is-invalid"' : '';
@@ -1129,8 +1167,7 @@ function areaPanelHtml(step) {
 /** What an apply-status card adds under its fields: the JSON of a custom status, or the description of a stock one. */
 function statusExtraHtml(step) {
   if (step.preset === 'custom') {
-    const json = jsonFieldText(step, 'customData', () =>
-      JSON.stringify(step.customData ?? customStatusTemplate(), null, 2));
+    const json = jsonFieldText(step, 'customData', () => compactJson(step.customData ?? customStatusTemplate()));
     const label = labelSpan('custom effect json', 'editor.status.custom-data');
     return `<label class="ed-field ed-field--textarea ed-span">${label}
       <textarea${jsonFieldMark(step, 'customData')} data-step-field="customData" rows="18"

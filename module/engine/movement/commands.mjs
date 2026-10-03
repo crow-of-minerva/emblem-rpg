@@ -375,8 +375,7 @@ async function cancelMovement(context, movements, keepPlanning, events, objects)
  * Give up a canter, which forfeits its movement and ends the turn where the exchange left the unit.
  *
  * The token returns to the square the plan started on first, and the plan is then closed from a fresh read, so the
- * end-turn commit reads the restored square rather than the abandoned preview. Giving up counts as a cancel, so
- * the close also removes effects authored to end when a move is cancelled.
+ * end-turn commit reads the restored square rather than the abandoned preview.
  */
 async function abandonCanter(context, movements, snapshot, events, objects) {
   if (!await movements.cancel(snapshot, { keepPlanning: true, operation: context.operation })) {
@@ -389,7 +388,7 @@ async function abandonCanter(context, movements, snapshot, events, objects) {
     cost: 0,
     path: Object.freeze([anchored.current])
   };
-  const settlement = { resume: false, endTurn: true, charges: true, cancelled: true };
+  const settlement = { resume: false, endTurn: true, charges: true };
   if (!await movements.commit(anchored, resolution, { ...settlement, operation: context.operation })) {
     return refuse(RESULT_CODES.MOVEMENT_STATE_STALE);
   }

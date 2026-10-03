@@ -61,7 +61,7 @@ const STANDING_STATUS_IDS = Object.freeze(new Set([
 /** The flags a status writer sets to say when its status ends. Any one of them makes an effect a status. */
 const STATUS_LIFECYCLE_FLAGS = Object.freeze([
   ...Object.values(ENCOUNTER_DECAY_FLAGS), 'removeOnCombatSequenceEnd', 'removeWhenAttacked', 'removeOnStanceBreak',
-  'removeOnHostileAction', 'removeOnHostileTargeted', 'removeWhenPathfindingEnds', 'stackable'
+  'removeOnHostileAction', 'removeOnHostileTargeted', 'stackable'
 ]);
 
 /** Every status id in the STATUS_EFFECTS registry, plus the id both halves of a Guard bond carry. */

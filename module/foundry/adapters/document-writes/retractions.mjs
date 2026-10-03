@@ -1,7 +1,7 @@
 /** @layer foundry/adapters/document-writes */
 import { MOVEMENT_PLAN_PATHS } from '../../../contracts/domains/characters.mjs';
 import {
-  parseRetraction, pendingUseConsumption, rememberRetraction, retractionStanding, serializeRetraction
+  parseRetraction, pendingUseConsumption, rememberRetraction, retractionStanding, retractionTurn, serializeRetraction
 } from '../../../game/items/retraction.mjs';
 import { clone, resolveActor, resolveDocument, resolveItem, resolveToken } from '../services/host.mjs';
 
@@ -69,8 +69,9 @@ export class FoundryRetractionRepository {
 
   /**
    * Keep a retractable use on the unit: the copy of its undo record, the item, whether it landed, and the movement
-   * spent and token position now, which Cancel compares to tell whether the unit has moved since. The item's check
-   * result and dice are added to what it remembers this turn.
+   * spent, token position and movement plan now, which Cancel compares to tell whether the unit has moved since and
+   * whether it can put the unit back on this square (retractionStanding). The item's check result and dice are added
+   * to what it remembers this turn.
    * @param {string} tokenUuid The unit's Token.
    * @param {{record: object|null, itemUuid: string, landed: boolean, check: object|null,
    *   rolls: Record<string, number>}} use What the use wrote and rolled.
@@ -86,7 +87,7 @@ export class FoundryRetractionRepository {
         record: recordWithoutSettings(record),
         itemUuid: String(itemUuid ?? ''),
         landed: landed === true,
-        movementSpent: Number(turn.movementSpent) || 0,
+        ...retractionTurn(turn),
         x: Number(token._source.x) || 0,
         y: Number(token._source.y) || 0
       },
@@ -107,16 +108,15 @@ export class FoundryRetractionRepository {
 
   /**
    * Whether the unit has a kept use, and whether it has moved since (retractionStanding).
-   * @returns {Promise<{pending: boolean, moved: boolean, itemUuid: string, actorUuid: string}|null>}
+   * @returns {Promise<{pending: boolean, moved: boolean, returnable: boolean, itemUuid: string,
+   *   position: {x: number, y: number}|null, actorUuid: string}|null>}
    */
   async getStanding(tokenUuid) {
     const token = await resolveToken(tokenUuid);
     const actor = token?.actor;
     if (!actor) return null;
     const turn = actor.system?.turn ?? {};
-    const standing = retractionStanding(parseRetraction(turn.retraction), {
-      movementSpent: turn.movementSpent, x: token._source.x, y: token._source.y
-    });
+    const standing = retractionStanding(parseRetraction(turn.retraction), turn, token._source);
     return { ...standing, actorUuid: String(actor.uuid ?? '') };
   }
 

@@ -347,18 +347,6 @@ export function resolveStandingMovementSpent(movement) {
   return planMovementSpend({ priorSpent, legCost: resolveStandingDestination(movement)?.cost });
 }
 
-/**
- * The effects to delete when a movement plan is cancelled, picked by their `removeWhenPathfindingEnds` flag. A
- * confirmed plan keeps them.
- * @param {ReadonlyArray<{id: string, removeWhenPathfindingEnds?: boolean}>} effects The unit's effects.
- * @returns {string[]} The ids to delete.
- */
-export function planMovementCancelEffects(effects = []) {
-  return effects
-    .filter(effect => effect?.removeWhenPathfindingEnds === true && effect.id)
-    .map(effect => String(effect.id));
-}
-
 /* -------------------------------------------- */
 /*  Movement permissions                        */
 /* -------------------------------------------- */
