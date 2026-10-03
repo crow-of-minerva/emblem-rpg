@@ -758,6 +758,10 @@
               <option value="Standard Action" {{#if (eq item.system.actionType "Standard Action")}}selected{{/if}}>Standard Action</option>
               <option value="Bonus Action" {{#if (eq item.system.actionType "Bonus Action")}}selected{{/if}}>Bonus Action</option>
             </select>
+            <label class="retractable-row" data-tooltip="{{tooltip 'item.retractable'}}">
+              <span class="toggle-text">Retractable</span>
+              <input class="retractable-checkbox" type="checkbox" name="system.retractable" {{#if item.system.retractable}}checked{{/if}} {{#unless retractableAllowed}}disabled{{/unless}} />
+            </label>
         </div>
         {{/if}}
 

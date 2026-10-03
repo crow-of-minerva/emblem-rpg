@@ -4548,15 +4548,19 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 }
 
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .action-type-row > label {
+  flex: 0 0 auto;
   font-size: 12px;
   color: rgb(210,210,210);
   padding-top: 3px;
   width: 80px;
   margin-bottom: 4px;
   font-weight: bold;
+  white-space: nowrap;
 }
 
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .action-type-row select {
+  flex: 0 0 auto;
+  width: auto;
   height: 23px;
   color: var(--color-light-4);
   background: var(--color-cool-4);
@@ -5222,6 +5226,36 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .no-extra-attacks-checkbox::before,
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .refreshes-checkbox::before {
   display: none !important;
+}
+
+/* The Retractable toggle beside Action Type works like Refreshes: a hidden checkbox and a green label when on. It is
+   dimmed and can't be clicked unless the item is a bonus action that targets Self. */
+:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .retractable-row {
+  display: flex;
+  align-items: center;
+  margin-left: 16px;
+  cursor: var(--cursor-pointer);
+  user-select: none;
+}
+
+:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .retractable-checkbox {
+  display: none !important;
+}
+
+:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .retractable-row .toggle-text {
+  font-size: 11px;
+  color: #888;
+  transition: color 0.12s ease;
+}
+
+:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .retractable-row:has(input:checked) .toggle-text {
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+:is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .retractable-row:has(input:disabled) {
+  cursor: default;
+  opacity: 0.4;
 }
 
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .effects-entries {
