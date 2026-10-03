@@ -4567,7 +4567,7 @@ body.emblem-busy :is(#chat-form button, #chat-form button *, #chat-controls butt
   border: 1px solid rgba(85,80,75,1);
   font-size: 11px;
   padding: 4px;
-  min-width: 120px;
+  min-width: 202px;
 }
 
 :is(.application.sheet.emblem-rpg.item.item-sheet,.object-sheet.obj-armament) .booster-row {
