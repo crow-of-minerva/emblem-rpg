@@ -69,7 +69,7 @@ function checkField(field, fieldClass, variant, input) {
  * Render one field from its descriptor. The checkbox types differ in their default: `checkbox` stores true when
  * ticked, `checkboxDefaultOn` stores false when unticked, and `invertedCheckbox` stores true when unticked. A
  * composite field puts its inputs under one `data-step-field` element for readField. A descriptor may name a
- * `tooltip` id (with `tooltipData`) for its label and a `unit` for a text or number input.
+ * `tooltip` id (with `tooltipData`) for its label, a `unit` for a text or number input, and a `min` for a number.
  * @param {object} field                          The field descriptor.
  * @param {*} value                               Its current value.
  * @param {object} [options]
@@ -133,7 +133,8 @@ export function renderField(field, value, {
     }
     case 'number': {
       const v = value === undefined || value === null ? '' : escapeHtml(value);
-      const input = `<input type="number" step="${numberStep}" ${bind} value="${v}"`
+      const min = field.min === undefined ? '' : ` min="${escapeHtml(field.min)}"`;
+      const input = `<input type="number" step="${numberStep}"${min} ${bind} value="${v}"`
         + ` placeholder="${placeholderOf(field)}" />`;
       return `<label class="${fieldClass}"${hidden}>${label}${withUnit(field, input)}</label>`;
     }

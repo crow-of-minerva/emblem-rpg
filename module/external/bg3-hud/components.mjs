@@ -400,11 +400,13 @@ export async function showBg3EffectDescription(effect) {
   });
 }
 
+/** The duration lines of the description dialog. A duration of 0 lasts until an end trigger removes the status. */
 function describeDuration(duration) {
   const hasDuration = duration !== undefined && duration !== null;
   return {
     hasDuration,
     duration: hasDuration ? Number(duration) : null,
+    untilRemoved: hasDuration && Number(duration) === 0,
     plural: !hasDuration || Number(duration) !== 1
   };
 }

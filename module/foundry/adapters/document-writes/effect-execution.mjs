@@ -34,6 +34,7 @@ import { EFFECT_MOVE_ACTION, EFFECT_MOVE_ANIMATION, ENCOUNTER_DECAY_FLAGS } from
 import { STANCE_BREAK_EFFECT_NAME, STANCE_BREAK_STATUS_ID } from '../../../contracts/domains/damage.mjs';
 import { DEFAULT_STATUS_DURATION, FACTION_LINK_FLAG } from '../../../contracts/domains/characters.mjs';
 import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
+import { normalizeCustomStatus } from '../../../contracts/dsl/custom-status.mjs';
 import { ACTIVATION_EXPERIENCE_USES_FLAG } from '../../../contracts/domains/progression.mjs';
 import { applyRallyEffect, rallyRecordUpdate } from './rallies.mjs';
 import { removeSummons } from './encounters.mjs';
@@ -245,9 +246,9 @@ async function modifyShield(targets, step, runtime) {
 }
 
 /**
- * Plan every target's status first, so the whole step is recorded in one save, then write them in order. A refused
- * application (immunity or a full stack) writes nothing. Each result says whether the status was created and whether
- * it is beneficial; activation XP uses both. A step with a linked animation tag also lists, per unit, the id of the
+ * Plan every target's status first, so the whole step is recorded in one save, then write them in order. An
+ * application an immunity refuses writes nothing. Each result says whether the status was created and whether it is
+ * beneficial; activation XP uses both. A step with a linked animation tag also lists, per unit, the id of the
  * ActiveEffect that carries the status, which persistent animations and change faction steps tie themselves to.
  */
 async function applyEffects(targets, step, repository, runtime) {
@@ -278,7 +279,7 @@ async function applyEffects(targets, step, repository, runtime) {
       actorUuid: plan.actor.uuid,
       tag: application.linkedAnimationTag ?? plan.data.flags?.[SYSTEM_ID]?.linkedAnimationTag ?? step.linkAnimationTag,
       created: application.created === true,
-      effectId: application.created === true ? plan.createId : String((plan.effect ?? plan.kept)?.id ?? '')
+      effectId: application.created === true ? plan.createId : String(plan.effect?.id ?? '')
     }));
   }
   return Object.freeze({
@@ -914,9 +915,16 @@ function playerOwnerUpdates(actor) {
   return updates;
 }
 
+/**
+ * The ActiveEffect data one apply status step creates. A custom status is brought to the current shape by
+ * normalizeCustomStatus and keeps its own duration, where 0 means it lasts until a trigger removes it. A registry
+ * status lasts the step's duration, else its configured one, else the default, and never less than 1 phase. It gets
+ * no `triggerSheds`, so its end triggers keep the older rule in planStatusTicks. Either kind takes its linked
+ * animation tag from the step.
+ */
 function activeEffectData(definition, step, caster, randomId) {
   const custom = step.preset === 'custom';
-  const base = custom ? structuredClone(definition ?? {}) : {};
+  const base = custom ? normalizeCustomStatus(definition, step) : {};
   const statuses = base.statuses ?? definition.statuses ?? (definition.id ? [definition.id] : []);
   const flags = structuredClone(base.flags ?? {});
   const statusFlags = custom
@@ -927,6 +935,8 @@ function activeEffectData(definition, step, caster, randomId) {
       ...(definition.harmful === true ? { harmful: true } : {}),
       ...(definition.flags ?? {})
     };
+  // Every status remembers who applied it, which a remove status step's "placed by" matches.
+  if (caster) statusFlags.placedBy = { actorUuid: caster.uuid };
   if (step.preset === 'marked' && caster) {
     statusFlags.markedBy = { actorUuid: caster.uuid, actorType: caster.system?.faction?.role };
   }
@@ -937,10 +947,12 @@ function activeEffectData(definition, step, caster, randomId) {
       actorType: caster.system?.faction?.role
     };
   }
-  const requested = Number(step.durationPhases);
-  const configured = Number(statusFlags.duration ?? definition.duration);
-  statusFlags.duration = Number.isFinite(requested) && requested >= 1
-    ? requested : Number.isFinite(configured) && configured >= 1 ? configured : DEFAULT_STATUS_DURATION;
+  if (!custom) {
+    const requested = Number(step.durationPhases);
+    const configured = Number(statusFlags.duration ?? definition.duration);
+    statusFlags.duration = Number.isFinite(requested) && requested >= 1
+      ? requested : Number.isFinite(configured) && configured >= 1 ? configured : DEFAULT_STATUS_DURATION;
+  }
   if (step.durationStacks === true) statusFlags.durationStacks = true;
   if (step.linkAnimationTag) {
     statusFlags.linkedAnimationBase = step.linkAnimationTag;
@@ -960,8 +972,10 @@ function activeEffectData(definition, step, caster, randomId) {
 }
 
 /**
- * Decide what applying one status to one unit writes, without writing it: an immunity or a full stack refuses, a
- * new status names the id it will be created under, and a repeat names the ActiveEffect it updates.
+ * Decide what applying one status to one unit writes, without writing it: an immunity refuses, a new status names the
+ * id it will be created under, and a repeat names the ActiveEffect it updates. A repeat of a stackable status adds
+ * its stacks up to the limit, and at the limit still counts as applied. A repeat's phases are added to those left
+ * when either the step or the effect stacks duration, and otherwise replace them, 0 included.
  * `applyEffects` records every plan in one save before `applyPlannedEffect` writes them.
  */
 function planEffectApplication(actor, data) {
@@ -992,35 +1006,21 @@ function planEffectApplication(actor, data) {
   if (incomingFlags.stackable === true) {
     const current = Math.max(1, Math.floor(Number(currentFlags.stackCount) || 1));
     const limit = Math.max(0, Math.floor(Number(incomingFlags.stackLimit) || 0));
-    if (limit > 0 && current >= limit) {
-      return { actor, data, outcome: Object.freeze({
-        applied: false,
-        created: false,
-        reason: 'stackLimit',
-        linkedAnimationTag: currentFlags.linkedAnimationTag ?? null
-      }), kept: existing };
-    }
     const incoming = Math.max(1, Math.floor(Number(incomingFlags.stackCount) || 1));
-    const next = limit > 0 ? Math.min(limit, current + incoming) : current + incoming;
-    update['system.changes'] = rescaleStackChanges(existing, current, next);
-    update[`flags.${SYSTEM_ID}.stackCount`] = next;
-    const incomingDuration = Number(incomingFlags.duration);
-    const existingDuration = Number(currentFlags.duration);
-    if (Number.isFinite(incomingDuration) && Number.isFinite(existingDuration)
-      && incomingDuration > existingDuration) {
-      update[`flags.${SYSTEM_ID}.duration`] = incomingDuration;
+    const next = limit > 0 ? Math.max(current, Math.min(limit, current + incoming)) : current + incoming;
+    if (next !== current) {
+      update['system.changes'] = rescaleStackChanges(existing, current, next);
+      update[`flags.${SYSTEM_ID}.stackCount`] = next;
     }
-  } else {
-    const incomingDuration = Number(incomingFlags.duration);
-    const existingDuration = Number(currentFlags.duration);
-    if (incomingFlags.durationStacks === true || currentFlags.durationStacks === true) {
-      update[`flags.${SYSTEM_ID}.duration`] = (Number.isFinite(existingDuration) ? existingDuration : 0)
-        + (Number.isFinite(incomingDuration) ? incomingDuration : 0);
-      update[`flags.${SYSTEM_ID}.durationStacks`] = true;
-    } else if (Number.isFinite(incomingDuration)) {
-      update[`flags.${SYSTEM_ID}.duration`] = Number.isFinite(existingDuration)
-        ? Math.max(existingDuration, incomingDuration) : incomingDuration;
-    }
+  }
+  const incomingDuration = Number(incomingFlags.duration);
+  const existingDuration = Number(currentFlags.duration);
+  if (incomingFlags.durationStacks === true || currentFlags.durationStacks === true) {
+    update[`flags.${SYSTEM_ID}.duration`] = (Number.isFinite(existingDuration) ? existingDuration : 0)
+      + (Number.isFinite(incomingDuration) ? incomingDuration : 0);
+    update[`flags.${SYSTEM_ID}.durationStacks`] = true;
+  } else if (Number.isFinite(incomingDuration)) {
+    update[`flags.${SYSTEM_ID}.duration`] = incomingDuration;
   }
   return { actor, data, effect: existing, update };
 }
@@ -1093,8 +1093,8 @@ async function prepareEffectAnimation(operation, runtime, repository) {
 
 /**
  * Whether a removeEffect step takes this status off. Every selector the step sets must match: the name, a dispel
- * (harmful or beneficial), and the unit that placed a Mark. A step with no selector removes nothing, and the system's
- * own effects are never removed.
+ * (harmful or beneficial), and the unit that applied it (a Mark applied before statuses recorded that still carries
+ * it as its marker). A step with no selector removes nothing, and the system's own effects are never removed.
  */
 function shouldRemoveEffect(effect, step, placedBy = '') {
   if (isSystemEffect(effect)) return false;
@@ -1103,7 +1103,8 @@ function shouldRemoveEffect(effect, step, placedBy = '') {
   if (step.name && String(effect.name ?? '') !== String(step.name)) return false;
   if (dispels && !((step.dispelHarmful === true && flags.harmful === true)
     || (step.dispelBeneficial === true && flags.beneficial === true))) return false;
-  if (placedBy && String(flags.markedBy?.actorUuid ?? '') !== placedBy) return false;
+  const placer = String(flags.placedBy?.actorUuid ?? flags.markedBy?.actorUuid ?? '');
+  if (placedBy && placer !== placedBy) return false;
   return Boolean(step.name || dispels || placedBy);
 }
 

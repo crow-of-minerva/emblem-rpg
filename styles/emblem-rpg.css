@@ -12503,12 +12503,6 @@ img.ect-name-badge {
   object-fit: contain;
 }
 
-.dialog-editor .ed-sprite--inline {
-  width: 14px;
-  height: 14px;
-  vertical-align: -3px;
-}
-
 /* The one step card, shared by the effect and animation editors: grip, chevron, kind, ordinal, summary, then the
    duplicate and delete buttons. Reorder is the grip's drag. */
 .dialog-editor .ed-list {
@@ -13594,7 +13588,7 @@ img.ect-name-badge {
 }
 .dialog-effect-action-editor .eff-editor-condition summary::before {
   content: '\f054';
-  font-family: 'Font Awesome 6 Free', 'FontAwesome';
+  font-family: 'Font Awesome 7 Pro', 'Font Awesome 5 Pro';
   font-weight: 900;
   font-size: 9px;
   opacity: 0.55;
@@ -13749,7 +13743,7 @@ img.ect-name-badge {
 }
 .dialog-effect-action-editor .eff-editor-errors::before {
   content: '\f071';
-  font-family: 'Font Awesome 6 Pro', 'Font Awesome 6 Free';
+  font-family: 'Font Awesome 7 Pro', 'Font Awesome 5 Pro';
   font-weight: 900;
   flex-shrink: 0;
   opacity: 0.85;
@@ -13842,6 +13836,170 @@ img.ect-name-badge {
   border-radius: 3px;
   background: transparent;
 }
+
+/* Custom status panel: the fields an Apply status card shows for a custom status. Sections are split by a thin rule,
+   and its four-column grids keep four columns at the dialog's 660px opening width, so long labels wrap in their cell
+   rather than being cut. */
+.dialog-editor .eff-cs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.dialog-editor .ed-panel > .eff-cs-section:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.dialog-editor .ed-grid > .eff-cs-span2 { grid-column: span 2; }
+
+/* A stock status's rule text: the first three columns of the row, level with the id tag's input beside it. */
+.dialog-editor .ed-grid > .eff-status-rule { grid-column: span 3; align-self: end; }
+
+/* A trigger tile: box and label on the control line, the label free to wrap, and the phase-or-stack choice on its
+   own line beneath, spanning the whole tile. */
+.dialog-editor .eff-cs-ends .eff-cs-trigger {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 6px;
+  row-gap: 2px;
+  height: auto;
+  min-height: var(--ed-control);
+  white-space: normal;
+  cursor: var(--cursor-default);
+}
+
+.dialog-editor .eff-cs-trigger > input[type='checkbox'] {
+  margin-block: calc((var(--ed-control) - 18px) / 2);
+}
+
+.dialog-editor .eff-cs-trigger > label {
+  padding-block: calc((var(--ed-control) - 12px) / 2);
+  line-height: 12px;
+  cursor: var(--cursor-pointer);
+}
+
+.dialog-editor .eff-cs-trigger > .eff-cs-sheds {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-bottom: 2px;
+}
+
+/* The phase-or-stack choice: two small editor buttons in one well, the chosen one in the accent. */
+.dialog-editor .eff-cs-sheds {
+  display: inline-flex;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 2px;
+  background: var(--emblem-ed-well);
+}
+
+.dialog-editor .eff-cs-sheds > .ed-btn--accent {
+  background: rgba(208, 168, 92, 0.09);
+}
+
+/* The stacking hint wraps rather than being cut at the default width. */
+.dialog-editor .ed-summary.eff-cs-hint {
+  height: auto;
+  min-height: var(--ed-control);
+  padding-block: 4px;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* The description takes two rows beside polarity and hidden on token, and its box fills them. */
+.dialog-editor .ed-grid > .eff-cs-desc {
+  grid-row: span 2;
+  align-self: stretch;
+}
+
+.dialog-editor .ed-field.eff-cs-desc > textarea {
+  flex: 1 1 auto;
+}
+
+/* A stacking label may wrap. The row lines up on its controls' bottom edge, so inputs and boxes share one line. */
+.dialog-editor .eff-cs-stacking {
+  align-items: end;
+}
+
+.dialog-editor .eff-cs-stacking .ed-label {
+  height: auto;
+  white-space: normal;
+}
+
+/* The icon field: thumbnail, path and the file picker button on one control line. */
+.dialog-editor .eff-cs-icon {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: var(--ed-control);
+}
+
+.dialog-editor .eff-cs-icon > input {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  height: var(--ed-control);
+  padding: 1px 6px;
+  box-sizing: border-box;
+  font-size: var(--emblem-text-s);
+  line-height: calc(var(--ed-control) - 2px);
+}
+
+.dialog-editor .eff-cs-icon > .ed-card-btn {
+  flex: none;
+  height: var(--ed-control);
+}
+
+/* Modifier rows: a heading line once, then one grid row per change. The last track holds the delete button, and the
+   heading leaves the same width empty there. */
+.dialog-editor .eff-cs-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dialog-editor .eff-cs-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.dialog-editor .eff-cs-row--head { margin-bottom: -3px; }
+.dialog-editor .eff-cs-row--head::after { content: ''; width: 23px; }
+
+.dialog-editor .eff-cs-cell {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.dialog-editor .eff-cs-cell > :is(input, select) { vertical-align: top; }
+
+.dialog-editor .eff-cs-row :is(select, input) {
+  width: 100%;
+  height: var(--ed-control);
+  min-height: var(--ed-control);
+  padding: 1px 6px;
+  box-sizing: border-box;
+  font-size: var(--emblem-text-s);
+  line-height: calc(var(--ed-control) - 2px);
+}
+
+/* Room for the drop-down caret every path input draws at its right edge. */
+.dialog-editor .eff-cs-row input[data-path-input] { padding-right: 15px; }
+
+.dialog-editor .eff-cs-row > .ed-card-btn { height: var(--ed-control); }
+
+/* Several panel parts set their own display, which would otherwise show them while they carry `hidden`. */
+.dialog-editor [data-cs-panel] [hidden] { display: none; }
 
 /* Effect Parameters: built from the shared field system (.ed-section, .ed-field, .ed-panel and the
    .effect-param-row grid), so it reads as one tool with the effect editor. */

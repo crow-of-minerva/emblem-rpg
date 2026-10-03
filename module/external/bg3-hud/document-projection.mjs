@@ -41,12 +41,15 @@ const STAT_INFLUENCES = Object.freeze({
 /**
  * Turn an item into the cell data Core stores for a hotbar slot. The _emblem fields carry what the cell
  * decoration in presentation/interface/bg3-hud.mjs needs: item kind, equipped state and targeting colour.
+ * An Infinite-use item gets no uses, so its cell shows no count.
  */
 export function projectBg3Cell(item) {
   if (!item) return null;
+  const infinite = item.system?.uses?.type === 'infinite';
   const current = Number(item.system?.uses?.current);
   const max = Number(item.getEffectiveMaxUses?.() ?? item.system?.uses?.max);
-  const uses = Number.isFinite(max) && max > 0 ? { value: Number.isFinite(current) ? current : 0, max } : null;
+  const uses = !infinite && Number.isFinite(max) && max > 0
+    ? { value: Number.isFinite(current) ? current : 0, max } : null;
   return Object.freeze({
     uuid: item.uuid,
     name: item.name,

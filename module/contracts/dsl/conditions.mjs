@@ -1,8 +1,7 @@
 /** @layer contracts/dsl */
 import { isPlainObject } from '../../lib/core/runtime.mjs';
-import { ENGAGEMENT_CHOICES, STATS, STATUS_KEYS, VOCABULARY_BY_NAME } from '../domains/characters.mjs';
-import { STANCE_BREAK_STATUS_ID } from '../domains/damage.mjs';
-import { placeOf, say, warn } from './messages.mjs';
+import { ENGAGEMENT_CHOICES, STATS, VOCABULARY_BY_NAME } from '../domains/characters.mjs';
+import { placeOf, say } from './messages.mjs';
 
 /* -------------------------------------------- */
 /*  Condition vocabulary                        */
@@ -159,32 +158,21 @@ export function readsOtherUnit(tree) {
   });
 }
 
-/** Reduce a status name to lower-case letters and digits, the way the evaluator matches statuses. */
-function statusKey(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-/**
- * The status names the validator knows: every status key, the airborne status's `Flying` id and Stance Break.
- * Rally and Guarded are not listed, so a check on either gets a warning.
- */
-const KNOWN_STATUS_KEYS = Object.freeze([...STATUS_KEYS, 'Flying', STANCE_BREAK_STATUS_ID].map(statusKey));
-
 /* -------------------------------------------- */
 /*  Validation                                  */
 /* -------------------------------------------- */
 /**
  * Validate a condition tree. With no options, or a path string, only the shape is checked. With a `surface` from
- * CONDITION_SURFACES the authoring rules for that surface run too, and any status name outside the system's own and
- * `knownStatuses` is a warning. Each message is a plain sentence that opens with where the condition sits, worked
- * out from `path` (`the condition in step 2`), or with `place` when the caller names it itself.
+ * CONDITION_SURFACES the authoring rules for that surface run too. Each message is a plain sentence that opens with
+ * where the condition sits, worked out from `path` (`the condition in step 2`), or with `place` when the caller
+ * names it itself.
  * @param {object|null} tree
- * @param {string|{path?: string, place?: string, surface?: string, knownStatuses?: string[]}} [options]
+ * @param {string|{path?: string, place?: string, surface?: string}} [options]
  * @returns {{valid: boolean, errors: string[], warnings: string[]}}
  */
 export function validate(tree, options = '') {
   const settings = typeof options === 'string' ? { path: options } : (options ?? {});
-  const { path = '', surface = null, knownStatuses = [] } = settings;
+  const { path = '', surface = null } = settings;
   const place = settings.place ?? placeOf(path, 'the condition');
   const errors = shapeErrors(tree, place);
   const warnings = [];
@@ -192,8 +180,7 @@ export function validate(tree, options = '') {
     if (!CONDITION_SURFACES.includes(surface)) {
       errors.push(say(place, 'is checked in a place the system does not know'));
     } else if (isPlainObject(tree)) {
-      const statuses = new Set([...KNOWN_STATUS_KEYS, ...knownStatuses.map(statusKey)]);
-      surfaceIssues(tree, 0, { place, surface, statuses, errors, warnings });
+      surfaceIssues(tree, 0, { place, surface, errors, warnings });
     }
   }
   return { valid: errors.length === 0, errors: [...new Set(errors)], warnings: [...new Set(warnings)] };
@@ -298,12 +285,6 @@ function surfaceIssues(node, depth, issues) {
     }
     case 'truthy':
       unknownPaths(node.expr);
-      break;
-    case 'status':
-      if (typeof node.name === 'string' && node.name.trim() && !issues.statuses.has(statusKey(node.name))) {
-        issues.warnings.push(warn(place, `checks for ${node.name.trim()}, which is not a system status. It only `
-          + 'matches a custom status with that name'));
-      }
       break;
   }
 }

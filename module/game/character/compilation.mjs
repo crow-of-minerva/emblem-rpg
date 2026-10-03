@@ -98,7 +98,8 @@ export function compileCharacterData(source) {
   const difficulty = isDifficultyTarget(system.faction?.role) ? difficultyTier(source.difficulty) : null;
   applyDifficulty(compiled, difficulty);
   // Unconditional item modifiers read the totals from before any item modifier, conditional ones the totals after the
-  // unconditional ones. Difficulty HP comes last, then current HP and Stn are clamped to the final maximums.
+  // unconditional ones. Difficulty HP and then an effect's max HP override come after them, and current HP and Stn
+  // are clamped to the final maximums last.
   const modifiers = collectModifiers(items);
   if (modifiers.unconditional.length) totalizeCharacter(compiled, source);
   applyModifierBucket(compiled, modifiers.unconditional, source);
@@ -106,6 +107,7 @@ export function compileCharacterData(source) {
   applyConditionalModifiers(compiled, modifiers.conditional, source);
   totalizeCharacter(compiled, source);
   applyDifficultyHealth(compiled, difficulty);
+  applyMaxHpOverride(compiled, source.effectOverrides?.hpMax);
   clampPools(compiled, system);
   return compiled;
 }
@@ -404,35 +406,49 @@ function applyDifficultyHealth(compiled, tier) {
   compiled.resources.hp.max = compiled.stats.hpMax.total;
 }
 
+/** Set an effect's override of max HP again after difficulty HP, so the override is the final maximum. */
+function applyMaxHpOverride(compiled, override) {
+  if (!Number.isFinite(override)) return;
+  compiled.stats.hpMax.total = override;
+  compiled.resources.hp.max = Math.max(0, override);
+}
+
 /* -------------------------------------------- */
 /*  Character totalization                      */
 /* -------------------------------------------- */
 function totalizeCharacter(compiled, source = {}) {
   const stats = compiled.stats;
-  for (const key of ['mgt', 'tqn', 'wit', 'cha', 'def', 'res', 'mov', 'stnMax', 'stnRegen', 'sight', 'expMultiplier']) {
-    totalNumeric(stats[key]);
+  // An effect that overrides a stat total (source.effectOverrides) replaces it as soon as it is worked out, so the
+  // stats built from it afterwards use the overridden value.
+  const total = (key, computed) => {
+    const override = source.effectOverrides?.[key];
+    stats[key].total = Number.isFinite(override) ? override : computed;
+    return stats[key].total;
+  };
+  for (const key of ['mgt', 'tqn', 'wit', 'cha', 'def', 'res', 'stnMax', 'stnRegen', 'sight', 'expMultiplier']) {
+    total(key, totalNumeric(stats[key]));
   }
   // Clamp movement at 0 before pathfinding reads it, because terrain and Rally penalties can exceed base movement.
-  stats.mov.total = Math.max(0, stats.mov.total);
-  stats.mov.total += resolveMoveScalingDelta(source.moveScaling, {
-    total: stats.mov.total, mounted: compiled.statuses.mounted === true
-  });
-  stats.bld.total = totalNumeric(stats.bld) + Math.floor(stats.mgt.total / 4);
-  stats.hpMax.total = totalNumeric(stats.hpMax) + stats.mgt.total;
+  const movement = Math.max(0, totalNumeric(stats.mov));
+  total('mov', movement + resolveMoveScalingDelta(source.moveScaling, {
+    total: movement, mounted: compiled.statuses.mounted === true
+  }));
+  total('bld', totalNumeric(stats.bld) + Math.floor(stats.mgt.total / 4));
+  total('hpMax', totalNumeric(stats.hpMax) + stats.mgt.total);
 
-  totalNumeric(stats.wgtRed);
-  stats.wgt.total = Math.max(0, totalNumeric(stats.wgt) - stats.wgtRed.total);
+  total('wgtRed', totalNumeric(stats.wgtRed));
+  total('wgt', Math.max(0, totalNumeric(stats.wgt) - stats.wgtRed.total));
   const encumbrance = Math.max(0, stats.wgt.total - stats.bld.total);
-  stats.agi.total = totalNumeric(stats.agi) - encumbrance;
+  total('agi', totalNumeric(stats.agi) - encumbrance);
 
-  stats.spd.total = totalNumeric(stats.spd) + stats.agi.total;
-  stats.eva.total = totalNumeric(stats.eva) + evasionFromAgility(stats.agi.total, compiled.statuses);
-  stats.acc.total = totalNumeric(stats.acc) + stats.tqn.total;
-  stats.crit.total = totalNumeric(stats.crit) + stats.wit.total;
-  stats.critDmg.total = totalNumeric(stats.critDmg) + (Math.floor(stats.tqn.total) * CRITICAL_MULTIPLIER_PER_TQN);
-  totalNumeric(stats.brk);
-  totalNumeric(stats.critRed);
-  totalNumeric(stats.brkRed);
+  total('spd', totalNumeric(stats.spd) + stats.agi.total);
+  total('eva', totalNumeric(stats.eva) + evasionFromAgility(stats.agi.total, compiled.statuses));
+  total('acc', totalNumeric(stats.acc) + stats.tqn.total);
+  total('crit', totalNumeric(stats.crit) + stats.wit.total);
+  total('critDmg', totalNumeric(stats.critDmg) + (Math.floor(stats.tqn.total) * CRITICAL_MULTIPLIER_PER_TQN));
+  total('brk', totalNumeric(stats.brk));
+  total('critRed', totalNumeric(stats.critRed));
+  total('brkRed', totalNumeric(stats.brkRed));
 
   stats.atk.total = stats.atk.override.trim()
     || addFormula(stats.atk.item, formulaStatContribution(compiled, 'atk', source));

@@ -237,7 +237,10 @@ export async function renderEmblemBg3Tooltip(data) {
     let html = `<div class="emblem-tooltip"><div class="emblem-tooltip-name">${escapeHtml(data.name || data.label || 'Effect')}</div>`;
     if (data.description) html += `<div class="emblem-tooltip-desc">${sanitizeHtml(data.description)}</div>`;
     if (duration !== undefined && duration !== null) {
-      html += `<div class="emblem-tooltip-duration"><i class="fas fa-hourglass-half"></i> ${Number(duration)} phase${Number(duration) === 1 ? '' : 's'}</div>`;
+      // A duration of 0 means the status lasts until one of its end triggers removes it.
+      const phases = Number(duration);
+      const lasts = phases === 0 ? 'until removed' : `${phases} phase${phases === 1 ? '' : 's'}`;
+      html += `<div class="emblem-tooltip-duration"><i class="fas fa-hourglass-half"></i> ${lasts}</div>`;
     }
     return tooltip(`${html}</div>`, 'UP');
   }

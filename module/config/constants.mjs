@@ -12,7 +12,7 @@ export const SYSTEM_VERSION = '1.0.2a';
  * A world behind it is brought up to date by `init/migrate-world.mjs` on the host's next load, so raise it whenever
  * the Migrate World Content macro gains work that existing worlds need.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** Milliseconds between the steps a held movement key repeats until the browser's own key repeat takes over. */
 export const MOVEMENT_HOLD_REPEAT_DELAY_MS = 125;

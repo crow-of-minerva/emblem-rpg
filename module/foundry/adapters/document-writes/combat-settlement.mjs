@@ -5,8 +5,9 @@ import { KARMA_LEDGER_SETTING, USER_LOCK_SETTING } from '../../../config/setting
 import { bookKarmaSequence } from '../dice/karma.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { collectionValues, finite } from '../../../lib/core/runtime.mjs';
-import { clone, resolveActor, resolveArmamentActor, resolveItem, resolveToken } from '../services/host.mjs';
+import { resolveActor, resolveArmamentActor, resolveItem, resolveToken, stackRescale } from '../services/host.mjs';
 import { commitRetraction } from './retractions.mjs';
+import { tickStatusEffects } from './status-ticks.mjs';
 
 const settlementOptions = () => ({ emblemCombatSettlement: true });
 
@@ -54,9 +55,9 @@ export class FoundryCombatSettlementRepository {
    * Save for undo, in one call, the old values of everything an exchange always touches: both units' Actors and
    * Tokens whole, the uses of the Items the blows spend and of each side's worn armor, the durability of the
    * armament Actor behind a rack weapon, and the two world settings. It also saves what prepareExchange changes
-   * next (the effects it removes and the id of each Flanked effect it creates) and each stacked effect a landed
-   * blow may thin. resolveExchange (exchanges/resolution.mjs) calls this before its first write. Later writes save
-   * only what this leaves out, such as other fields of these Items.
+   * next (the effects it removes or counts down, and the id of each Flanked effect it creates) and each stacked
+   * effect a landed blow may thin. resolveExchange (exchanges/resolution.mjs) calls this before its first write.
+   * Later writes save only what this leaves out, such as other fields of these Items.
    * @param {object} snapshot The exchange's starting state, read again just before the exchange.
    * @param {object|null} operation The dispatcher operation (the command's undo record), or null outside a command.
    */
@@ -81,18 +82,20 @@ export class FoundryCombatSettlementRepository {
       if (item) add(item, ITEM_USE_PATHS);
       else add(await resolveArmamentActor(uuid), ARMAMENT_DURABILITY_PATHS);
     }
-    // Saved in the order prepareExchange removes them, which is the order an undo recreates them in.
+    // Saved in the order prepareExchange removes them, which is the order an undo recreates them in. An effect it
+    // only counts down keeps existing, so each is saved whole as well.
     const deleting = [
       ...existingEffects(sourceActor, preparedSourceEffectIds(snapshot)),
       ...existingEffects(targetActor, preparedTargetEffectIds(snapshot))
     ];
+    for (const effect of deleting) add(effect);
     const creating = [];
     const flankedIds = new Map();
     for (const [side, actorUuid, actor] of [
       [snapshot.source, snapshot.sourceActorUuid, sourceActor],
       [snapshot.target, snapshot.targetActorUuid, targetActor]
     ]) {
-      for (const effect of thinnedStacks(actor)) if (!deleting.includes(effect)) add(effect);
+      for (const effect of thinnedStacks(actor)) add(effect);
       if (!side?.exchangeFlanked || !actor || hasFlanked(actor)) continue;
       const id = documentId();
       creating.push({ parent: actor, documentName: 'ActiveEffect', ids: [id] });
@@ -118,12 +121,18 @@ export class FoundryCombatSettlementRepository {
   }
 
   /**
-   * Remove the effects an attack ends as soon as it is declared: the attacker's Sanctuary and its effects that end
-   * on a hostile action, and the target's effects that end when targeted. Then apply Flanked to each flanked side.
+   * As soon as an attack is declared, remove the attacker's Sanctuary, then tick the attacker's effects that end on
+   * a hostile action and the target's that end when targeted: each ends, or loses a phase or a stack, as
+   * planStatusTicks decides (tickStatusEffects in status-ticks.mjs). Then apply Flanked to each flanked side.
    */
   async prepareExchange(snapshot, operation = null) {
-    await removeActorEffects(operation, snapshot.sourceActorUuid, preparedSourceEffectIds(snapshot));
-    await removeActorEffects(operation, snapshot.targetActorUuid, preparedTargetEffectIds(snapshot));
+    const attacker = snapshot.source.effectLifecycle;
+    const target = snapshot.target.effectLifecycle;
+    await removeActorEffects(operation, snapshot.sourceActorUuid, [attacker?.sanctuaryEffectId]);
+    await tickActorEffects(operation, snapshot.sourceActorUuid, attacker?.hostileActionEffectIds,
+      'removeOnHostileAction');
+    await tickActorEffects(operation, snapshot.targetActorUuid, target?.hostileTargetedEffectIds,
+      'removeOnHostileTargeted');
     const flankedIds = (operation && reservedFlankedIds.get(operation)) ?? new Map();
     if (operation) reservedFlankedIds.delete(operation);
     if (snapshot.source.exchangeFlanked) {
@@ -153,12 +162,12 @@ export class FoundryCombatSettlementRepository {
   }
 
   /**
-   * After each blow: if it landed, thin the defender's stacks, then remove the defender's effects that end when
-   * attacked and advance the attacker's attack index.
+   * After each blow, hit or miss: if it landed, thin the defender's stacks that shed on a hit, then tick the
+   * defender's effects that end when attacked, and advance the attacker's attack index.
    */
   async completeBlow(acting, defending, { landed, operation = null }) {
     if (landed) await removeEffectStacks(operation, defending.actorUuid);
-    await removeCapturedEffects(operation, defending.actorUuid, defending.effectLifecycle?.removeWhenAttacked);
+    await tickCapturedEffects(operation, defending.actorUuid, defending.effectLifecycle?.removeWhenAttacked);
     const actor = await resolveActor(acting.actorUuid);
     if (!actor) throw new Error('Combat acting Actor disappeared.');
     const attackIndex = Math.max(0, Math.floor(finite(actor.system?.turn?.attackIndex)));
@@ -187,10 +196,12 @@ export class FoundryCombatSettlementRepository {
     return true;
   }
 
-  /** Once the exchange is over, remove both sides' effects that last only for it and reset their attack indexes. */
+  /** Once the exchange is over, tick both sides' effects that end with it and reset their attack indexes. */
   async cleanupExchange(source, target, operation = null) {
-    await removeActorEffects(operation, source.actorUuid, source.effectLifecycle?.combatEndEffectIds);
-    await removeActorEffects(operation, target.actorUuid, target.effectLifecycle?.combatEndEffectIds);
+    for (const side of [source, target]) {
+      await tickActorEffects(operation, side.actorUuid, side.effectLifecycle?.combatEndEffectIds,
+        'removeOnCombatSequenceEnd');
+    }
     await resetAttackIndex(operation, source.actorUuid);
     await resetAttackIndex(operation, target.actorUuid);
     return true;
@@ -415,23 +426,28 @@ async function applyFlankedEffect(operation, actorUuid, reservedId = null) {
   if (!created?.length) throw new Error('The Flanked status could not be applied.');
 }
 
+/** Tick one unit's listed effects for one end trigger (tickStatusEffects in status-ticks.mjs). */
+async function tickActorEffects(operation, actorUuid, effectIds, flagKey) {
+  await tickStatusEffects(await resolveActor(actorUuid), effectIds, flagKey, operation, settlementOptions());
+}
+
 /**
- * Remove the defender's effects that end when attacked, but only those still at the apply count read before the
- * exchange, so an effect applied again meanwhile stays.
+ * Tick the defender's effects that end when attacked, but only those still at the apply count read before the
+ * exchange, so an effect applied again meanwhile is left alone.
  */
-async function removeCapturedEffects(operation, actorUuid, checkpoints = []) {
+async function tickCapturedEffects(operation, actorUuid, checkpoints = []) {
   const actor = await resolveActor(actorUuid);
   if (!actor) throw new Error('Combat target Actor disappeared.');
   const ids = (checkpoints ?? []).filter(checkpoint => {
     const effect = actor.effects.get(checkpoint.id);
     return effect && (finite(effect.flags?.[SYSTEM_ID]?.applyCount) || 1) === checkpoint.applyCount;
   }).map(checkpoint => checkpoint.id);
-  await removeActorEffects(operation, actorUuid, ids);
+  await tickStatusEffects(actor, ids, 'removeWhenAttacked', operation, settlementOptions());
 }
 
 /**
  * Drop or thin every stack a landed blow spends, one effect at a time, saving each for undo before it changes. Only
- * `add` changes are scaled to the new stack count; other change types keep their value at any stack size.
+ * additive changes are scaled to the new stack count (stackRescale); other change types keep their value.
  */
 async function removeEffectStacks(operation, actorUuid) {
   const actor = await resolveActor(actorUuid);
@@ -445,17 +461,10 @@ async function removeEffectStacks(operation, actorUuid) {
       await removeActorEffects(operation, actorUuid, [effect.id]);
       continue;
     }
-    const next = count - 1;
-    const changes = collectionValues(effect._source?.system?.changes ?? effect.system?.changes ?? effect.changes)
-      .map(raw => {
-        const change = clone(raw);
-        if (change.type !== 'add') return change;
-        return { ...change, value: (Number(change.value) / count) * next };
-      });
     await operation?.capture({ documents: [effect] });
     await effect.update({
-      'system.changes': changes,
-      [`flags.${SYSTEM_ID}.stackCount`]: next
+      'system.changes': stackRescale(effect, count, count - 1),
+      [`flags.${SYSTEM_ID}.stackCount`]: count - 1
     }, settlementOptions());
   }
 }
@@ -496,7 +505,7 @@ function hasFlanked(actor) {
   return collectionValues(actor.effects).some(effect => String(effect.name ?? '') === 'Flanked');
 }
 
-/** The attacker's effects prepareExchange removes: its Sanctuary and its effects that end on a hostile action. */
+/** The attacker's effects prepareExchange changes: its Sanctuary, and its effects that end on a hostile action. */
 function preparedSourceEffectIds(snapshot) {
   return [
     snapshot.source.effectLifecycle?.sanctuaryEffectId,
@@ -504,7 +513,7 @@ function preparedSourceEffectIds(snapshot) {
   ];
 }
 
-/** The target's effects prepareExchange removes: those that end when it is targeted. */
+/** The target's effects prepareExchange changes: those that end when it is targeted. */
 function preparedTargetEffectIds(snapshot) {
   return [...(snapshot.target.effectLifecycle?.hostileTargetedEffectIds ?? [])];
 }

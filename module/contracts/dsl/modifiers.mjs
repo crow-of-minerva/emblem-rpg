@@ -51,20 +51,18 @@ const MODIFIER = 'this modifier';
  * and an aura's numeric quantity. Reading the stat it writes is a warning. It doesn't check that the target is a
  * writable name; character preparation reports an unknown target when it runs.
  * @param {object} modifier
- * @param {{itemType?: string, kind?: string, knownStatuses?: string[]}} [options] `itemType` is the item's subtype,
- *   or its document type where it has none; `kind` defaults to the modifier's own.
+ * @param {{itemType?: string, kind?: string}} [options] `itemType` is the item's subtype, or its document type
+ *   where it has none; `kind` defaults to the modifier's own.
  * @returns {{valid: boolean, errors: string[], warnings: string[]}}
  */
-export function validateModifier(modifier, { itemType = '', kind, knownStatuses = [] } = {}) {
+export function validateModifier(modifier, { itemType = '', kind } = {}) {
   const errors = [];
   const warnings = [];
   if (!isPlainObject(modifier)) return { valid: false, errors: [say(MODIFIER, 'cannot be read')], warnings };
   const aura = (kind ?? modifier.kind) === 'aura';
   const tree = hasConditionTree(modifier.conditionTree) ? modifier.conditionTree : null;
   if (tree) {
-    const result = validateCondition(tree, {
-      path: 'conditionTree', surface: aura ? 'aura' : 'modifier', knownStatuses
-    });
+    const result = validateCondition(tree, { path: 'conditionTree', surface: aura ? 'aura' : 'modifier' });
     errors.push(...result.errors);
     warnings.push(...result.warnings);
   }

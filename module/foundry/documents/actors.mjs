@@ -28,13 +28,15 @@ export class EmblemActor extends Actor {
   }
 
   /**
-   * The active temporary and status effects, plus the flight marker when no effect already shows it. The system's
-   * token icons (projections/tokens.mjs) are drawn from this list; v14 core draws its own from appliedEffects.
+   * The active temporary and status effects, plus the flight marker when no effect already shows it. A status
+   * authored as hidden on token (the `hiddenOnToken` flag) is left out. The system's token icons
+   * (projections/tokens.mjs) are drawn from this list; v14 core draws its own from appliedEffects.
    */
   get temporaryEffects() {
     const effects = [];
     for (const effect of this.allApplicableEffects()) {
-      if (effect.active && (effect.isTemporary || effect.statuses.size > 0)) effects.push(effect);
+      if (!effect.active || effect.flags?.[SYSTEM_ID]?.hiddenOnToken === true) continue;
+      if (effect.isTemporary || effect.statuses.size > 0) effects.push(effect);
     }
     const marker = this.flyingStatusMarker;
     if (!marker) return effects;

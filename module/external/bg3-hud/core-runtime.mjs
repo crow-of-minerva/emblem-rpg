@@ -700,7 +700,8 @@ function installPrototypePatches(capabilities) {
 /**
  * Patch Core's effect strip. Renders take turns (takeRenderTurn), effects that carry a status show alongside
  * temporary ones, duplicates are dropped, and a grounded flier gets its Grounded marker, which is its take-off
- * control. An airborne unit gets no marker.
+ * control. An airborne unit gets no marker. A status authored as hidden on token counts as a passive effect, so it
+ * shows only when Core's show passive effects setting is on.
  */
 function patchEffectTemporality(ActiveEffectsContainer) {
   const prototype = ActiveEffectsContainer.prototype;
@@ -716,7 +717,9 @@ function patchEffectTemporality(ActiveEffectsContainer) {
       reportFoundryProbe(import.meta.url, diagnosticError, 'patchEffectTemporality', /is not a registered game setting$/.test(String(diagnosticError?.message ?? '')));
     }
     const seen = new Set();
-    const shown = (showPassive ? all : all.filter(effect => effect.isTemporary || effect.statuses?.size > 0))
+    const listed = effect => effect.flags?.[SYSTEM_ID]?.hiddenOnToken !== true
+      && (effect.isTemporary || effect.statuses?.size > 0);
+    const shown = (showPassive ? all : all.filter(listed))
       .filter(effect => {
         const key = this._getEffectKey?.(effect) ?? effect.id;
         if (seen.has(key)) return false;

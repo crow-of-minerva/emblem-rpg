@@ -1,7 +1,6 @@
 /** @layer foundry/adapters/projections */
 import {
   COMBAT_CONTINUATIONS,
-  ENCOUNTER_DECAY_FLAGS,
   ENCOUNTER_PHASES,
   ENCOUNTER_PHASE_FLAG,
   ENCOUNTER_ROUND_FLAG,
@@ -16,6 +15,7 @@ import {
 } from '../../../contracts/domains/combat.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { triggerGroupForItem } from '../../../contracts/dsl/effects.mjs';
+import { STATUS_END_TRIGGERS } from '../../../contracts/dsl/custom-status.mjs';
 import { DRIVEN_HOLD_SETTING, normalizeDrivenHold } from '../../../contracts/domains/suppression.mjs';
 import {
   isPhaseParticipant,
@@ -46,7 +46,7 @@ import { scanTerrainImpacts } from '../../../game/terrain/effects.mjs';
 import { footprintCells, normalizeTerrainProfile } from '../../../game/terrain/rules.mjs';
 import { TERRAIN_UNIT_TYPES } from '../../../contracts/domains/terrain.mjs';
 import { projectFoundryCombatActorContext, projectHealEchoPolicies } from './combat-context.mjs';
-import { collectionValues, finite } from '../../../lib/core/runtime.mjs';
+import { collectionValues, finite, isPlainObject } from '../../../lib/core/runtime.mjs';
 import { resolveScene, resolveViewedScene, unpackFlagKeys } from '../services/host.mjs';
 import { reportFoundryError } from '../services/diagnostics.mjs';
 
@@ -533,25 +533,42 @@ function projectSpecialPools(special) {
   return Object.freeze(pools);
 }
 
+/** Each effect's tick facts, plus the status ids and lethal flag the phase-opening damage ticks read. */
 function projectDecayFacts(actor) {
   const facts = [];
   for (const effect of collectionValues(actor.effects)) {
     const flags = effect.flags?.[SYSTEM_ID] ?? {};
     facts.push(Object.freeze({
-      id: String(effect.id ?? ''),
-      name: String(effect.name ?? effect.label ?? ''),
-      stackable: flags.stackable === true,
-      stackCount: Math.max(1, Math.floor(Number(flags.stackCount) || 1)),
-      stackLimit: Math.max(0, Math.floor(Number(flags.stackLimit) || 0)),
-      duration: Number(flags.duration),
+      ...projectStatusTickFacts(effect),
       statuses: Object.freeze([...(effect.statuses ?? [])].map(String)),
-      dotCanKillPlayer: typeof flags.dotCanKillPlayer === 'boolean' ? flags.dotCanKillPlayer : undefined,
-      [ENCOUNTER_DECAY_FLAGS.PHASE_BEGIN]: flags[ENCOUNTER_DECAY_FLAGS.PHASE_BEGIN] === true,
-      [ENCOUNTER_DECAY_FLAGS.PHASE_END]: flags[ENCOUNTER_DECAY_FLAGS.PHASE_END] === true,
-      [ENCOUNTER_DECAY_FLAGS.ANY_PHASE_END]: flags[ENCOUNTER_DECAY_FLAGS.ANY_PHASE_END] === true
+      dotCanKillPlayer: typeof flags.dotCanKillPlayer === 'boolean' ? flags.dotCanKillPlayer : undefined
     }));
   }
   return Object.freeze(facts);
+}
+
+/**
+ * What planStatusTicks (game/effects/statuses.mjs) reads from one ActiveEffect: its stacks, its phases, its end
+ * flags and which of them shed a stack. `triggerSheds` is null when the effect has no such object (a registry status,
+ * or a custom status applied before the choice existed), which keeps the older rule; an empty object is not null.
+ * @param {ActiveEffect} effect
+ * @returns {object}
+ */
+export function projectStatusTickFacts(effect) {
+  const flags = effect?.flags?.[SYSTEM_ID] ?? {};
+  const sheds = isPlainObject(flags.triggerSheds)
+    ? Object.freeze(Object.fromEntries(STATUS_END_TRIGGERS.map(({ key }) => [key, flags.triggerSheds[key] === true])))
+    : null;
+  return Object.freeze({
+    id: String(effect?.id ?? ''),
+    name: String(effect?.name ?? effect?.label ?? ''),
+    stackable: flags.stackable === true,
+    stackCount: Math.max(1, Math.floor(Number(flags.stackCount) || 1)),
+    stackLimit: Math.max(0, Math.floor(Number(flags.stackLimit) || 0)),
+    duration: Number(flags.duration),
+    triggerSheds: sheds,
+    ...Object.fromEntries(STATUS_END_TRIGGERS.map(({ key }) => [key, flags[key] === true]))
+  });
 }
 
 function actorHasStatus(actor, statusId) {

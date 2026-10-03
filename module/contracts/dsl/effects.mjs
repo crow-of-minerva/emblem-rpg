@@ -8,6 +8,7 @@ import { normalizeGeometry, validateGeometry } from './terrain-geometry.mjs';
 import { isPlainObject } from '../../lib/core/runtime.mjs';
 import { readsOtherUnit, validate as validateConditionTree } from './conditions.mjs';
 import { oneOf, placeOf, say, warn as warnAt } from './messages.mjs';
+import { validateCustomStatus } from './custom-status.mjs';
 
 /* -------------------------------------------- */
 /*  Vocabulary                                  */
@@ -397,27 +398,31 @@ function isTokenRef(v) {
  * Validate an effect payload, collecting every error rather than throwing on the first. The effect editor
  * (ui/apps/sheets/item/editors/effects.mjs) and validateEffectEntry call it.
  * @param {object|null} [action] The payload. A missing payload is valid.
- * @returns {{valid: boolean, errors: string[]}}
+ * @returns {{valid: boolean, errors: string[], warnings: string[]}} The warnings come from custom status steps.
  */
 export function validate(action) {
-  if (action === null || action === undefined) return { valid: true, errors: [] };
-  if (!isPlainObject(action)) return { valid: false, errors: [say('this effect', 'has steps that cannot be read')] };
+  if (action === null || action === undefined) return { valid: true, errors: [], warnings: [] };
+  if (!isPlainObject(action)) {
+    return { valid: false, errors: [say('this effect', 'has steps that cannot be read')], warnings: [] };
+  }
   const errors = [];
+  const warnings = [];
   if (!Array.isArray(action.steps)) {
     errors.push(say('this effect', 'has steps that cannot be read'));
   } else {
-    action.steps.forEach((step, i) => errors.push(...validateStep(step, `steps[${i}]`)));
+    action.steps.forEach((step, i) => errors.push(...validateStep(step, `steps[${i}]`, warnings)));
   }
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 /**
  * Validate one step against the rules of its kind, recursing into an `if` step's branches.
  * @param {object} step  Step to validate.
  * @param {string} path  Where the step sits, such as `steps[2].then[0]`, which names it in each message.
+ * @param {string[]} warnings  Where a custom status step's warnings are added.
  * @returns {string[]}   Collected error sentences, empty when valid.
  */
-function validateStep(step, path) {
+function validateStep(step, path, warnings) {
   const at = placeOf(path);
   const errors = [];
   const fail = sentence => errors.push(say(at, sentence));
@@ -445,21 +450,29 @@ function validateStep(step, path) {
       needsUnit();
       if (typeof step.formula !== 'string' && typeof step.formula !== 'number') fail('has no shield amount');
       break;
-    case 'applyEffect':
+    case 'applyEffect': {
       needsUnit();
+      const custom = step.preset === 'custom';
       if (!step.preset) fail('does not say which status to apply');
       else if (!EFFECT_PRESETS.includes(step.preset)) fail('applies a status the system does not know');
-      if (step.preset === 'custom' && !isPlainObject(step.customData)) {
+      if (custom && !isPlainObject(step.customData)) {
         fail('applies a custom status but has no custom status data');
+      } else if (custom) {
+        const status = validateCustomStatus(step.customData, step);
+        for (const e of status.errors) fail(`applies a custom status with a problem. ${e}`);
+        for (const w of status.warnings) warnings.push(warnAt(at, `applies a custom status. ${w}`));
       }
       if (step.durationPhases !== undefined) {
         const d = Number(step.durationPhases);
-        if (!Number.isFinite(d) || d < 1) {
+        if (custom && !(Number.isFinite(d) && d >= 0)) {
+          fail('needs a duration of 0 or more phases. 0 lasts until a trigger removes the status');
+        } else if (!custom && (!Number.isFinite(d) || d < 1)) {
           const phases = `${DEFAULT_STATUS_DURATION} phase${DEFAULT_STATUS_DURATION === 1 ? '' : 's'}`;
           fail(`needs a duration of at least 1 phase. Leave it empty to use ${phases}`);
         }
       }
       break;
+    }
     case 'setFaction':
       needsUnit();
       if (!ACTOR_TYPES.includes(step.actorType)) fail(`needs a faction, one of ${oneOf(ACTOR_TYPES)}`);
@@ -583,11 +596,11 @@ function validateStep(step, path) {
       if (!Array.isArray(step.then)) {
         fail('has then steps that cannot be read');
       } else {
-        step.then.forEach((s, i) => errors.push(...validateStep(s, `${path}.then[${i}]`)));
+        step.then.forEach((s, i) => errors.push(...validateStep(s, `${path}.then[${i}]`, warnings)));
       }
       if (step.else !== undefined) {
         if (!Array.isArray(step.else)) fail('has else steps that cannot be read');
-        else step.else.forEach((s, i) => errors.push(...validateStep(s, `${path}.else[${i}]`)));
+        else step.else.forEach((s, i) => errors.push(...validateStep(s, `${path}.else[${i}]`, warnings)));
       }
       break;
     }
@@ -635,7 +648,8 @@ export function validateEffectEntry(entry, options = {}) {
   warnings.push(...condition.warnings);
   const action = validate(entry.action);
   errors.push(...action.errors);
-  // The action check already reports each if condition's shape, so only new messages are added here.
+  warnings.push(...action.warnings);
+  // The action check reports each if condition's shape only. This walk adds the if conditions' other messages.
   walkSteps(entry.action?.steps, `${path}.action.steps`, true, (step, at) => {
     if (step.kind !== 'if') return;
     const rules = validateConditionTree(step.condition, { path: `${at}.condition`, surface: 'effect' });
@@ -839,6 +853,8 @@ function checkStep(step, at, topLevel, { trigger, cap, location, multiTarget }, 
     fail(at, 'gives back actions, but every unit already has its actions when a phase begins');
   } else if (kind === 'restoreAction' && trigger === 'onPhaseEnd') {
     fail(at, 'gives back actions at the end of the phase, when the unit can no longer use them');
+  } else if (kind === 'moveToken' && (trigger === 'onPhaseBegin' || trigger === 'onPhaseEnd')) {
+    fail(at, `${STEP_PHRASES[kind]}. That is not allowed on ${named}`);
   }
 
   if (kind === 'guard' && trigger !== 'onActivation') {

@@ -276,11 +276,12 @@ function stringSet(value) {
 /* -------------------------------------------- */
 /**
  * What the unit's stance means for its Stance Break effect: apply it at 0 stance, clear it above 0, or repair it,
- * with the effects to delete and whether a new break grounds a flier. foundry/adapters/document-writes/stances.mjs
- * saves the result.
+ * with the effects to delete, the effects a fresh break ticks, and whether a new break grounds a flier.
+ * foundry/adapters/document-writes/stances.mjs saves the result.
  *
- * A freshly applied break grounds a flier in the air unless it levitates. A repaired or lingering break grounds
- * nobody.
+ * Only a freshly applied break ticks the effects that end on a stance break (planStatusTicks in
+ * game/effects/statuses.mjs), so a unit that stays broken does not wear them down again. A freshly applied break also
+ * grounds a flier in the air unless it levitates. A repaired or lingering break grounds nobody.
  * @param {object} snapshot The unit's HP, stance, break effect ids, and whether it is airborne or levitating.
  * @returns {object}
  */
@@ -293,16 +294,16 @@ export function resolveStanceBreak(snapshot) {
   if (hp <= 0) return transition(STANCE_BREAK_OUTCOMES.NONE);
 
   if (stance === 0) {
-    const deleteEffectIds = [...new Set([...removeOnBreakEffectIds, ...repairBreakEffectIds])];
-    const removed = new Set(deleteEffectIds);
+    const removed = new Set(repairBreakEffectIds);
     const stillBroken = breakEffectIds.some(id => !removed.has(id));
     // A repair is reported even when another break effect still applies, so StanceBreakService replaces the stale
     // effect definitions.
     const outcome = repairBreakEffectIds.length ? STANCE_BREAK_OUTCOMES.REPAIRED
       : stillBroken ? STANCE_BREAK_OUTCOMES.NONE
         : STANCE_BREAK_OUTCOMES.APPLIED;
-    const grounds = outcome === STANCE_BREAK_OUTCOMES.APPLIED && groundsOnStanceBreak(snapshot);
-    return transition(outcome, deleteEffectIds, !stillBroken, grounds);
+    const applied = outcome === STANCE_BREAK_OUTCOMES.APPLIED;
+    const grounds = applied && groundsOnStanceBreak(snapshot);
+    return transition(outcome, repairBreakEffectIds, !stillBroken, grounds, applied ? removeOnBreakEffectIds : []);
   }
   if (stance > 0 && breakEffectIds.length) return transition(STANCE_BREAK_OUTCOMES.CLEARED, breakEffectIds);
   return transition(STANCE_BREAK_OUTCOMES.NONE);
@@ -337,10 +338,11 @@ function groundsOnStanceBreak(snapshot) {
   return snapshot?.airborne === true && snapshot?.levitating !== true;
 }
 
-function transition(outcome, deleteEffectIds = [], createBreakEffect = false, grounds = false) {
+function transition(outcome, deleteEffectIds = [], createBreakEffect = false, grounds = false, tickEffectIds = []) {
   return {
     outcome,
     deleteEffectIds: [...deleteEffectIds],
+    tickEffectIds: [...tickEffectIds],
     createBreakEffect,
     grounds
   };

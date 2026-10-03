@@ -3,43 +3,66 @@ import { BLEEDING_STATUS_ID } from '../../contracts/domains/characters.mjs';
 import { ENCOUNTER_DECAY_FLAGS, GUARD_BOND_EFFECT_NAME } from '../../contracts/domains/combat.mjs';
 import { STANCE_BREAK_EFFECT_NAME, STANCE_BREAK_STATUS_ID } from '../../contracts/domains/damage.mjs';
 import { SYSTEM_ID } from '../../contracts/protocol.mjs';
+import { END_TRIGGER_KEYS } from '../../contracts/dsl/custom-status.mjs';
 import { FLIGHT_STATUS_MARKERS, STATUS_EFFECTS } from '../../config/statuses.mjs';
 import { hpFloor } from '../combat/damage.mjs';
 
 /* -------------------------------------------- */
-/*  Phase decay                                 */
+/*  Status ticks                                */
 /* -------------------------------------------- */
 
+/** The end flags that fire at a phase boundary. The others fire on an event during play. */
+const PHASE_END_FLAGS = Object.freeze(new Set(Object.values(ENCOUNTER_DECAY_FLAGS)));
+
 /**
- * Count down the effects that decay at one phase boundary. planUnitDecay in engine/combat/encounters/phases.mjs
- * calls this once per decay flag. A stack with a limit loses one stack, and a stack with no limit expires whole. A
- * timed effect loses one from its duration and expires when that reaches zero. An effect with neither duration nor
- * stacks expires on its first tick.
- * @param {object[]} effects The unit's effects as `{id, name, stackable, stackCount, stackLimit, duration}` plus
- *   their decay flags.
- * @param {string} flagKey Which phase boundary is decaying, as the authored flag name.
+ * What an end trigger does to the statuses it fires for, removing any left with no phases or stacks. A status with a
+ * `triggerSheds` object loses one phase, or one stack when it is stackable and has no phases or sheds a stack on that
+ * trigger; a status without one ticks by planFixedTick.
+ * @param {object[]} effects The unit's effects as `{id, name, stackable, stackCount, stackLimit, duration,
+ *   triggerSheds}` plus their end flags, with `triggerSheds` null when the effect has none.
+ * @param {string|string[]} flagKey The end flag that fired. Given several, a status carrying more than one ticks
+ *   once, by the first of them it carries.
  * @returns {{removeIds: string[], durations: object[], stacks: object[]}}
  */
-export function planEffectDecay(effects = [], flagKey = '') {
-  const removeIds = [];
-  const durations = [];
-  const stacks = [];
+export function planStatusTicks(effects = [], flagKey = '') {
+  const flagKeys = [flagKey].flat().map(String).filter(Boolean);
+  const plan = { removeIds: [], durations: [], stacks: [] };
   for (const effect of effects) {
-    if (effect?.[flagKey] !== true) continue;
-    const id = String(effect.id ?? '');
-    if (!id) continue;
-    if (effect.stackable === true) {
-      const current = Math.max(0, Math.floor(Number(effect.stackCount) || 0));
-      const graded = Math.max(0, Math.floor(Number(effect.stackLimit) || 0)) > 0;
-      if (!graded || current <= 1) removeIds.push(id);
-      else stacks.push({ id, name: String(effect.name ?? ''), from: current, to: current - 1 });
+    const flag = flagKeys.find(key => effect?.[key] === true);
+    const id = String(effect?.id ?? '');
+    if (!flag || !id) continue;
+    const sheds = effect.triggerSheds;
+    if (sheds === null || typeof sheds !== 'object') {
+      planFixedTick(plan, id, effect, flag);
       continue;
     }
-    const duration = Number(effect.duration);
-    if (!Number.isFinite(duration) || duration <= 1) removeIds.push(id);
-    else durations.push({ id, duration: duration - 1 });
+    const phases = Math.max(0, Math.floor(Number(effect.duration) || 0));
+    if (effect.stackable === true && (phases === 0 || sheds[flag] === true)) addStackLoss(plan, id, effect);
+    else if (phases <= 1) plan.removeIds.push(id);
+    else plan.durations.push({ id, duration: phases - 1 });
   }
-  return { removeIds, durations, stacks };
+  return plan;
+}
+
+/** Add one lost stack to a tick plan, or the whole effect at its last stack. */
+function addStackLoss(plan, id, effect) {
+  const current = Math.max(1, Math.floor(Number(effect.stackCount) || 1));
+  if (current <= 1) plan.removeIds.push(id);
+  else plan.stacks.push({ id, name: String(effect.name ?? ''), from: current, to: current - 1 });
+}
+
+/**
+ * The tick for a status without `triggerSheds`: an event trigger removes it, and a phase trigger sheds a stack from a
+ * stack with a limit, removes one without, and takes one phase from anything else.
+ */
+function planFixedTick(plan, id, effect, flag) {
+  const duration = Number(effect.duration);
+  if (!PHASE_END_FLAGS.has(flag)) plan.removeIds.push(id);
+  else if (effect.stackable === true) {
+    if (Math.floor(Number(effect.stackLimit) || 0) > 0) addStackLoss(plan, id, effect);
+    else plan.removeIds.push(id);
+  } else if (!Number.isFinite(duration) || duration <= 1) plan.removeIds.push(id);
+  else plan.durations.push({ id, duration: duration - 1 });
 }
 
 /* -------------------------------------------- */
@@ -59,10 +82,7 @@ const STANDING_STATUS_IDS = Object.freeze(new Set([
 ]));
 
 /** The flags a status writer sets to say when its status ends. Any one of them makes an effect a status. */
-const STATUS_LIFECYCLE_FLAGS = Object.freeze([
-  ...Object.values(ENCOUNTER_DECAY_FLAGS), 'removeOnCombatSequenceEnd', 'removeWhenAttacked', 'removeOnStanceBreak',
-  'removeOnHostileAction', 'removeOnHostileTargeted', 'stackable'
-]);
+const STATUS_LIFECYCLE_FLAGS = Object.freeze([...END_TRIGGER_KEYS, 'stackable']);
 
 /** Every status id in the STATUS_EFFECTS registry, plus the id both halves of a Guard bond carry. */
 const STATUS_IDS = Object.freeze(new Set([
@@ -207,17 +227,12 @@ function stepIsBeneficial(step) {
 /* -------------------------------------------- */
 
 /**
- * The decay plan that removes one stack from the effect, or the whole effect at its last stack. settleUnitTicks
- * (engine/combat/encounters/phases.mjs) hands it to the encounter writer's applyEffectDecay once the tick's damage
- * has landed.
+ * The plan, in planStatusTicks' shape, that removes one stack from the effect, or the whole effect at its last stack.
+ * settleUnitTicks (engine/combat/encounters/phases.mjs) hands it to the encounter writer's applyEffectDecay once the
+ * tick's damage has landed.
  */
 function planStackShed(effect) {
-  const id = String(effect.id ?? '');
-  const current = Math.max(1, Math.floor(Number(effect.stackCount) || 1));
-  if (current <= 1) return { removeIds: [id], durations: [], stacks: [] };
-  return {
-    removeIds: [],
-    durations: [],
-    stacks: [{ id, name: String(effect.name ?? ''), from: current, to: current - 1 }]
-  };
+  const plan = { removeIds: [], durations: [], stacks: [] };
+  addStackLoss(plan, String(effect.id ?? ''), effect);
+  return plan;
 }

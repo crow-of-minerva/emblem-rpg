@@ -235,6 +235,7 @@ export function projectCharacterSource(actor) {
     moveScaling: projectMoveScaling(actor),
     rallyModifiers: projectRallyModifiers(effects),
     effectModifiers: projectEffectModifiers(effects),
+    effectOverrides: projectEffectOverrides(effects),
     effectStatuses: projectEffectStatuses(actor),
     effectCombatFlags: projectEffectCombatFlags(actor, effects),
     statusKeys: [...collectStatusKeys(actor)],
@@ -336,6 +337,32 @@ function projectEffectModifiers(effects) {
     }
   }
   return projected;
+}
+
+/** The stats whose total is a number an effect may override. Attack and Range totals are formulas. */
+const OVERRIDABLE_TOTALS = new Set(STATS.filter(stat => stat.kind !== 'formula').map(stat => stat.key));
+
+/**
+ * The stat totals active effects override, as `{stat: value}`: `override` changes on `system.stats.<stat>.total`
+ * with a numeric value. For each stat the highest priority wins, and of equal priorities the later change. The
+ * compiler's totalization puts each in place as soon as that stat's own total is worked out.
+ * @returns {Record<string, number>}
+ */
+function projectEffectOverrides(effects) {
+  const chosen = new Map();
+  for (const effect of activeEffects(effects)) {
+    for (const change of effect?.changes ?? []) {
+      const stat = /^system\.stats\.([^.]+)\.total$/.exec(String(change?.key ?? ''))?.[1];
+      const override = change?.type !== undefined ? change.type === 'override' : change?.mode === 5;
+      if (!OVERRIDABLE_TOTALS.has(stat) || !override) continue;
+      const value = typeof change.value === 'string' && change.value.trim() !== '' ? Number(change.value)
+        : change.value;
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+      const priority = Number(change.priority) || 0;
+      if ((chosen.get(stat)?.priority ?? -Infinity) <= priority) chosen.set(stat, { value, priority });
+    }
+  }
+  return Object.fromEntries([...chosen].map(([stat, entry]) => [stat, entry.value]));
 }
 
 /** Whether an effect change key names a stat leaf or a save the compiler owns. */

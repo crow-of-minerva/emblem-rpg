@@ -13,7 +13,7 @@ import {
 import { RESULT_CODES } from '../../../contracts/results.mjs';
 import { DAMAGE_POLICIES, DEFEAT_STATUSES } from '../../../contracts/domains/damage.mjs';
 import { collectEffectDefeats, settleClaimedDefeat, settleEffectDefeats } from '../defeat.mjs';
-import { clampTickDamage, planEffectDecay, planPhaseStartTicks } from '../../../game/effects/statuses.mjs';
+import { clampTickDamage, planPhaseStartTicks, planStatusTicks } from '../../../game/effects/statuses.mjs';
 import {
   nextEncounterPhase,
   phaseCameraGroups,
@@ -638,11 +638,11 @@ async function currentTickUnits(group, context) {
 
 /**
  * Decay one unit's effects under one decay flag or several through the encounter writer, which saves undo data for
- * the effects it changes or removes.
+ * the effects it changes or removes. An effect carrying several of the flags counts down once (planStatusTicks).
  */
 async function settleUnitDecay(unit, flagKeys, context) {
   const { services } = context;
-  const plan = planUnitDecay(unit.effects ?? [], [flagKeys].flat());
+  const plan = planStatusTicks(unit.effects ?? [], [flagKeys].flat());
   if (!plan.removeIds.length && !plan.durations.length && !plan.stacks.length) return true;
   return await services.encounters.applyEffectDecay(unit.actorUuid, plan, services.operation ?? null) === true;
 }
@@ -668,17 +668,6 @@ async function settleCurrentDecay(unit, flagKeys, board, context) {
   }
   const current = (board.current.units ?? []).find(entry => entry.actorUuid === unit.actorUuid);
   return current ? settleUnitDecay(current, flagKeys, context) : true;
-}
-
-/** Merge planEffectDecay's plan for each flag, so an effect carrying several of them counts down once. */
-function planUnitDecay(effects, flagKeys) {
-  const plans = flagKeys.map(flagKey => planEffectDecay(effects, flagKey));
-  const once = (entries, idOf) => [...new Map(entries.map(entry => [idOf(entry), entry])).values()];
-  return {
-    removeIds: once(plans.flatMap(plan => plan.removeIds), id => id),
-    durations: once(plans.flatMap(plan => plan.durations), entry => entry.id),
-    stacks: once(plans.flatMap(plan => plan.stacks), entry => entry.id)
-  };
 }
 
 /** Run a unit's phase passives through EffectExecutionService, then finish the defeats their steps claimed. */

@@ -2,9 +2,10 @@
 /*
  * The effect editor: one triggered effect on an Item (or an Object), made of a trigger and a list of DSL steps that
  * can nest inside if branches. Cards are read back from the DOM before each edit. FIELDS_BY_KIND drives the ordinary
- * step fields. The few free-form values are kept as JSON text: a custom status and an animation step's animation
- * (a hidden field that openAnimationPayloadEditor fills). A step key that no field covers is dropped when the card
- * is read and saved, and so is a field the step's mode or scope hides, because a hidden field is not drawn at all.
+ * step fields. A custom status has its own panel of fields, plus an advanced json box for the ActiveEffect data the
+ * panel has no field for. An animation step's animation is kept as JSON text in a hidden field that
+ * openAnimationPayloadEditor fills. A step key that no field covers is dropped when the card is read and saved, and
+ * so is a field the step's mode or scope hides, because a hidden field is not drawn at all.
  * What the trigger supplies decides which steps, units and squares are offered (trigger-choices.mjs).
  */
 import { SYSTEM_ID } from '../../../../../contracts/protocol.mjs';
@@ -25,6 +26,19 @@ import {
   effectCarrier,
   validateEffectEntry
 } from '../../../../../contracts/dsl/effects.mjs';
+import {
+  CHANGE_TYPES,
+  END_TRIGGER_KEYS,
+  STATUS_END_TRIGGERS,
+  changeKeyRule,
+  changeTargetByKey,
+  customStatusChangeTargets,
+  customStatusTemplate,
+  defaultChangePriority,
+  deriveStatusId,
+  normalizeCustomStatus
+} from '../../../../../contracts/dsl/custom-status.mjs';
+import { isPlainObject } from '../../../../../lib/core/runtime.mjs';
 import { STATUS_EFFECTS, STATUS_KEYS, STATUS_NAMES, statusLabel } from '../../../../../config/statuses.mjs';
 import { triggerLabel } from '../../../../../config/triggers.mjs';
 import { DAMAGE_TYPES } from '../../../../../contracts/domains/damage.mjs';
@@ -172,51 +186,12 @@ export const TERRAIN_EDIT_HAZARD_TYPES = Object.freeze(['healing', ...DAMAGE_TYP
 /*  Authoring Templates                         */
 /* -------------------------------------------- */
 
-/**
- * Create the complete authored data for a custom status.
- * @returns {object}
- */
-function customStatusTemplate() {
-  return {
-    name: 'Custom Status',
-    img: 'icons/svg/aura.svg',
-    description: '',
-    statuses: ['CustomStatus'],
-    changes: [
-      { key: 'system.stats.atk.mod', type: 'add', value: 0, priority: 20 }
-    ],
-    flags: {
-      core: { statusId: 'CustomStatus' },
-      [SYSTEM_ID]: {
-        duration: DEFAULT_STATUS_DURATION,
-        durationStacks: false,
-        harmful: false,
-        beneficial: false,
-        removeOnFactionPhase: false,
-        removeOnFactionPhaseEnd: true,
-        removeOnCombatSequenceEnd: false,
-        removeOnStanceBreak: false,
-        removeWhenAttacked: false,
-        removeOnHostileAction: false,
-        removeOnHostileTargeted: false,
-        stackable: false,
-        stackCount: 1,
-        stackLimit: null,
-        removeStackWhenHit: false,
-        markedBy: null,
-        tauntedBy: null,
-        linkedAnimationTag: ''
-      }
-    }
-  };
-}
-
 /** The custom status a new change faction step is tied to. The unit changes back when it ends. */
 function turnedStatusTemplate() {
   const status = customStatusTemplate();
   status.name = 'Turned';
-  status.statuses = ['Turned'];
-  status.flags.core.statusId = 'Turned';
+  status.statuses = [deriveStatusId(status.name)];
+  status.flags.core.statusId = status.statuses[0];
   return status;
 }
 
@@ -267,11 +242,23 @@ export const TEMPLATES = Object.freeze({
 /*  Display Helpers                             */
 /* -------------------------------------------- */
 
-/** How many phases an apply-status step's status lasts. A custom status keeps its duration in its own data. */
+/**
+ * How many phases an apply-status step's status lasts. A custom status keeps its duration in its own data, where 0
+ * means it lasts until a trigger removes it. A stock status lasts at least one phase.
+ */
 function effectDuration(step) {
-  const raw = step?.preset === 'custom' ? step.customData?.flags?.[SYSTEM_ID]?.duration : step?.durationPhases;
-  const duration = Number(raw);
+  if (step?.preset === 'custom') {
+    const duration = step.customData?.flags?.[SYSTEM_ID]?.duration;
+    return Number.isInteger(duration) && duration >= 0 ? duration : DEFAULT_STATUS_DURATION;
+  }
+  const duration = Number(step?.durationPhases);
   return Number.isFinite(duration) && duration >= 1 ? duration : DEFAULT_STATUS_DURATION;
+}
+
+/** The icon of the status an apply-status step hands out, or an empty string when it has none. */
+function statusImage(step) {
+  const img = step?.preset === 'custom' ? step.customData?.img : STATUS_EFFECTS[step?.preset]?.img;
+  return typeof img === 'string' ? img.trim() : '';
 }
 
 /** The name of the status an apply-status step hands out, or the custom status's own name. */
@@ -386,6 +373,16 @@ const PRESET_OPTIONS = [
   { value: 'custom', label: 'custom' }
 ];
 
+/**
+ * What applying a status again does to its duration, stored as the step's `durationStacks`: true adds to what is
+ * left, anything else starts it over.
+ * @type {object[]}
+ */
+const REAPPLICATION_OPTIONS = [
+  { value: 'false', label: 'renew duration' },
+  { value: 'true', label: 'stack duration' }
+];
+
 /* -------------------------------------------- */
 /*  Field Table                                 */
 /* -------------------------------------------- */
@@ -428,8 +425,9 @@ const FIELDS_BY_KIND = {
       required: true },
     { name: 'durationPhases', type: 'number', label: 'phases', placeholder: `${DEFAULT_STATUS_DURATION}`,
       tooltip: 'editor.status.duration' },
-    { name: 'durationStacks', type: 'checkbox', label: 'stacks', tooltip: 'editor.status.stacks' },
-    { name: 'linkAnimationTag', type: 'text', label: 'linked animation tag', placeholder: 'marked',
+    { name: 'durationStacks', type: 'select', options: REAPPLICATION_OPTIONS, label: 'reapplication',
+      tooltip: 'editor.status.reapplication', required: true },
+    { name: 'linkAnimationTag', type: 'text', label: 'id tag', placeholder: 'marked',
       tooltip: 'editor.status.linked-tag' }
   ],
   setFaction: [
@@ -949,7 +947,7 @@ function ifSummary(step) {
 
 /**
  * Summarize a collapsed effect step in the words its labels use. This is plain text: every value here is authored,
- * and `summarizeStep` escapes the whole line before it reaches the card.
+ * and the card escapes the whole line before showing it.
  */
 function stepSummaryText(step) {
   const who = targetSummary(step.target);
@@ -966,8 +964,9 @@ function stepSummaryText(step) {
         + ` while ${step.linkStatusTag || '?'} lasts`;
     case 'applyEffect': {
       const n = effectDuration(step);
+      const lasts = n === 0 ? 'until a trigger removes it' : `for ${n} phase${n === 1 ? '' : 's'}`;
       const tag = step.linkAnimationTag ? `, tagged ${step.linkAnimationTag}` : '';
-      return `apply ${presetLabel(step)} to ${who} for ${n} phase${n === 1 ? '' : 's'}${tag}`;
+      return `puts ${presetLabel(step)} on ${who} ${lasts}${tag}`;
     }
     case 'removeEffect': return removeSummary(step);
     case 'animation':    return animationSummary(step);
@@ -991,14 +990,12 @@ function stepSummaryText(step) {
 }
 
 /**
- * The summary line as `renderStepCard` draws it: the authored text escaped, after the status sprite an applyEffect
- * step shows for its preset.
+ * The icon an apply-status card shows in its header, open or collapsed. `refreshStatusHeader` updates it as the
+ * custom status's icon path changes, and hides it while there is no path.
  */
-function summarizeStep(step) {
-  const text = escapeHtml(stepSummaryText(step));
-  if (step.kind !== 'applyEffect') return text;
-  const img = step.preset === 'custom' ? step.customData?.img : STATUS_EFFECTS[step.preset]?.img;
-  return img ? `<img class="ed-sprite ed-sprite--inline" src="${escapeHtml(img)}" /> ${text}` : text;
+function statusSpriteHtml(step) {
+  const img = statusImage(step);
+  return `<img class="ed-sprite" data-status-sprite src="${escapeHtml(img)}" alt=""${img ? '' : ' hidden'} />`;
 }
 
 const EMPTY_SLOT_HTML = '<div class="ed-summary">no steps</div>';
@@ -1040,14 +1037,14 @@ const MOVE_FIELDS_BY_MODE = {
 const MOVE_COMMON_FIELDS = new Set(['target', 'mode']);
 
 /**
- * Whether a field belongs on a step's card. A move step shows the fields its mode uses. A remove-status step names
- * a target only for one token, and spares the target only when it clears every token. An apply-status step asks for
- * phases only for a stock status, because a custom status keeps its duration in its own data.
+ * Whether a field belongs on a step's row of fields. A move step shows the fields its mode uses. A remove-status step
+ * names a target only for one token, and spares the target only when it clears every token. A custom status shows
+ * its id tag inside its panel rather than in the row.
  */
 function isStepFieldShown(step, name) {
   if (step.kind === 'removeEffect' && name === 'target') return step.scope !== 'global';
   if (step.kind === 'removeEffect' && name === 'excludeTarget') return step.scope === 'global';
-  if (step.kind === 'applyEffect' && name === 'durationPhases') return step.preset !== 'custom';
+  if (step.kind === 'applyEffect' && name === 'linkAnimationTag') return step.preset !== 'custom';
   if (step.kind !== 'moveToken' || MOVE_COMMON_FIELDS.has(name)) return true;
   const relevant = Object.hasOwn(MOVE_FIELDS_BY_MODE, step.mode) ? MOVE_FIELDS_BY_MODE[step.mode] : null;
   return !relevant || relevant.has(name);
@@ -1076,7 +1073,7 @@ function jsonFieldText(step, field, stored) {
   return stepCards.state.text(stepCards.state.identify(step), field) || stored();
 }
 
-/** How many characters a line of a custom status's JSON may run to before an object or array is split. */
+/** How many characters a line of a custom status's advanced json may run to before an object or array is split. */
 const COMPACT_JSON_WIDTH = 100;
 
 /** Write a JSON value on one line, with a space after each colon and comma. */
@@ -1094,16 +1091,22 @@ function jsonEntries(value) {
   return Object.entries(value).filter(([, item]) => item !== undefined && typeof item !== 'function');
 }
 
+/** Whether an object or array holds only strings, numbers, booleans and nulls. */
+function holdsOnlyPlainValues(value) {
+  return Object.values(value).every(item => item === null || typeof item !== 'object');
+}
+
 /**
- * Write a value as JSON indented by two spaces, keeping any object or array on one line when it fits within
- * COMPACT_JSON_WIDTH. Each change of a custom status then reads as one row.
+ * Write a value as JSON indented by two spaces. An object or array that holds only plain values always stays on one
+ * line. Any other stays on one line when it fits within COMPACT_JSON_WIDTH.
  * @param {string} [indent]       The indentation of the line the value starts on.
  * @param {number} [lead]         How many characters come before the value on that line, after the indentation.
  */
 function compactJson(value, indent = '', lead = 0) {
   const inline = inlineJson(value);
+  if (!value || typeof value !== 'object' || holdsOnlyPlainValues(value)) return inline;
   // The extra character leaves room for the comma that follows a value inside a list or object.
-  if (!value || typeof value !== 'object' || indent.length + lead + inline.length < COMPACT_JSON_WIDTH) return inline;
+  if (indent.length + lead + inline.length < COMPACT_JSON_WIDTH) return inline;
   const inner = `${indent}  `;
   if (Array.isArray(value)) {
     return `[\n${value.map(item => inner + compactJson(item, inner)).join(',\n')}\n${indent}]`;
@@ -1164,29 +1167,284 @@ function areaPanelHtml(step) {
     </div></div>`;
 }
 
-/** What an apply-status card adds under its fields: the JSON of a custom status, or the description of a stock one. */
-function statusExtraHtml(step) {
-  if (step.preset === 'custom') {
-    const json = jsonFieldText(step, 'customData', () => compactJson(step.customData ?? customStatusTemplate()));
-    const label = labelSpan('custom effect json', 'editor.status.custom-data');
-    return `<label class="ed-field ed-field--textarea ed-span">${label}
-      <textarea${jsonFieldMark(step, 'customData')} data-step-field="customData" rows="18"
-        placeholder='{ "name": "Marked" }'>${escapeHtml(json)}</textarea></label>`;
-  }
+/** The rule text a stock status's card shows on the second row of its fields, before the id tag. */
+function statusDescriptionHtml(step) {
   const description = STATUS_EFFECTS[step.preset]?.description;
   if (!description) return '';
-  return `<div class="ed-summary ed-span" data-tooltip="${escapeHtml(description)}">${escapeHtml(description)}</div>`;
+  return `<div class="ed-summary eff-status-rule" data-tooltip="${escapeHtml(description)}">`
+    + `${escapeHtml(description)}</div>`;
+}
+
+/* -------------------------------------------- */
+/*  Custom Status Panel                         */
+/* -------------------------------------------- */
+
+/** The top-level keys of a custom status's data that the panel writes. Every other key shows in advanced json. */
+const PANEL_DATA_KEYS = new Set(['name', 'img', 'description', 'statuses', 'changes', 'flags']);
+
+/** The system flags of a custom status that the panel and the phases field write. */
+const PANEL_FLAG_KEYS = new Set([
+  'duration', 'harmful', 'beneficial', 'hiddenOnToken', ...END_TRIGGER_KEYS,
+  'stackable', 'stackCount', 'stackLimit', 'removeStackWhenHit', 'triggerSheds'
+]);
+
+/** The core flags the panel writes: only the status id, which normalizeCustomStatus makes from the name. */
+const PANEL_CORE_FLAG_KEYS = new Set(['statusId']);
+
+const POLARITY_OPTIONS = [
+  { value: 'neutral', label: 'neutral' },
+  { value: 'beneficial', label: 'beneficial' },
+  { value: 'harmful', label: 'harmful' }
+];
+
+/** The id tag field: the step's `linkAnimationTag`, drawn inside the panel for a custom status. */
+const ID_TAG_FIELD = Object.freeze({
+  name: 'linkAnimationTag', type: 'text', label: 'id tag', placeholder: 'marked', tooltip: 'editor.status.linked-tag'
+});
+
+/** The selector of a modifier row's target input, which the change target picker opens on. */
+const CHANGE_KEY_INPUT = '[data-cs-panel] [data-path-input="target"]';
+
+/**
+ * A custom status step's data in the shape the panel draws, without changing the step. A step with no data starts
+ * from customStatusTemplate, and a duration still saved on the step moves into the data.
+ */
+function customStatusData(step) {
+  return normalizeCustomStatus(isPlainObject(step.customData) ? step.customData : customStatusTemplate(), step);
+}
+
+/** A change key as its row shows it: the path under `system.`, or the whole key when it is not under `system.`. */
+function changePath(key) {
+  return key.startsWith('system.') ? key.slice('system.'.length) : key;
 }
 
 /**
- * The value a descriptor shows for a step: restore-action boxes read the actions list, and an area target shows as
- * the `area` choice with its panel beneath.
+ * The change key a row's target input stands for. Text left as it was drawn keeps the key the row was drawn from,
+ * so a key outside `system.` survives. Any other text is a path under `system.`, typed with or without that prefix.
+ * @param {string} text           What the input holds.
+ * @param {string} [drawnKey]     The key the row was drawn from.
+ */
+function changeKey(text, drawnKey = '') {
+  const path = String(text ?? '').trim();
+  if (!path) return '';
+  if (drawnKey && path === changePath(drawnKey)) return drawnKey;
+  return path.startsWith('system.') ? path : `system.${path}`;
+}
+
+/**
+ * The part of a custom status's data the panel has no field for, which the advanced json box shows: other top-level
+ * keys, other system and core flags, and flags of any other scope.
+ * @returns {object}
+ */
+function customStatusExtras(data) {
+  const extras = Object.fromEntries(Object.entries(data).filter(([key]) => !PANEL_DATA_KEYS.has(key)));
+  const flags = {};
+  for (const [scope, value] of Object.entries(isPlainObject(data.flags) ? data.flags : {})) {
+    const owned = scope === SYSTEM_ID ? PANEL_FLAG_KEYS : scope === 'core' ? PANEL_CORE_FLAG_KEYS : null;
+    if (!owned) {
+      flags[scope] = value;
+      continue;
+    }
+    const rest = Object.entries(isPlainObject(value) ? value : {}).filter(([key]) => !owned.has(key));
+    if (rest.length) flags[scope] = Object.fromEntries(rest);
+  }
+  if (Object.keys(flags).length) extras.flags = flags;
+  return extras;
+}
+
+/**
+ * The advanced json box's data with the panel's laid on top. Each top-level key and each system flag the panel writes
+ * replaces the box's value whole, so a `triggerSheds` typed in the box cannot add to the panel's choice. The box's
+ * other flags are kept.
+ * @param {object} box            What the advanced json box holds.
+ * @param {object} form           What the panel holds, with its system flags under `flags`.
+ * @returns {object}
+ */
+function panelOverBox(box, form) {
+  const flags = isPlainObject(box.flags) ? box.flags : {};
+  const system = isPlainObject(flags[SYSTEM_ID]) ? flags[SYSTEM_ID] : {};
+  return { ...box, ...form, flags: { ...flags, [SYSTEM_ID]: { ...system, ...form.flags[SYSTEM_ID] } } };
+}
+
+/**
+ * One modifier row. The value cell holds a number input and a true or false select, and shows the one the target's
+ * kind takes; for a target the picker does not offer, the select shows only when the stored value is true or false.
+ * A stored value the number input cannot show is kept in its `data-raw`, so a row left untouched saves it back.
+ * @param {object} [change]       The row's change, `{key, type, value, priority}`.
+ * @param {boolean} [added]       Whether the author just added the row, which lets syncChangeRow pick its type.
+ */
+function changeRowHtml(change = {}, added = false) {
+  const key = typeof change.key === 'string' ? change.key : '';
+  const target = changeTargetByKey(key);
+  const boolean = target ? target.kind === 'boolean' : typeof change.value === 'boolean';
+  const type = typeof change.type === 'string' && change.type ? change.type : 'add';
+  const legacy = CHANGE_TYPES.includes(type) ? [] : [{ value: type, label: `${type} (legacy)` }];
+  const typeOptions = optionMarkup([...CHANGE_TYPES, ...legacy], type);
+  const numeric = typeof change.value === 'number' || (typeof change.value === 'string' && change.value.trim() !== '');
+  const number = numeric && Number.isFinite(Number(change.value)) ? String(Number(change.value)) : '';
+  const raw = number === '' && change.value !== undefined && !(boolean && typeof change.value === 'boolean')
+    ? ` data-raw="${escapeHtml(JSON.stringify(change.value))}"`
+    : '';
+  const booleanOptions = optionMarkup(['true', 'false'], change.value === false ? 'false' : 'true');
+  const defaultPriority = defaultChangePriority(key, type);
+  const priority = Number.isFinite(change.priority) && change.priority !== defaultPriority ? change.priority : '';
+  const tip = escapeHtml(getTooltip('editor.status.change-delete'));
+  return `
+    <div class="eff-cs-row" data-change${added ? ' data-change-new' : ''}>
+      <span class="eff-cs-cell"><input type="text" class="ed-input mod-expression-input" data-path-input="target"
+        data-key="${escapeHtml(key)}" aria-label="modifiers" value="${escapeHtml(changePath(key))}" placeholder="atk"
+        autocomplete="off" /></span>
+      <select aria-label="how" data-change-how>${typeOptions}</select>
+      <span class="eff-cs-cell"><input type="number" step="any" aria-label="value" data-change-num
+        value="${escapeHtml(number)}"${raw}${boolean ? ' hidden' : ''} /><select aria-label="value" data-change-bool${
+        boolean ? '' : ' hidden'}>${booleanOptions}</select></span>
+      <input type="number" step="1" aria-label="priority" data-change-priority value="${priority}"
+        placeholder="${defaultPriority}" />
+      <button type="button" class="ed-card-btn ed-card-btn--delete" data-action="delete-change" data-tooltip="${tip}">
+        <i class="fas fa-trash"></i></button>
+    </div>`;
+}
+
+/** The phase-or-stack choice under one end trigger's tile. */
+function triggerShedsHtml(shedsStack, shown) {
+  const button = (shed, label, on) => `<button type="button" class="ed-btn ed-btn--row${on ? ' ed-btn--accent' : ''}"`
+    + ` data-shed="${shed}" aria-pressed="${on}">${label}</button>`;
+  return `<span class="eff-cs-sheds" data-sheds data-tooltip="${escapeHtml(getTooltip('editor.status.sheds'))}"`
+    + `${shown ? '' : ' hidden'}>${button('phase', 'one phase', !shedsStack)}${button('stack', 'one stack', shedsStack)}`
+    + '</span>';
+}
+
+/**
+ * The panel a custom status's card shows under its row of fields, in four sections: what the status is, which
+ * triggers wear it down, how it stacks, and the stats it changes. `readCustomStatus` reads it back by
+ * `data-cs-panel`, and `syncCustomStatusPanel` keeps its disabled fields and choices current while it is edited.
+ * @param {object} data           The step's data, from customStatusData.
+ * @param {string} idPrefix       What makes the controls' ids unique within the dialog.
+ */
+function customStatusPanelHtml(step, data, idPrefix) {
+  const flags = data.flags[SYSTEM_ID];
+  const id = name => `${idPrefix}cs-${name}`;
+  const tip = tooltipId => escapeHtml(getTooltip(tooltipId));
+  const checked = on => (on ? ' checked' : '');
+  const img = typeof data.img === 'string' ? data.img : '';
+  const polarity = flags.harmful ? 'harmful' : flags.beneficial ? 'beneficial' : 'neutral';
+  const stackable = flags.stackable === true;
+  const showSheds = stackable && flags.duration > 0;
+  const stackOff = stackable ? '' : ' ed-field--disabled';
+  const stackDisabled = stackable ? '' : ' disabled';
+
+  const identity = `
+    <div class="eff-cs-section"><div class="ed-grid ed-grid--3">
+      <label class="ed-field">${labelSpan('name', 'editor.status.name')}
+        <input type="text" id="${id('name')}" data-cs-field="name" value="${escapeHtml(data.name)}"
+          placeholder="Custom Status" /></label>
+      <div class="ed-field">
+        <label class="ed-label" for="${id('img')}" data-tooltip="${tip('editor.status.icon')}">icon</label>
+        <span class="eff-cs-icon">
+          <img class="ed-sprite" data-cs-icon src="${escapeHtml(img)}" alt=""${img ? '' : ' hidden'} />
+          <input type="text" id="${id('img')}" data-cs-field="img" value="${escapeHtml(img)}" />
+          <button type="button" class="ed-card-btn" data-action="browse-icon"
+            data-tooltip="${tip('editor.status.browse-icon')}"><i class="fas fa-folder-open"></i></button>
+        </span></div>
+      ${fieldHtml(ID_TAG_FIELD, step.linkAnimationTag, idPrefix)}
+      <label class="ed-field">${labelSpan('polarity', 'editor.status.polarity')}
+        <select id="${id('polarity')}" data-cs-field="polarity">${optionMarkup(POLARITY_OPTIONS, polarity)}</select>
+      </label>
+      <label class="ed-field eff-cs-span2 eff-cs-desc">${labelSpan('description', 'editor.status.description')}
+        <textarea id="${id('description')}" data-cs-field="description" rows="2">${
+          escapeHtml(data.description ?? '')}</textarea></label>
+      <label class="ed-field">${labelSpan('hidden on token', 'editor.status.hidden-on-token')}
+        <span class="ed-check-slot"><input type="checkbox" id="${id('hiddenOnToken')}" data-cs-field="hiddenOnToken"${
+          checked(flags.hiddenOnToken)} /></span></label>
+    </div></div>`;
+
+  const tiles = STATUS_END_TRIGGERS.map(({ key, label, tooltip }) => `
+      <div class="ed-check eff-cs-trigger" data-tooltip="${tip(tooltip)}">
+        <input type="checkbox" id="${id(key)}" data-trigger="${key}"${checked(flags[key])} /><label
+          for="${id(key)}">${escapeHtml(label)}</label>
+        ${triggerShedsHtml(flags.triggerSheds?.[key] === true, showSheds && flags[key] === true)}
+      </div>`).join('');
+  const ends = `
+    <div class="eff-cs-section">
+      ${labelSpan('ends when', 'editor.status.ends-when')}
+      <div class="ed-grid ed-grid--4 eff-cs-ends">${tiles}</div>
+    </div>`;
+
+  const stacking = `
+    <div class="eff-cs-section">
+      <div class="ed-grid ed-grid--4 eff-cs-stacking">
+        <label class="ed-field">${labelSpan('stackable', 'editor.status.stackable')}
+          <span class="ed-check-slot"><input type="checkbox" id="${id('stackable')}" data-cs-field="stackable"${
+            checked(stackable)} /></span></label>
+        <label class="ed-field${stackOff}" data-needs-stack>
+          ${labelSpan('stacks per application', 'editor.status.stack-count')}
+          <input type="number" step="1" min="1" id="${id('stackCount')}" data-cs-field="stackCount"
+            value="${escapeHtml(flags.stackCount)}"${stackDisabled} /></label>
+        <label class="ed-field${stackOff}" data-needs-stack>${labelSpan('stack limit', 'editor.status.stack-limit')}
+          <input type="number" step="1" min="1" id="${id('stackLimit')}" data-cs-field="stackLimit"
+            value="${escapeHtml(flags.stackLimit ?? '')}" placeholder="none"${stackDisabled} /></label>
+        <label class="ed-field${stackOff}" data-needs-stack>
+          ${labelSpan('loses a stack when hit', 'editor.status.stack-hit')}
+          <span class="ed-check-slot"><input type="checkbox" id="${id('removeStackWhenHit')}"
+            data-cs-field="removeStackWhenHit"${checked(flags.removeStackWhenHit)}${stackDisabled} /></span></label>
+      </div>
+      <div class="ed-summary eff-cs-hint" data-stack-hint${stackable ? '' : ' hidden'}><span>added values are
+        multiplied by the stack count. Each trigger above removes one phase or one stack, as set beneath it.</span></div>
+    </div>`;
+
+  const rows = data.changes.map(change => changeRowHtml(isPlainObject(change) ? change : {})).join('');
+  const modifiers = `
+    <div class="eff-cs-section">
+      <div class="eff-cs-changes" data-changes>
+        <div class="eff-cs-row eff-cs-row--head" data-changes-head${rows ? '' : ' hidden'}>
+          ${labelSpan('modifiers', 'editor.status.change-target')}
+          ${labelSpan('how', 'editor.status.change-type')}
+          ${labelSpan('value', 'editor.status.change-value')}
+          ${labelSpan('priority', 'editor.status.change-priority')}
+        </div>
+        ${rows}
+        <div class="ed-summary" data-changes-empty${rows ? ' hidden' : ''}><span>no changes</span></div>
+      </div>
+      <div class="ed-add-row">
+        <button type="button" class="ed-btn" data-action="add-change"
+          data-tooltip="${tip('editor.status.add-change')}">+ change</button>
+      </div>
+    </div>`;
+
+  return `<div class="ed-panel" data-cs-panel>${identity}${ends}${stacking}${modifiers}</div>`;
+}
+
+/**
+ * The folded advanced json box under a custom status's card: the data the panel has no field for, empty when the
+ * panel covers it all. It is the card's `customData` JSON field, so text that does not parse is held and reported
+ * like any other JSON step field. It stays open across repaints once the author opens it.
+ * @param {object} data           The step's data, from customStatusData.
+ */
+function customStatusJsonHtml(step, data) {
+  const cardId = stepCards.state.identify(step);
+  const json = jsonFieldText(step, 'customData', () => {
+    const extras = customStatusExtras(data);
+    return Object.keys(extras).length ? compactJson(extras) : '';
+  });
+  const open = stepCards.state.isSet(cardId, 'jsonOpen') || stepCards.state.text(cardId, 'customData');
+  return `
+      <details data-cs-json${open ? ' open' : ''}>
+        <summary data-tooltip="${escapeHtml(getTooltip('editor.status.advanced-json'))}">advanced json</summary>
+        <textarea${jsonFieldMark(step, 'customData')} data-step-field="customData" aria-label="advanced json"
+          rows="4" placeholder="{ }">${escapeHtml(json)}</textarea>
+      </details>`;
+}
+
+/**
+ * The value a descriptor shows for a step: restore-action boxes read the actions list, an area target shows as the
+ * `area` choice with its panel beneath, and the reapplication select shows `durationStacks` as text.
  */
 function stepFieldValue(step, field) {
   if (step.kind === 'restoreAction' && ['standard', 'bonus', 'movement', 'turn'].includes(field.name)) {
     return Array.isArray(step.actions) && step.actions.includes(field.name);
   }
   if (field.name === 'target' && isAreaTargetStep(step)) return 'area';
+  if (step.kind === 'applyEffect' && field.name === 'durationStacks') return String(step.durationStacks === true);
   return step[field.name];
 }
 
@@ -1298,12 +1556,15 @@ function ifBodyHtml(step, idx, parentPath, depth) {
 
 /**
  * The body of one step card. Animations, moves, guards and ifs lay themselves out. Every other kind shows the
- * descriptors isStepFieldShown keeps in a three-column grid, then the area, terrain or JSON panel its kind adds.
+ * descriptors isStepFieldShown keeps in a three-column grid, then the area or terrain panel its kind adds. An
+ * apply-status card uses four columns and ends with its stock status's description, or with the custom status
+ * panel, whose phases field reads the duration in the status's own data.
  * @param {number} idx            Its position in the list it sits in.
  * @param {string} parentPath     The path of that list, which makes field ids unique.
  * @param {number} depth          Nesting depth, which tints a branch.
+ * @param {object|null} [custom]  A custom status step's data, from customStatusData; null for any other step.
  */
-function stepBodyHtml(step, idx, parentPath, depth) {
+function stepBodyHtml(step, idx, parentPath, depth, custom = null) {
   const idPrefix = `eff-${parentPath}-${idx}-`;
   switch (step.kind) {
     case 'animation': return animationBodyHtml(step, idPrefix);
@@ -1312,21 +1573,28 @@ function stepBodyHtml(step, idx, parentPath, depth) {
     case 'if': return ifBodyHtml(step, idx, parentPath, depth);
     default: break;
   }
+  const status = step.kind === 'applyEffect';
   const cells = (FIELDS_BY_KIND[step.kind] || []).filter(f => isStepFieldShown(step, f.name)).map(f => {
+    if (custom && f.name === 'durationPhases') {
+      return fieldHtml({ ...f, min: 0, tooltip: 'editor.status.phases' }, custom.flags[SYSTEM_ID].duration, idPrefix);
+    }
     const ownershipHidden = step.kind === 'setFaction' && f.name === 'grantOwnership' && step.target !== 'target';
     const field = ownershipHidden ? { ...f, hidden: true } : f;
     return fieldHtml(field, stepFieldValue(step, f), idPrefix);
   });
-  if (step.kind === 'applyEffect') cells.push(statusExtraHtml(step));
-  const grid = cells.join('') ? `<div class="ed-grid ed-grid--3">${cells.join('')}</div>` : '';
+  // A stock status's rule text takes the second row's first three columns, with the id tag in the fourth.
+  if (status && !custom) cells.splice(Math.max(0, cells.length - 1), 0, statusDescriptionHtml(step));
+  const grid = cells.join('') ? `<div class="ed-grid ed-grid--${status ? 4 : 3}">${cells.join('')}</div>` : '';
   const area = isAreaTargetStep(step) ? areaPanelHtml(step) : '';
   const terrain = step.kind === 'terrainEdit' ? renderTerrainEditPanel(step) : '';
-  return `${grid}${area}${terrain}`;
+  const panel = custom ? customStatusPanelHtml(step, custom, idPrefix) : '';
+  return `${grid}${area}${terrain}${panel}`;
 }
 
 /**
  * Render an effect step as one card: the header with its grip, kind, ordinal, summary and actions, then the body
- * `stepBodyHtml` builds. The branches of an if step render their own cards the same way.
+ * `stepBodyHtml` builds. An apply-status card also shows its status's icon in the header, and a custom status adds
+ * its advanced json box under the body. The branches of an if step render their own cards the same way.
  * @param {number} idx                    Its position within its own list.
  * @param {string} [parentPath]           Its path, for unique element ids.
  * @param {number} [depth]                How deeply nested it is.
@@ -1337,6 +1605,9 @@ function renderStepCard(step, idx, parentPath = 'root', depth = 0) {
   const rail = step.kind === 'if' ? ` data-rail="${(depth + 1) % 5}"` : '';
   const tip = id => escapeHtml(getTooltip(id));
   const kindTip = escapeHtml(getTooltip('editor.card.kind', { kind: step.kind }));
+  const status = step.kind === 'applyEffect';
+  const custom = status && step.preset === 'custom';
+  const shown = custom ? { ...step, customData: customStatusData(step) } : step;
   return `
     <div class="ed-card${collapsed ? ' is-collapsed' : ''}" data-card-id="${cardId}" data-step-idx="${idx}"
       data-step-kind="${escapeHtml(step.kind)}" data-step-path="${escapeHtml(parentPath)}"
@@ -1346,9 +1617,10 @@ function renderStepCard(step, idx, parentPath = 'root', depth = 0) {
           <i class="fas fa-grip-vertical"></i></span>
         <button type="button" class="ed-card-chevron" data-action="toggle-collapse"
           data-tooltip="${tip('editor.card.collapse')}"><i class="fas fa-chevron-down"></i></button>
+        ${status ? statusSpriteHtml(shown) : ''}
         <span class="ed-card-kind" data-tooltip="${kindTip}">${escapeHtml(stepKindLabel(step.kind))}</span>
         <span class="ed-card-idx">#${idx + 1}</span>
-        <span class="ed-card-summary">${summarizeStep(step)}</span>
+        <span class="ed-card-summary">${escapeHtml(stepSummaryText(shown))}</span>
         <span class="ed-card-actions">
           <button type="button" class="ed-card-btn" data-action="duplicate"
             data-tooltip="${tip('editor.card.duplicate')}"><i class="fas fa-clone"></i></button>
@@ -1356,7 +1628,8 @@ function renderStepCard(step, idx, parentPath = 'root', depth = 0) {
             data-tooltip="${tip('editor.card.delete')}"><i class="fas fa-trash"></i></button>
         </span>
       </div>
-      <div class="ed-card-body">${stepBodyHtml(step, idx, parentPath, depth)}</div>
+      <div class="ed-card-body">${stepBodyHtml(step, idx, parentPath, depth, custom ? shown.customData : null)}</div>${
+        custom ? customStatusJsonHtml(step, shown.customData) : ''}
     </div>`;
 }
 
@@ -1497,6 +1770,84 @@ function readAreaTarget(panel, kind) {
   return target;
 }
 
+/** A number input's value, or null when it is blank or not a number. */
+function readNumberInput(input) {
+  const text = String(input?.value ?? '').trim();
+  const number = Number(text);
+  return text !== '' && Number.isFinite(number) ? number : null;
+}
+
+/**
+ * Read one modifier row back as a change. A blank priority is left off, so normalizeCustomStatus gives the row its
+ * type's default, and a blank value that was drawn from a stored value the number input could not show saves that
+ * stored value.
+ */
+function readChangeRow(row) {
+  const keyInput = row.querySelector('[data-path-input="target"]');
+  const change = {
+    key: changeKey(keyInput?.value, keyInput?.dataset.key),
+    type: row.querySelector('[data-change-how]')?.value || 'add'
+  };
+  const boolean = row.querySelector('[data-change-bool]');
+  const numberInput = row.querySelector('[data-change-num]');
+  let value;
+  if (boolean && !boolean.hidden) value = boolean.value === 'true';
+  else if (readNumberInput(numberInput) !== null) value = readNumberInput(numberInput);
+  else if (numberInput?.value.trim() === '' && numberInput.dataset.raw !== undefined) {
+    value = JSON.parse(numberInput.dataset.raw);
+  }
+  if (value !== undefined) change.value = value;
+  const priority = readNumberInput(row.querySelector('[data-change-priority]'));
+  if (priority !== null) change.priority = priority;
+  return change;
+}
+
+/**
+ * Read a custom status card back as the step's `customData`. The panel and the phases field give what they cover,
+ * laid over whatever the advanced json box holds, and normalizeCustomStatus then makes the status id from the name
+ * and fills the defaults. The phases field's value moves into the data, so the step keeps no `durationPhases`. A card
+ * drawn before its status was custom has no panel yet, and starts from customStatusTemplate.
+ * @param {object} step          The step read so far. Its `durationPhases` is taken off it.
+ * @returns {object}
+ */
+function readCustomStatus(cardEl, step) {
+  const duration = step.durationPhases;
+  delete step.durationPhases;
+  const panel = ownElement(cardEl, '[data-cs-panel]');
+  if (!panel) return normalizeCustomStatus(customStatusTemplate(), { durationPhases: duration });
+
+  const cardId = stepCards.state.identify(step);
+  stepCards.state.set(cardId, 'jsonOpen', ownElement(cardEl, '[data-cs-json]')?.open === true);
+  const field = name => panel.querySelector(`[data-cs-field="${name}"]`);
+  const polarity = field('polarity')?.value;
+  const status = {
+    duration: duration ?? DEFAULT_STATUS_DURATION,
+    harmful: polarity === 'harmful',
+    beneficial: polarity === 'beneficial',
+    hiddenOnToken: field('hiddenOnToken')?.checked === true,
+    stackable: field('stackable')?.checked === true,
+    stackCount: readNumberInput(field('stackCount')),
+    stackLimit: readNumberInput(field('stackLimit')),
+    removeStackWhenHit: field('removeStackWhenHit')?.checked === true,
+    triggerSheds: {}
+  };
+  for (const box of panel.querySelectorAll('[data-trigger]')) {
+    const key = box.dataset.trigger;
+    status[key] = box.checked;
+    const shedsStack = box.parentElement?.querySelector('[data-shed="stack"]')?.getAttribute('aria-pressed') === 'true';
+    if (box.checked && shedsStack) status.triggerSheds[key] = true;
+  }
+  const form = {
+    name: field('name')?.value ?? '',
+    img: field('img')?.value.trim() ?? '',
+    description: field('description')?.value ?? '',
+    changes: [...panel.querySelectorAll('[data-change]')].map(readChangeRow),
+    flags: { [SYSTEM_ID]: status }
+  };
+  const extras = readStepJson(ownStepField(cardEl, 'customData'), cardId, 'customData');
+  return normalizeCustomStatus(panelOverBox(isPlainObject(extras?.value) ? extras.value : {}, form), step);
+}
+
 /**
  * Read the panel a step kind adds to its card back onto the step.
  * @param {string} kind          The step kind, which decides which panel is there to read.
@@ -1530,9 +1881,15 @@ function readStepPanels(cardEl, kind, step) {
     step.actions = actions;
   }
 
-  if (kind === 'applyEffect' && step.preset !== 'custom') {
-    const d = Number(step.durationPhases);
-    step.durationPhases = Number.isFinite(d) && d >= 1 ? d : DEFAULT_STATUS_DURATION;
+  if (kind === 'applyEffect') {
+    if (step.durationStacks === 'true') step.durationStacks = true;
+    else delete step.durationStacks;
+    if (step.preset === 'custom') {
+      step.customData = readCustomStatus(cardEl, step);
+    } else {
+      const d = Number(step.durationPhases);
+      step.durationPhases = Number.isFinite(d) && d >= 1 ? d : DEFAULT_STATUS_DURATION;
+    }
   }
 
   if (kind === 'animation') {
@@ -1565,9 +1922,6 @@ function readStepFromCard(cardEl) {
     const v = readField(f, input);
     if (v !== undefined && v !== '') step[f.name] = v;
   }
-
-  const customData = readStepJson(ownStepField(cardEl, 'customData'), cardId, 'customData');
-  if (customData) step.customData = customData.value;
 
   const animTa = ownStepField(cardEl, 'animation');
   const animation = readStepJson(animTa, cardId, 'animation');
@@ -1618,14 +1972,14 @@ function fitConditionTemplates(select, trigger) {
 /* -------------------------------------------- */
 
 /**
- * The step fields authored as raw JSON, and so the ones that can be malformed. No step kind has a `filter` field
- * today.
+ * The step fields authored as raw JSON, and so the ones that can be malformed: a custom status's advanced json box
+ * and an animation step's hidden animation field.
  * @type {string[]}
  */
-const JSON_STEP_FIELDS = ['customData', 'animation', 'filter'];
+const JSON_STEP_FIELDS = ['customData', 'animation'];
 
 /** How each JSON step field is named in the message about text that doesn't parse. */
-const JSON_STEP_FIELD_WORDS = Object.freeze({ customData: 'custom status', animation: 'animation', filter: 'filter' });
+const JSON_STEP_FIELD_WORDS = Object.freeze({ customData: 'advanced json', animation: 'animation' });
 
 /**
  * Every error and warning for the effect as it stands. Broken JSON is reported first, by step number. The entry is
@@ -1758,6 +2112,7 @@ function attachHandlers(dialogEl, state) {
   attachStepButtons(dialogEl, state, repaint);
   attachBranchControls(dialogEl, state, repaint);
   attachStepChanges(dialogEl, state, repaint);
+  attachStatusCards(dialogEl);
   attachEntryClipboard(dialogEl, state, repaint);
   attachStepDragAndDrop(dialogEl, state, repaint);
 
@@ -1925,7 +2280,7 @@ function attachAddStepPicker(dialogEl, state, rootList, repaint) {
 /** Deleting, duplicating and collapsing the step cards, and opening a card's animation editor. */
 function attachStepButtons(dialogEl, state, repaint) {
   dialogEl.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('.ed-card-btn');
+    const btn = ev.target.closest('.ed-card-btn:is([data-action="delete"], [data-action="duplicate"])');
     if (!btn) return;
     const card = btn.closest(CARD);
     const list = card?.parentElement;
@@ -1934,13 +2289,8 @@ function attachStepButtons(dialogEl, state, repaint) {
     const stepsArr = locateStepsArray(state.action, list);
     if (!stepsArr) return;
     const idx = parseInt(card.dataset.stepIdx, 10);
-    if (btn.dataset.action === 'delete') {
-      writeCards(stepsArr, removeCard(stepsArr, idx));
-    } else if (btn.dataset.action === 'duplicate' && stepsArr[idx]) {
-      writeCards(stepsArr, duplicateCard(stepsArr, idx, copyStep));
-    } else {
-      return;
-    }
+    if (btn.dataset.action === 'delete') writeCards(stepsArr, removeCard(stepsArr, idx));
+    else writeCards(stepsArr, duplicateCard(stepsArr, idx, copyStep));
     repaint();
   });
 
@@ -2057,6 +2407,178 @@ function attachStepChanges(dialogEl, state, repaint) {
     conditionBuilders.get(host)?.setTree(tree ?? null);
     host.classList.remove('is-folded');
     refreshValidation(dialogEl, state);
+  });
+}
+
+/** The phases an apply-status card's phases field stands for: a blank field means the default. */
+function phasesShown(cardEl) {
+  const text = String(ownStepField(cardEl, 'durationPhases')?.value ?? '').trim();
+  return text === '' ? DEFAULT_STATUS_DURATION : Number(text);
+}
+
+/**
+ * Keep a custom status panel in step with its own fields: the stack fields and the hint under them only while the
+ * status is stackable, and the phase-or-stack choice under each checked trigger only while it is stackable and lasts
+ * more than 0 phases.
+ */
+function syncCustomStatusPanel(cardEl) {
+  const panel = ownElement(cardEl, '[data-cs-panel]');
+  if (!panel) return;
+  const stackable = panel.querySelector('[data-cs-field="stackable"]')?.checked === true;
+  for (const field of panel.querySelectorAll('[data-needs-stack]')) {
+    field.classList.toggle('ed-field--disabled', !stackable);
+    for (const control of field.querySelectorAll('input, select')) control.disabled = !stackable;
+  }
+  const hint = panel.querySelector('[data-stack-hint]');
+  if (hint) hint.hidden = !stackable;
+  const showSheds = stackable && phasesShown(cardEl) > 0;
+  for (const box of panel.querySelectorAll('[data-trigger]')) {
+    const sheds = box.parentElement?.querySelector('[data-sheds]');
+    if (sheds) sheds.hidden = !(showSheds && box.checked);
+  }
+}
+
+/**
+ * Fit a modifier row to its target: a true or false target shows the true or false select, a number target the
+ * number input, and a target the picker does not offer keeps the control it has. A row added in this editor also
+ * takes the one type its new target works with (changeKeyRule), though both stay selectable. The priority
+ * placeholder shows the default for the row's target and type.
+ */
+function syncChangeRow(row) {
+  const keyInput = row.querySelector('[data-path-input="target"]');
+  const key = changeKey(keyInput?.value, keyInput?.dataset.key);
+  const target = changeTargetByKey(key);
+  if (target) {
+    const boolean = target.kind === 'boolean';
+    row.querySelector('[data-change-num]').hidden = boolean;
+    row.querySelector('[data-change-bool]').hidden = !boolean;
+  }
+  const how = row.querySelector('[data-change-how]');
+  // Only when the target changes, so a type the author then picks by hand is kept.
+  if (how && row.hasAttribute('data-change-new') && row.dataset.typedKey !== key) {
+    row.dataset.typedKey = key;
+    const type = changeKeyRule(key).type;
+    if (type) how.value = type;
+  }
+  const priority = row.querySelector('[data-change-priority]');
+  if (priority) priority.placeholder = String(defaultChangePriority(key, how?.value));
+}
+
+/** Show the modifier heading while a panel has rows, and the "no changes" line while it has none. */
+function syncChangeList(list) {
+  const hasRows = !!list.querySelector('[data-change]');
+  const head = list.querySelector('[data-changes-head]');
+  const empty = list.querySelector('[data-changes-empty]');
+  if (head) head.hidden = !hasRows;
+  if (empty) empty.hidden = hasRows;
+}
+
+/**
+ * The part of an apply-status card its header shows, read from the card's step fields and, for a custom status, its
+ * name, icon and phases fields. The rest of the custom status panel is not read.
+ */
+function statusHeaderStep(cardEl) {
+  const step = { kind: 'applyEffect' };
+  for (const f of FIELDS_BY_KIND.applyEffect) {
+    const input = ownStepField(cardEl, f.name);
+    const v = input ? readField(f, input) : undefined;
+    if (v !== undefined && v !== '') step[f.name] = v;
+  }
+  if (step.target === 'area') step.target = readAreaTarget(ownElement(cardEl, '[data-area-panel]'), step.kind);
+  const panel = ownElement(cardEl, '[data-cs-panel]');
+  if (step.preset === 'custom' && panel) {
+    const field = name => panel.querySelector(`[data-cs-field="${name}"]`);
+    step.customData = {
+      name: field('name')?.value.trim() || customStatusTemplate().name,
+      img: field('img')?.value ?? '',
+      flags: { [SYSTEM_ID]: { duration: phasesShown(cardEl) } }
+    };
+  }
+  return step;
+}
+
+/** Bring an apply-status card's header icon and collapsed summary up to date with its fields. */
+function refreshStatusHeader(cardEl) {
+  const step = statusHeaderStep(cardEl);
+  const header = cardEl.querySelector(':scope > .ed-card-header');
+  const summary = header?.querySelector('.ed-card-summary');
+  if (summary) summary.textContent = stepSummaryText(step);
+  const sprite = header?.querySelector('[data-status-sprite]');
+  const img = statusImage(step);
+  if (sprite) {
+    if (img) sprite.src = img;
+    sprite.hidden = !img;
+  }
+  const thumb = ownElement(cardEl, '[data-cs-icon]');
+  if (thumb) {
+    if (img) thumb.src = img;
+    thumb.hidden = !img;
+  }
+}
+
+/**
+ * The live behaviour of apply-status cards, none of which repaints the list: the header and the custom status panel
+ * follow each edit, the folder button opens Foundry's file picker for the icon, the phase-or-stack buttons switch,
+ * and modifier rows are added and deleted in place. The modifier target inputs open the change target picker.
+ */
+function attachStatusCards(dialogEl) {
+  wireCatalogPicker(dialogEl, { selector: CHANGE_KEY_INPUT, groups: customStatusChangeTargets() });
+
+  const follow = (ev) => {
+    const card = ev.target.closest?.('.ed-card[data-step-kind="applyEffect"]');
+    if (!card?.isConnected) return;
+    const row = ev.target.closest('[data-change]');
+    if (row) syncChangeRow(row);
+    syncCustomStatusPanel(card);
+    refreshStatusHeader(card);
+  };
+  dialogEl.addEventListener('input', follow);
+  dialogEl.addEventListener('change', follow);
+
+  dialogEl.addEventListener('click', (ev) => {
+    const browse = ev.target.closest('[data-action="browse-icon"]');
+    if (!browse) return;
+    ev.preventDefault();
+    const input = browse.parentElement?.querySelector('[data-cs-field="img"]');
+    if (!input) return;
+    new foundry.applications.apps.FilePicker.implementation({
+      type: 'image',
+      current: input.value,
+      callback: (path) => {
+        if (!input.isConnected) return;
+        input.value = path;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }).browse();
+  });
+
+  dialogEl.addEventListener('click', (ev) => {
+    const shed = ev.target.closest('[data-shed]');
+    if (!shed) return;
+    ev.preventDefault();
+    for (const button of shed.parentElement.children) {
+      const on = button === shed;
+      button.classList.toggle('ed-btn--accent', on);
+      button.setAttribute('aria-pressed', String(on));
+    }
+  });
+
+  dialogEl.addEventListener('click', (ev) => {
+    const add = ev.target.closest('[data-action="add-change"]');
+    const remove = ev.target.closest('[data-action="delete-change"]');
+    if (!add && !remove) return;
+    ev.preventDefault();
+    if (add) {
+      const list = add.closest('.eff-cs-section')?.querySelector('[data-changes]');
+      if (!list) return;
+      list.querySelector('[data-changes-empty]')?.insertAdjacentHTML('beforebegin', changeRowHtml({ value: 0 }, true));
+      syncChangeList(list);
+      return;
+    }
+    const list = remove.closest('[data-changes]');
+    remove.closest('[data-change]')?.remove();
+    if (list) syncChangeList(list);
   });
 }
 
@@ -2412,24 +2934,20 @@ function effectFooterHtml() {
 }
 
 /**
- * Move each custom status step's duration into its custom status data, where the editor shows it, so saving keeps
- * how long the status lasts. A duration on the step outranks the one in the data when the status is applied.
+ * Bring each custom status step's data to the shape the panel draws, through normalizeCustomStatus, before the cards
+ * are first drawn. A duration saved on the step moves into the data, and keys the panel has no field for show in the
+ * advanced json box, so older content opens with nothing lost.
  * @param {object[]} steps        The steps, changed in place through their branches.
  */
-function moveCustomDurations(steps) {
+function normalizeCustomSteps(steps) {
   for (const step of Array.isArray(steps) ? steps : []) {
     if (!step || typeof step !== 'object') continue;
-    if (step.kind === 'applyEffect' && step.preset === 'custom' && step.durationPhases !== undefined) {
-      const duration = Number(step.durationPhases);
-      const data = step.customData;
-      if (Number.isFinite(duration) && duration >= 1 && data && typeof data === 'object') {
-        const flags = data.flags && typeof data.flags === 'object' ? data.flags : {};
-        data.flags = { ...flags, [SYSTEM_ID]: { ...flags[SYSTEM_ID], duration } };
-      }
+    if (step.kind === 'applyEffect' && step.preset === 'custom') {
+      step.customData = customStatusData(step);
       delete step.durationPhases;
     }
-    moveCustomDurations(step.then);
-    moveCustomDurations(step.else);
+    normalizeCustomSteps(step.then);
+    normalizeCustomSteps(step.else);
   }
 }
 
@@ -2437,7 +2955,7 @@ const ENTRY_LOST_MESSAGE = 'This effect was changed, moved or removed while the 
 
 /**
  * Open the effect editor on a copy of one entry, through openEffectEditor (dialogs.mjs). An entry-level condition
- * is shown as an if step wrapping the steps, and a custom status step's duration is moved into its data. The trigger
+ * is shown as an if step wrapping the steps, and each custom status is brought to its current shape. The trigger
  * choices are the item group's, and the complete entry is validated before saving. An entry opened with `isNew`
  * (one `createEffectEntry` just appended) is removed again when the dialog closes without saving.
  * @param {ItemSheet} itemSheet           The sheet it was opened from.
@@ -2460,7 +2978,7 @@ export async function openEffectActionEditor(itemSheet, entryIndex, { group = ''
     entry: foundry.utils.deepClone(entry),
     action: actionIsPopulated(entry.action) ? foundry.utils.deepClone(entry.action) : emptyAction()
   };
-  moveCustomDurations(state.action.steps);
+  normalizeCustomSteps(state.action.steps);
   // The entry condition is saved back as an if step. A failing entry condition skipped the whole entry; a failing
   // if step still lets the entry's delay and hold pose run.
   if (entry.condition && !conditionIsEmpty(entry.condition)) {

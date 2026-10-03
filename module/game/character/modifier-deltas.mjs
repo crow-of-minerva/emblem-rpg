@@ -15,7 +15,7 @@ function hasStatModifierSources(source) {
   if (Object.values(source.terrainModifiers ?? {}).some(value => Number(value) || 0)) return true;
   if (Object.values(source.rallyModifiers ?? {}).some(value => Number(value) || 0)) return true;
   if (normalizeMoveScaling(source.moveScaling) !== MOVE_SCALINGS.NONE) return true;
-  return (source.effectModifiers ?? []).length > 0;
+  return (source.effectModifiers ?? []).length > 0 || Object.keys(source.effectOverrides ?? {}).length > 0;
 }
 
 /** The same source without its aura, terrain, Rally, move-scaling and effect contributions: the unit's own build. */
@@ -28,6 +28,7 @@ function stripStatModifierSources(source) {
     terrainModifiers: null,
     rallyModifiers: null,
     effectModifiers: [],
+    effectOverrides: {},
     moveScaling: MOVE_SCALINGS.NONE
   };
 }

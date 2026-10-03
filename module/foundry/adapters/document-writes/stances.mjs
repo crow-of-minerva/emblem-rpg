@@ -11,6 +11,7 @@ import {
   resolveActor
 } from '../services/host.mjs';
 import { FoundryDiagnostics } from '../services/diagnostics.mjs';
+import { tickStatusEffects } from './status-ticks.mjs';
 
 /** Marks these writes as the system's own, so the Stance hook in foundry/hooks/actors.mjs skips them. */
 const settlementOptions = () => ({ emblemHealthSettlement: true });
@@ -40,9 +41,11 @@ export class FoundryStanceRepository {
    * Apply a stance transition if the actor still matches the snapshot it was planned from. If not, returns
    * `stale: true` so the caller reads again and replans.
    *
-   * Before the first write, everything the transition touches is recorded in the caller's undo record: the effects
-   * removed, the Stance Break created, and for a flier the break grounds, its Grounded status and the flag saying a
-   * stance break grounded it. A refused command then restores the old effects and flight state together.
+   * A fresh break first ticks the effects that end on a stance break (tickStatusEffects in status-ticks.mjs): each
+   * ends, or loses a phase or a stack, as planStatusTicks decides. Before each write, everything it touches is
+   * recorded in the caller's undo record: the effects ticked or removed, the Stance Break created, and for a flier
+   * the break grounds, its Grounded status and the flag saying a stance break grounded it. A refused command then
+   * restores the old effects and flight state together.
    * @param {object} snapshot The getSnapshot result the transition was planned from.
    * @param {object} transition The plan from resolveStanceBreak (game/combat/damage.mjs).
    * @param {{operation?: object|null}} [context] The running command's undo record, if any.
@@ -59,6 +62,7 @@ export class FoundryStanceRepository {
     const landing = transition.grounds === true
       ? { 'system.statuses.grounded': true, [GROUNDED_BY_STANCE_BREAK_PATH]: true } : null;
     try {
+      await tickStatusEffects(actor, transition.tickEffectIds, 'removeOnStanceBreak', operation, settlementOptions());
       await writeStanceEffects(operation, actor, deleteIds, creates, landing);
       return Object.freeze({ ok: true, tokenUuid: current.tokenUuid });
     } catch (diagnosticError) {
@@ -75,8 +79,9 @@ export class FoundryStanceRepository {
 /* -------------------------------------------- */
 
 /**
- * Record the whole transition for undo, then delete and create the effects it names and land the flier the
- * break grounds, the same way the flight action lands a unit. Throws if Foundry refuses any step.
+ * Record the effects to delete, the new Stance Break and the landing for undo, then delete and create those effects
+ * and land the flier the break grounds, the same way the flight action lands a unit. Throws if Foundry refuses any
+ * step.
  */
 async function writeStanceEffects(operation, actor, deleteIds, creates, landing = null) {
   await operation?.capture({

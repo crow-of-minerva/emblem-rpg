@@ -4,7 +4,11 @@
   {{#if hasDuration}}
     <div class="effect-description-duration">
       <i class="fas fa-hourglass-half"></i>
-      Duration: <strong>{{duration}}</strong> Turn{{#if plural}}s{{/if}}
+      {{#if untilRemoved}}
+        Duration: <strong>until removed</strong>
+      {{else}}
+        Duration: <strong>{{duration}}</strong> Turn{{#if plural}}s{{/if}}
+      {{/if}}
     </div>
   {{/if}}
 </div>

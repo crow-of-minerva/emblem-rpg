@@ -21,11 +21,10 @@ import {
   findSceneCombat, projectDrivenHold, projectEncounterAftermath, projectObjectiveBoard
 } from '../projections/encounters.mjs';
 import { collectionValues } from '../../../lib/core/runtime.mjs';
-import {
-  forcedDeletion, resolveActor, resolveScene, resolveToken, stackRescale as rescaleDecayChanges
-} from '../services/host.mjs';
+import { forcedDeletion, resolveActor, resolveScene, resolveToken } from '../services/host.mjs';
 import { reportFoundryError, reportFoundryProbe } from '../services/diagnostics.mjs';
 import { commitRetraction } from './retractions.mjs';
+import { applyStatusTickPlan } from './status-ticks.mjs';
 
 /* -------------------------------------------- */
 /*  Encounter settlement                        */
@@ -183,35 +182,14 @@ export class FoundryEncounterRepository {
   }
 
   /**
-   * Apply one unit's planned phase decay: removals, countdowns, and shed stacks. An effect that is already gone is
-   * skipped.
+   * Apply one unit's planned phase decay or phase-opening stack shed through applyStatusTickPlan (status-ticks.mjs):
+   * removals, countdowns, and shed stacks. An effect that is already gone is skipped.
    */
   async applyEffectDecay(actorUuid, plan, operation = null) {
     const actor = await resolveActor(actorUuid);
     if (!actor) return false;
     try {
-      const effects = collectionValues(actor.effects);
-      const byId = id => effects.find(candidate => candidate.id === id) ?? null;
-      const removeIds = plan.removeIds.filter(byId);
-      const updates = plan.durations.filter(entry => byId(entry.id)).map(entry => ({
-        _id: entry.id,
-        [`flags.${SYSTEM_ID}.duration`]: entry.duration
-      }));
-      for (const stack of plan.stacks) {
-        const effect = byId(stack.id);
-        if (!effect) continue;
-        updates.push({
-          _id: stack.id,
-          [`flags.${SYSTEM_ID}.stackCount`]: stack.to,
-          'system.changes': rescaleDecayChanges(effect, stack.from, stack.to)
-        });
-      }
-      await operation?.capture({
-        deleting: removeIds.map(byId),
-        documents: updates.map(entry => byId(entry._id))
-      });
-      if (removeIds.length) await actor.deleteEmbeddedDocuments('ActiveEffect', removeIds, encounterOptions());
-      if (updates.length) await actor.updateEmbeddedDocuments('ActiveEffect', updates, encounterOptions());
+      await applyStatusTickPlan(actor, plan, operation, encounterOptions());
       return true;
     } catch (diagnosticError) {
       reportFoundryError(import.meta.url, diagnosticError, 'applyEffectDecay');
