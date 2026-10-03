@@ -108,6 +108,16 @@ export const REGISTERED_STATUS_KEYS = Object.freeze(
   STATUSES.filter(entry => entry.registered === true).map(entry => entry.key)
 );
 
+/**
+ * Reduce a status name, effect name, status id or registry key to lower-case letters and digits, so any two of them
+ * compare: "Last Stand", "last-stand" and "LastStand" are one key.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function statusKey(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 /* -------------------------------------------- */
 /*  Combat flags                                */
 /* -------------------------------------------- */

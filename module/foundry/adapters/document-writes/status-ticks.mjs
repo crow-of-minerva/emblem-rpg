@@ -1,8 +1,8 @@
 /** @layer foundry/adapters/document-writes */
 /*
- * Writes what an end trigger does to a unit's statuses: phases counted down, stacks shed and statuses removed, as
- * planStatusTicks (game/effects/statuses.mjs) plans them. The phase changes, the attack exchange and stance breaks all
- * write through here, each passing its own write options so its hooks recognise the write.
+ * Writes a planned change to a unit's statuses: phases counted down, stacks shed and statuses removed. The plan comes
+ * from planStatusTicks for an end trigger or planStatusRemoval for a remove status step (game/effects/statuses.mjs),
+ * and each caller passes its own write options so its hooks recognise the write.
  */
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { planStatusTicks } from '../../../game/effects/statuses.mjs';
@@ -15,7 +15,7 @@ import { projectStatusTickFacts } from '../projections/encounters.mjs';
  * the effect's additive changes to the new count. An effect that is already gone is skipped. Everything changed is
  * saved in the undo record first. An error from a write reaches the caller.
  * @param {Actor} actor The unit.
- * @param {{removeIds: string[], durations: object[], stacks: object[]}} plan From planStatusTicks.
+ * @param {{removeIds: string[], durations: object[], stacks: object[]}} plan From planStatusTicks or planStatusRemoval.
  * @param {object|null} [operation] The running command's undo record.
  * @param {object} [options] The write options the calling writer's hooks check.
  * @returns {Promise<boolean>} Whether anything was written.

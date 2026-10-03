@@ -9,7 +9,6 @@ import { effectAreaRadius } from '../../../game/targeting/shapes.mjs';
 import { rectDistance } from '../../../lib/core/geometry.mjs';
 import { collectionValues } from '../../../lib/core/runtime.mjs';
 import { persistedTokenPosition, resolveActor, resolveScene, resolveToken } from '../services/host.mjs';
-import { placedActorUuids } from './encounters.mjs';
 
 /* -------------------------------------------- */
 /*  Effect targets                              */
@@ -20,7 +19,8 @@ const SPAWN_LOCATION_MISSING = Object.freeze({ ok: false, code: PRECONDITION.SPA
 
 /**
  * The units an effect step's target names: 'self' (or 'caster'), 'target', an explicit actor or token, or an
- * area. When the run has no target, 'target' and an area centred on it name nobody.
+ * area. When the run has no target, 'target' and an area centred on it name nobody. Any other string, such as a remove
+ * status step's 'scene', names nobody here; that step finds its units in operationReach.
  */
 export async function resolveEffectTargets(reference, runtime) {
   if (reference === 'self' || reference === 'caster') return identified(runtime.self);
@@ -31,9 +31,10 @@ export async function resolveEffectTargets(reference, runtime) {
 }
 
 /**
- * The documents one effect step will write, listed before it writes any: the units it targets, the Guard partners
- * of any unit it moves, and the scenes it changes. The host client locks these actors and scenes before the step
- * runs. Only units count as targets, so a Destructible or scenery the step names is left untouched.
+ * The documents one effect step will write, listed before it writes any: the units it targets (every unit on the
+ * scene for a remove status step on the whole map), the Guard partners of any unit it moves, and the scenes it
+ * changes. The host client locks these actors and scenes before the step runs. Only units count as targets, so a
+ * Destructible or scenery the step names is left untouched.
  * @param {object} operation Prepared effect operation.
  * @param {object} runtime Effect runtime.
  * @param {{guardBonds?: object|null}} [options] The Guard bond service, used to find a moved token's partner.
@@ -51,11 +52,14 @@ export async function resolveEffectWrites(operation, runtime, { guardBonds = nul
   });
 }
 
+/**
+ * The actors, tokens and scenes a step kind writes where they differ from its targets' actors. A remove status step
+ * on the whole map reaches every unit on the scene but the one its `except` names.
+ */
 async function operationReach(step, targets, runtime, guardBonds) {
   switch (step.kind) {
     case 'setFaction': return { tokenUuids: targets.map(target => target.tokenUuid) };
-    case 'removeEffect':
-      return step.scope === 'global' ? { actorUuids: placedActorUuids(await resolveScene(runtime.sceneUuid)) } : {};
+    case 'removeEffect': return step.target === 'scene' ? { actorUuids: await sceneUnitActorUuids(step, runtime) } : {};
     case 'moveToken': return tokensReach(await movedTokens(step, targets, runtime, guardBonds));
     case 'guard': {
       const pair = [resolveToken(runtime.self?.tokenUuid), resolveToken(targets[0]?.tokenUuid)];
@@ -77,6 +81,18 @@ async function movedTokens(step, targets, runtime, guardBonds) {
   return [...moved, ...partners];
 }
 
+/**
+ * The actors of every unit with a token on the run's scene, less the unit the step's `except` names. When `except`
+ * names nobody in this run, nobody is left out.
+ */
+async function sceneUnitActorUuids(step, runtime) {
+  const scene = await resolveScene(runtime.sceneUuid);
+  const [spared] = step.except ? await resolveEffectTargets(step.except, runtime) : [];
+  return collectionValues(scene?.tokens).map(token => token.actor)
+    .filter(actor => isUnit(actor) && actor.uuid !== spared?.actorUuid)
+    .map(actor => actor.uuid);
+}
+
 function tokensReach(tokens) {
   const placed = tokens.filter(Boolean);
   return { tokenUuids: placed.map(token => token.uuid), actorUuids: placed.map(token => token.actor?.uuid) };
@@ -89,10 +105,14 @@ async function affectedUnits(targets) {
     const actor = target.actorUuid
       ? await resolveActor(target.actorUuid)
       : (await resolveToken(target.tokenUuid))?.actor ?? null;
-    const kind = resolveTargetKind({ documentType: actor?.type, objectType: actor?.system?.objectType });
-    if (kind === TARGET_KINDS.UNIT) units.push(target);
+    if (isUnit(actor)) units.push(target);
   }
   return units;
+}
+
+/** Whether an Actor is a unit (a Character), not a Destructible or scenery. */
+function isUnit(actor) {
+  return resolveTargetKind({ documentType: actor?.type, objectType: actor?.system?.objectType }) === TARGET_KINDS.UNIT;
 }
 
 function distinct(values) {

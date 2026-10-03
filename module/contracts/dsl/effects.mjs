@@ -9,6 +9,7 @@ import { isPlainObject } from '../../lib/core/runtime.mjs';
 import { readsOtherUnit, validate as validateConditionTree } from './conditions.mjs';
 import { oneOf, placeOf, say, warn as warnAt } from './messages.mjs';
 import { validateCustomStatus } from './custom-status.mjs';
+import { validateRemoveStatus } from './remove-status.mjs';
 
 /* -------------------------------------------- */
 /*  Vocabulary                                  */
@@ -303,7 +304,8 @@ const STEP_KEYS_BY_KIND = {
   modShield:     new Set([...SHARED_KEYS, 'target', 'formula', 'cap']),
   applyEffect:   new Set([...SHARED_KEYS, 'target', 'preset', 'customData', 'linkAnimationTag', 'durationPhases', 'durationStacks']),
   setFaction:    new Set([...SHARED_KEYS, 'target', 'actorType', 'grantOwnership', 'linkStatusTag']),
-  removeEffect:  new Set([...SHARED_KEYS, 'target', 'name', 'scope', 'placedByActor', 'excludeTarget', 'dispelHarmful', 'dispelBeneficial']),
+  removeEffect:  new Set([...SHARED_KEYS, 'target', 'except', 'which', 'name', 'kinds', 'appliedBy',
+    'amount', 'count']),
   animation:     new Set([...SHARED_KEYS, 'animation', 'persistent', 'tag', 'attachToEffectName', 'attachTarget', 'await']),
   floatingText:  new Set([...SHARED_KEYS, 'target', 'text', 'color', 'fontSize', 'offsetY', 'durationMs']),
   moveToken:     new Set([...SHARED_KEYS, 'target', 'mode', 'distance', 'location', 'pair', 'dx', 'dy', 'bypassWalls', 'geometry']),
@@ -482,12 +484,9 @@ function validateStep(step, path, warnings) {
       }
       break;
     case 'removeEffect':
-      // A global removal sweeps the whole Scene, so EffectExecutionService doesn't read a target.
-      if (step.scope !== 'global') needsUnit();
-      if (!(typeof step.name === 'string' && step.name.trim() !== '')
-          && step.dispelHarmful !== true && step.dispelBeneficial !== true) {
-        fail('does not say which status to remove. Give a status name, or tick dispel harmful or dispel beneficial');
-      }
+      // `target: 'scene'` acts on every unit with a token on the scene, and no other step kind accepts it.
+      if (step.target !== 'scene') needsUnit();
+      for (const problem of validateRemoveStatus(step)) fail(problem);
       break;
     case 'animation':
       if (!isPlainObject(step.animation)) {
@@ -789,7 +788,8 @@ function namesTarget(ref) {
 
 /** How a step uses the other unit, by the field that names it, for the message about a trigger that has none. */
 const TARGET_USES = Object.freeze({
-  target: 'targets', pair: 'pairs with', location: 'goes to', 'geometry.anchor': 'is anchored on'
+  target: 'targets', pair: 'pairs with', location: 'goes to', 'geometry.anchor': 'is anchored on',
+  appliedBy: 'only removes statuses applied by', except: 'spares'
 });
 
 /** How a step that changes a unit reads with that unit as its object, as in `heals the other unit`. */
@@ -807,6 +807,7 @@ function checkStep(step, at, topLevel, { trigger, cap, location, multiTarget }, 
   if (cap.target === 'none') {
     const refs = [['target', step.target], ['pair', step.pair], ['location', step.location]];
     if (geometry) refs.push(['geometry.anchor', geometry.anchor]);
+    if (kind === 'removeEffect') refs.push(['appliedBy', step.appliedBy], ['except', step.except]);
     for (const [key, ref] of refs) {
       if (namesTarget(ref)) {
         fail(`${at}.${key}`, `${TARGET_USES[key]} the other unit, but ${named} has no other unit. Use self`);
@@ -890,8 +891,13 @@ function checkStep(step, at, topLevel, { trigger, cap, location, multiTarget }, 
   if (multiTarget) {
     const onSelf = step.target === 'self' && !DISPLAY_STEPS.has(kind);
     const castArea = kind === 'terrainEdit' && step.target === undefined;
-    if (onSelf || area || kind === 'spawnToken' || castArea) {
+    const wholeMap = kind === 'removeEffect' && step.target === 'scene';
+    if (onSelf || area || kind === 'spawnToken' || castArea || wholeMap) {
       warn(at, 'runs once for every unit the item catches');
+    }
+    if (wholeMap && step.except === 'target') {
+      warn(at, 'spares the target, but runs once for every unit the item catches, so a unit spared in one run loses '
+        + 'its statuses in another');
     }
   }
   if (cap.repeats === 'perBlow' || cap.repeats === 'perPhase') {

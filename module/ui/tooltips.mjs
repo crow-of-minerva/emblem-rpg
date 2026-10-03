@@ -595,7 +595,8 @@ const TOOLTIPS = Object.freeze({
   'editor.status.name': 'The name the status shows on the token and in effect lists',
   'editor.status.icon': 'The icon shown on the token while the status lasts',
   'editor.status.browse-icon': 'Browse for an icon',
-  'editor.status.polarity': 'A beneficial or harmful status can be dispelled. A neutral one cannot',
+  'editor.status.polarity': 'All harmful and all beneficial on a Remove status step take off statuses of that kind. '
+    + 'A neutral status stays unless a step names it or ticks all neutral',
   'editor.status.hidden-on-token': "Keep this status off the token's icon list and the HUD",
   'editor.status.description': 'A short rule text shown with the status',
   'editor.status.ends-when': 'Each checked trigger removes one phase of duration, or one stack when set beneath it. '
@@ -621,12 +622,20 @@ const TOOLTIPS = Object.freeze({
   'editor.status.add-change': 'Add a change',
   'editor.status.advanced-json':
     'Other ActiveEffect data for this status, as JSON. The fields above are not repeated here',
-  'editor.remove.scope': 'Which tokens lose the effect',
-  'editor.remove.name': 'The exact effect name to remove',
-  'editor.remove.placed-by': 'Only remove statuses this unit applied',
-  'editor.remove.exclude-target': 'When removing from every token, leave the current target alone',
-  'editor.remove.dispel-harmful': 'Remove every status flagged harmful',
-  'editor.remove.dispel-beneficial': 'Remove every status flagged beneficial',
+  'editor.remove.who': 'Which units lose statuses: self, the target, or every unit with a token on this scene',
+  'editor.remove.which': 'One status by its name, or every status of the kinds ticked below',
+  'editor.remove.amount': 'How much of each status comes off: all of it, a number of stacks, or a number of phases',
+  'editor.remove.count': 'How many stacks or phases. A status that does not stack counts as one stack. '
+    + 'A status that lasts until a trigger removes it has no phases to take, so it stays',
+  'editor.remove.applied-by': 'Only remove statuses this unit put on. Self is the unit using the item and target is '
+    + 'the unit it is used on. Anyone removes them whoever put them on',
+  'editor.remove.name': 'The status to remove, as its name reads on the token. '
+    + 'Upper and lower case, spaces and punctuation do not matter',
+  'editor.remove.kind-harmful': 'Remove every harmful status, such as Poisoned or Marked',
+  'editor.remove.kind-beneficial': 'Remove every beneficial status, such as Blessed or Charged',
+  'editor.remove.kind-neutral': 'Remove every neutral status, such as Berserk or Winded. '
+    + 'All harmful and all beneficial leave these alone',
+  'editor.remove.except': 'A unit on the map that keeps its statuses',
   'editor.faction.faction': 'The faction the unit joins',
   'editor.faction.grant-ownership': 'The caster\'s player also owns the unit until the linked status ends',
   'editor.faction.linked-tag':

@@ -9,6 +9,7 @@ import { normalizeGeometry } from '../../../contracts/dsl/terrain-geometry.mjs';
 import { factionGroup } from '../../../game/character/rules.mjs';
 import { TURN_REFRESH } from '../../../game/combat/phases.mjs';
 import { planGuardBond, resolveGuardBond } from '../../../game/effects/planning.mjs';
+import { planStatusRemoval, statusRemovalMatches } from '../../../game/effects/statuses.mjs';
 import {
   isFactionLinkRecord, nextFactionLinkOrder, planFactionChange, planFactionRevert
 } from '../../../game/effects/faction-links.mjs';
@@ -31,14 +32,15 @@ import {
   stackRescale as rescaleStackChanges
 } from '../services/host.mjs';
 import { EFFECT_MOVE_ACTION, EFFECT_MOVE_ANIMATION, ENCOUNTER_DECAY_FLAGS } from '../../../contracts/domains/combat.mjs';
-import { STANCE_BREAK_EFFECT_NAME, STANCE_BREAK_STATUS_ID } from '../../../contracts/domains/damage.mjs';
 import { DEFAULT_STATUS_DURATION, FACTION_LINK_FLAG } from '../../../contracts/domains/characters.mjs';
 import { EFFECT_STEP_PRECONDITION_FAILURES as PRECONDITION } from '../../../contracts/dsl/effects.mjs';
 import { normalizeCustomStatus } from '../../../contracts/dsl/custom-status.mjs';
 import { ACTIVATION_EXPERIENCE_USES_FLAG } from '../../../contracts/domains/progression.mjs';
 import { applyRallyEffect, rallyRecordUpdate } from './rallies.mjs';
 import { removeSummons } from './encounters.mjs';
+import { applyStatusTickPlan } from './status-ticks.mjs';
 import { projectActivationExperienceUses } from '../projections/items.mjs';
+import { projectStatusTickFacts } from '../projections/encounters.mjs';
 import { projectGeometrySight } from '../projections/terrain.mjs';
 import { projectExchangeHealthTarget } from '../projections/combat-exchange.mjs';
 import {
@@ -290,26 +292,25 @@ async function applyEffects(targets, step, repository, runtime) {
 }
 
 /**
- * Remove the statuses the step selects from each unit it reaches. A "placed by" unit that names nobody in this run
- * removes nothing.
+ * Take the statuses the step picks off each unit it reaches: all of each, or a number of its stacks or phases. When
+ * the step's `appliedBy` names nobody in this run, nothing comes off.
  */
 async function removeEffects(writes, step, runtime, repository) {
-  const actors = await Promise.all(writes.actorUuids.map(actorUuid => resolveActor(actorUuid)));
-  const placedBy = step.placedByActor
-    ? String((await repository.resolveTargets(step.placedByActor, runtime))[0]?.actorUuid ?? '')
+  const applier = step.appliedBy
+    ? String((await repository.resolveTargets(step.appliedBy, runtime))[0]?.actorUuid ?? '')
     : '';
-  if (step.placedByActor && !placedBy) return Object.freeze({ ok: true });
-  const excluded = step.scope === 'global' && step.excludeTarget === true ? runtime.target?.actorUuid : '';
+  if (step.appliedBy && !applier) return Object.freeze({ ok: true });
   const removals = [];
-  for (const actor of actors.filter(Boolean)) {
-    if (actor.uuid === excluded) continue;
-    const effects = collectionValues(actor.effects).filter(effect => shouldRemoveEffect(effect, step, placedBy));
-    if (effects.length) removals.push({ actor, effects });
+  for (const actorUuid of writes.actorUuids) {
+    const actor = await resolveActor(actorUuid);
+    const matched = collectionValues(actor?.effects)
+      .filter(effect => statusRemovalMatches(statusMatchFacts(effect), step, applier));
+    if (!matched.length) continue;
+    removals.push({ actor, plan: planStatusRemoval(matched.map(projectStatusTickFacts), step.amount, step.count) });
   }
-  if (!removals.length) return Object.freeze({ ok: true });
-  await runtime?.operation?.capture({ deleting: removals.flatMap(removal => removal.effects) });
-  for (const { actor, effects } of removals) {
-    await actor.deleteEmbeddedDocuments('ActiveEffect', effects.map(effect => effect.id), effectOptions());
+  // applyStatusTickPlan saves each unit's statuses in the undo record before it changes them.
+  for (const { actor, plan } of removals) {
+    await applyStatusTickPlan(actor, plan, runtime?.operation ?? null, effectOptions());
   }
   return Object.freeze({ ok: true });
 }
@@ -935,7 +936,7 @@ function activeEffectData(definition, step, caster, randomId) {
       ...(definition.harmful === true ? { harmful: true } : {}),
       ...(definition.flags ?? {})
     };
-  // Every status remembers who applied it, which a remove status step's "placed by" matches.
+  // Every status remembers who applied it, which a remove status step's `appliedBy` matches.
   if (caster) statusFlags.placedBy = { actorUuid: caster.uuid };
   if (step.preset === 'marked' && caster) {
     statusFlags.markedBy = { actorUuid: caster.uuid, actorType: caster.system?.faction?.role };
@@ -1091,37 +1092,13 @@ async function prepareEffectAnimation(operation, runtime, repository) {
   });
 }
 
-/**
- * Whether a removeEffect step takes this status off. Every selector the step sets must match: the name, a dispel
- * (harmful or beneficial), and the unit that applied it (a Mark applied before statuses recorded that still carries
- * it as its marker). A step with no selector removes nothing, and the system's own effects are never removed.
- */
-function shouldRemoveEffect(effect, step, placedBy = '') {
-  if (isSystemEffect(effect)) return false;
-  const flags = effect.flags?.[SYSTEM_ID] ?? {};
-  const dispels = step.dispelHarmful === true || step.dispelBeneficial === true;
-  if (step.name && String(effect.name ?? '') !== String(step.name)) return false;
-  if (dispels && !((step.dispelHarmful === true && flags.harmful === true)
-    || (step.dispelBeneficial === true && flags.beneficial === true))) return false;
-  const placer = String(flags.placedBy?.actorUuid ?? flags.markedBy?.actorUuid ?? '');
-  if (placedBy && placer !== placedBy) return false;
-  return Boolean(step.name || dispels || placedBy);
-}
-
-/** Status ids of effects the system keeps itself: Stance Break and the equipment and mount markers. */
-const SYSTEM_STATUS_IDS = new Set([STANCE_BREAK_STATUS_ID, 'Wielding', 'Wearing', 'Mounted']);
-
-/**
- * Whether an ActiveEffect belongs to the system rather than to a status an effect applied: Stance Break, a Guard
- * bond half, a Rally, or a wield, armor or mount effect. Each has its own rule for when it ends.
- */
-function isSystemEffect(effect) {
-  const flags = effect.flags?.[SYSTEM_ID] ?? {};
-  if (flags.isWieldEffect === true || flags.isArmorEffect === true || flags.isMountEffect === true) return true;
-  if (flags.guardRole || flags.rally) return true;
-  const name = String(effect.name ?? '');
-  if (name === STANCE_BREAK_EFFECT_NAME) return true;
-  return collectionValues(effect.statuses).some(id => SYSTEM_STATUS_IDS.has(String(id)));
+/** An ActiveEffect as statusRemovalMatches reads it: its name, its status ids and its system flags. */
+function statusMatchFacts(effect) {
+  return {
+    name: String(effect.name ?? ''),
+    statuses: collectionValues(effect.statuses).map(String),
+    flags: effect.flags?.[SYSTEM_ID] ?? {}
+  };
 }
 
 /* -------------------------------------------- */

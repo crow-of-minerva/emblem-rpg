@@ -1,6 +1,35 @@
 # Changelog
 
 
+## Unreleased
+
+### Added
+
+- Custom statuses are authored in a form inside the Apply status step instead of a raw JSON box: name, icon, id tag, polarity, hidden on token, phases and reapplication, the triggers that wear the status down, stacking, and modifier rows picked from the same vocabulary as modifiers. An advanced json box keeps anything the form has no field for.
+- A status can now have both a stack count and a duration. Each trigger that wears it down removes one phase or one stack, chosen per trigger. Phases 0 means the status lasts until a trigger removes it.
+- A status can override a stat total outright (for example Defense to 0); stats built from it use the overridden value.
+- Statuses can be kept off the token's icon list and the HUD.
+- The Remove status step is rebuilt as one card: who, which, amount, applied by and except. Who can be self, the target or the whole map, and a whole map removal can spare self or the target.
+- Remove status picks one status by name, or every status of the kinds ticked: all harmful, all beneficial, and the new all neutral.
+- Remove status can take off a number of stacks or phases instead of the whole status.
+
+### Changed
+
+- Reapplying a status now renews its duration to the applied value (or adds to it when the step stacks duration) instead of keeping the longer of the two. A stackable status at its stack limit still has its duration renewed.
+- The status id is derived from the name (letters and digits only) and is no longer typed.
+- A custom status made before this version that lasts more than one phase and ends on an event (attacked, a hostile action, being targeted, a stance break or the end of an exchange) now loses one phase on that event instead of ending; shipped content is not affected.
+- Remove status by name matches the status's name or id, ignoring upper and lower case, spaces and punctuation.
+- Remove status never takes off an effect a GM made by hand (one without phases), even when its name matches.
+- Applied by (formerly placed by) checks only who applied the status, so an old Mark that recorded only who marked it no longer matches.
+
+### Background Stuff
+
+- Migrate World Content brings every custom status to the new shape (world schema 4). Statuses that had no id are marked hidden on token so they look as before. **(the updated macro text must be in the system macros compendium before the host reloads; otherwise run the macro by hand)**
+- Migrate World Content brings every Remove status step to the new shape (world schema 5): scope, placed by, exclude target and the dispel boxes become who, applied by, except and which. A step that named a status and also ticked a dispel box keeps only the name, and a run by hand lists it.
+- Restore, Panacea, Sneak, Berserk and Marking Shot in the content compendiums were updated to the new Remove status step.
+
+---------------------
+
 ## Emblem RPG 1.0.2a HOTFIX
 
 ### Hotfix

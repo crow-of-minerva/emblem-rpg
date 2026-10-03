@@ -1,9 +1,10 @@
 /** @layer game/effects */
-import { BLEEDING_STATUS_ID } from '../../contracts/domains/characters.mjs';
+import { BLEEDING_STATUS_ID, statusKey } from '../../contracts/domains/characters.mjs';
 import { ENCOUNTER_DECAY_FLAGS, GUARD_BOND_EFFECT_NAME } from '../../contracts/domains/combat.mjs';
 import { STANCE_BREAK_EFFECT_NAME, STANCE_BREAK_STATUS_ID } from '../../contracts/domains/damage.mjs';
 import { SYSTEM_ID } from '../../contracts/protocol.mjs';
 import { END_TRIGGER_KEYS } from '../../contracts/dsl/custom-status.mjs';
+import { statusKindOf } from '../../contracts/dsl/remove-status.mjs';
 import { FLIGHT_STATUS_MARKERS, STATUS_EFFECTS } from '../../config/statuses.mjs';
 import { hpFloor } from '../combat/damage.mjs';
 
@@ -44,11 +45,11 @@ export function planStatusTicks(effects = [], flagKey = '') {
   return plan;
 }
 
-/** Add one lost stack to a tick plan, or the whole effect at its last stack. */
-function addStackLoss(plan, id, effect) {
+/** Add `count` lost stacks to a plan, or the whole effect when that leaves it no stack. */
+function addStackLoss(plan, id, effect, count = 1) {
   const current = Math.max(1, Math.floor(Number(effect.stackCount) || 1));
-  if (current <= 1) plan.removeIds.push(id);
-  else plan.stacks.push({ id, name: String(effect.name ?? ''), from: current, to: current - 1 });
+  if (current - count < 1) plan.removeIds.push(id);
+  else plan.stacks.push({ id, name: String(effect.name ?? ''), from: current, to: current - count });
 }
 
 /**
@@ -110,6 +111,70 @@ export function isEncounterStatus(effect = {}) {
   return statuses.some(id => STATUS_IDS.has(id));
 }
 
+/* -------------------------------------------- */
+/*  Status removal                              */
+/* -------------------------------------------- */
+
+/**
+ * What a remove status step takes off the statuses it matched, as a plan in planStatusTicks' shape. A status that
+ * does not stack counts as one stack, and one that lasts until a trigger removes it (0 phases) has no phases to lose.
+ * @param {object[]} effects The matched statuses as `{id, name, stackable, stackCount, duration}`, as
+ *   planStatusTicks reads them.
+ * @param {string} [amount] `all`, `stacks` or `phases`. Any other value takes nothing off.
+ * @param {number} [count] How many stacks or phases come off each status, at least 1.
+ * @returns {{removeIds: string[], durations: object[], stacks: object[]}}
+ */
+export function planStatusRemoval(effects = [], amount = 'all', count = 1) {
+  const taken = Math.max(1, Math.floor(Number(count) || 1));
+  const plan = { removeIds: [], durations: [], stacks: [] };
+  for (const effect of effects) {
+    const id = String(effect?.id ?? '');
+    if (!id) continue;
+    if (amount === 'all') plan.removeIds.push(id);
+    else if (amount === 'stacks') {
+      if (effect.stackable === true) addStackLoss(plan, id, effect, taken);
+      else plan.removeIds.push(id);
+    } else if (amount === 'phases') {
+      const phases = Math.max(0, Math.floor(Number(effect.duration) || 0));
+      if (phases > taken) plan.durations.push({ id, duration: phases - taken });
+      else if (phases > 0) plan.removeIds.push(id);
+    }
+  }
+  return plan;
+}
+
+/**
+ * Whether a remove status step takes this effect off. A name matches the effect's name or any of its status ids,
+ * ignoring case, spaces and punctuation; the system's own effects, and any effect without a phase `duration` such
+ * as one a GM made by hand, never match.
+ * @param {{name?: string, statuses?: readonly string[], flags?: object}} effect The effect's name, its status ids
+ *   and its system-scope flags.
+ * @param {object} step The remove status step, read for `which`, `name`, `kinds` and `appliedBy`.
+ * @param {string} [applier] The actor uuid the step's `appliedBy` names in this run. When the step sets
+ *   `appliedBy` and this is blank, nothing matches.
+ * @returns {boolean}
+ */
+export function statusRemovalMatches(effect = {}, step = {}, applier = '') {
+  const flags = effect?.flags ?? {};
+  if (isSystemEffect(effect) || typeof flags.duration !== 'number') return false;
+  if (step.appliedBy && (!applier || String(flags.placedBy?.actorUuid ?? '') !== applier)) return false;
+  if (step.which === 'name') {
+    const wanted = statusKey(step.name);
+    return wanted !== '' && [effect.name, ...(effect.statuses ?? [])].some(value => statusKey(value) === wanted);
+  }
+  return step.which === 'kind' && Array.isArray(step.kinds) && step.kinds.includes(statusKindOf(flags));
+}
+
+/**
+ * Whether an effect is one the system keeps itself rather than a status an effect applied: an equipment or mount
+ * effect, Stance Break, a flight marker, a Guard bond half or a Rally. Each has its own rule for when it ends.
+ */
+function isSystemEffect(effect) {
+  const flags = effect?.flags ?? {};
+  if (STANDING_EFFECT_FLAGS.some(flag => flags[flag] === true) || flags.guardRole || flags.rally) return true;
+  if (effect?.name === STANCE_BREAK_EFFECT_NAME) return true;
+  return (effect?.statuses ?? []).some(id => STANDING_STATUS_IDS.has(String(id)));
+}
 
 /* -------------------------------------------- */
 /*  Phase-opening ticks                         */

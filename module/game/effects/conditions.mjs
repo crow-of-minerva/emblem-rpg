@@ -1,6 +1,6 @@
 /** @layer game/effects */
 import { isEmpty } from '../../contracts/dsl/conditions.mjs';
-import { ENGAGEMENT_CHOICES, STATUS_KEYS } from '../../contracts/domains/characters.mjs';
+import { ENGAGEMENT_CHOICES, STATUS_KEYS, statusKey } from '../../contracts/domains/characters.mjs';
 import { SafeEval } from '../../lib/core/safe-eval.mjs';
 
 /** The `target` root as an authored path or expression names it, but not a property such as `weapon.target`. */
@@ -78,11 +78,6 @@ function hasStatus(unit, name) {
   if (!wanted || !unit || typeof unit !== 'object') return false;
   if (Array.isArray(unit.statuses) && unit.statuses.some(status => statusKey(status) === wanted)) return true;
   return STATUS_KEYS.some(key => unit[key] === true && statusKey(key) === wanted);
-}
-
-/** Reduce a status name, effect name, status id or key to lower-case letters and digits, so all four compare. */
-function statusKey(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 /** The unit a status leaf checks: the target, or else the condition's own unit (`self`, `caster` or `actor`). */

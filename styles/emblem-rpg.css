@@ -14001,6 +14001,42 @@ img.ect-name-badge {
 /* Several panel parts set their own display, which would otherwise show them while they carry `hidden`. */
 .dialog-editor [data-cs-panel] [hidden] { display: none; }
 
+/* Remove status card: the status name takes two columns and except always sits in the fourth, so a by name row
+   leaves the third empty. */
+.dialog-editor .ed-grid > .eff-rm-span2 { grid-column: span 2; }
+.dialog-editor .ed-grid > .eff-rm-col4 { grid-column: 4; }
+
+/* The amount cell: a 34px count box in front of the select for stacks and phases, both on the control line. */
+.dialog-editor .eff-rm-amount {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: var(--ed-control);
+}
+
+.dialog-editor .eff-rm-amount > :is(input, select) {
+  height: var(--ed-control);
+  min-height: var(--ed-control);
+  box-sizing: border-box;
+  font-size: var(--emblem-text-s);
+  line-height: calc(var(--ed-control) - 2px);
+}
+
+.dialog-editor .eff-rm-amount > input {
+  flex: 0 0 34px;
+  width: 34px;
+  padding: 1px 4px;
+  text-align: right;
+}
+
+.dialog-editor .eff-rm-amount > select {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  padding: 1px 6px;
+}
+
 /* Effect Parameters: built from the shared field system (.ed-section, .ed-field, .ed-panel and the
    .effect-param-row grid), so it reads as one tool with the effect editor. */
 .dialog-effect-params .ed-params-summary.is-none {

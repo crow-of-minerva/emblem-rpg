@@ -5,7 +5,7 @@
  * step fields. A custom status has its own panel of fields, plus an advanced json box for the ActiveEffect data the
  * panel has no field for. An animation step's animation is kept as JSON text in a hidden field that
  * openAnimationPayloadEditor fills. A step key that no field covers is dropped when the card is read and saved, and
- * so is a field the step's mode or scope hides, because a hidden field is not drawn at all.
+ * so is a field the step's other choices hide, because a hidden field is not drawn at all.
  * What the trigger supplies decides which steps, units and squares are offered (trigger-choices.mjs).
  */
 import { SYSTEM_ID } from '../../../../../contracts/protocol.mjs';
@@ -43,6 +43,14 @@ import { STATUS_EFFECTS, STATUS_KEYS, STATUS_NAMES, statusLabel } from '../../..
 import { triggerLabel } from '../../../../../config/triggers.mjs';
 import { DAMAGE_TYPES } from '../../../../../contracts/domains/damage.mjs';
 import { isEmpty as conditionIsEmpty, readsOtherUnit } from '../../../../../contracts/dsl/conditions.mjs';
+import {
+  REMOVE_AMOUNTS,
+  REMOVE_APPLIERS,
+  REMOVE_EXCEPTIONS,
+  REMOVE_TARGETS,
+  REMOVE_WHICH,
+  STATUS_KINDS
+} from '../../../../../contracts/dsl/remove-status.mjs';
 import {
   conditionLineHtml,
   conditionTemplateGroups,
@@ -383,6 +391,25 @@ const REAPPLICATION_OPTIONS = [
   { value: 'true', label: 'stack duration' }
 ];
 
+/** Who a remove status step clears: one unit, or every unit with a token on the scene. */
+const REMOVE_TARGET_LABELS = Object.freeze({ self: 'self', target: 'target', scene: 'whole map' });
+const REMOVE_TARGET_OPTIONS = REMOVE_TARGETS.map(t => ({ value: t, label: REMOVE_TARGET_LABELS[t] ?? t }));
+
+/** How a remove status step picks its statuses. */
+const REMOVE_WHICH_LABELS = Object.freeze({ name: 'by name', kind: 'by kind' });
+const REMOVE_WHICH_OPTIONS = REMOVE_WHICH.map(w => ({ value: w, label: REMOVE_WHICH_LABELS[w] ?? w }));
+
+/** How much of each status a remove status step takes off. Full removal is saved as no `amount` key. */
+const REMOVE_AMOUNT_LABELS = Object.freeze({ all: 'full removal', stacks: 'stack(s)', phases: 'phase(s)' });
+const REMOVE_AMOUNT_OPTIONS = REMOVE_AMOUNTS.map(a => ({ value: a, label: REMOVE_AMOUNT_LABELS[a] ?? a }));
+
+/** The applied by and except choices. The blank first choice, anyone or nobody, is saved as no key. */
+const REMOVE_APPLIER_OPTIONS = [{ value: '', label: 'anyone' }, ...REMOVE_APPLIERS.map(v => ({ value: v, label: v }))];
+const REMOVE_EXCEPTION_OPTIONS = [
+  { value: '', label: 'nobody' },
+  ...REMOVE_EXCEPTIONS.map(v => ({ value: v, label: v }))
+];
+
 /* -------------------------------------------- */
 /*  Field Table                                 */
 /* -------------------------------------------- */
@@ -394,9 +421,9 @@ const WHO_OR_AREA = { ...WHO, options: AOE_TARGET_OPTIONS };
 /**
  * The field descriptors for each step kind, used both to render a card and to read it back. Each carries the
  * `label` its card shows and the `tooltip` id `renderField` puts on that label. `unit` shows a measurement label
- * such as ms or sq inside the input, `span` makes the field take a whole grid row, and `required` leaves the blank
- * choice out of a selector. Animation, move, guard and if steps lay out their own bodies. A terrain edit shows its
- * "who" field from here, then its own panel.
+ * such as ms or sq inside the input, `span` makes the field take a whole grid row, `cell` adds classes to the
+ * field's grid cell, and `required` leaves the blank choice out of a selector. Animation, move, remove status, guard
+ * and if steps lay out their own bodies. A terrain edit shows its "who" field from here, then its own panel.
  * @type {Record<string, object[]>}
  */
 const FIELDS_BY_KIND = {
@@ -439,17 +466,19 @@ const FIELDS_BY_KIND = {
       tooltip: 'editor.faction.linked-tag', required: true }
   ],
   removeEffect: [
-    { name: 'scope', type: 'select', label: 'scope', tooltip: 'editor.remove.scope',
-      options: [{ value: 'token', label: 'this target' }, { value: 'global', label: 'every token' }] },
-    WHO,
+    { ...WHO, options: REMOVE_TARGET_OPTIONS, tooltip: 'editor.remove.who', required: true },
+    { name: 'which', type: 'select', options: REMOVE_WHICH_OPTIONS, label: 'which', tooltip: 'editor.remove.which',
+      required: true },
+    { name: 'count', type: 'number', label: 'count', min: 1, tooltip: 'editor.remove.count' },
+    { name: 'amount', type: 'select', options: REMOVE_AMOUNT_OPTIONS, label: 'amount', tooltip: 'editor.remove.amount',
+      required: true },
+    { name: 'appliedBy', type: 'select', options: REMOVE_APPLIER_OPTIONS, label: 'applied by',
+      tooltip: 'editor.remove.applied-by', required: true },
     { name: 'name', type: 'text', label: 'status name', placeholder: 'Marked', datalist: STATUS_NAMES,
-      tooltip: 'editor.remove.name' },
-    { name: 'placedByActor', type: 'select', options: TOKEN_REF_OPTIONS, label: 'placed by',
-      tooltip: 'editor.remove.placed-by' },
-    { name: 'excludeTarget', type: 'checkbox', label: 'spare the target', tooltip: 'editor.remove.exclude-target' },
-    { name: 'dispelHarmful', type: 'checkbox', label: 'dispel harmful', tooltip: 'editor.remove.dispel-harmful' },
-    { name: 'dispelBeneficial', type: 'checkbox', label: 'dispel beneficial',
-      tooltip: 'editor.remove.dispel-beneficial' }
+      tooltip: 'editor.remove.name', cell: 'eff-rm-span2' },
+    ...STATUS_KINDS.map(k => ({ name: k, type: 'checkbox', label: `all ${k}`, tooltip: `editor.remove.kind-${k}` })),
+    { name: 'except', type: 'select', options: REMOVE_EXCEPTION_OPTIONS, label: 'except',
+      tooltip: 'editor.remove.except', required: true, cell: 'eff-rm-col4' }
   ],
   animation: [
     { name: 'persistent', type: 'checkbox', label: 'persistent', tooltip: 'editor.animation.persistent' },
@@ -849,12 +878,13 @@ const LIST = '.ed-list[data-branch-list]';
 
 /**
  * One descriptor rendered through `renderField` for a card body grid. A descriptor marked `span` takes the whole
- * row.
+ * row, and the classes in its `cell` go on its cell.
  * @param {string} idPrefix       What makes the control's id unique within the dialog.
  */
 function fieldHtml(field, value, idPrefix) {
   const html = renderField(field, value, { ...FIELD_STYLE, emptyOption: field.required !== true, idPrefix });
-  return field.span ? html.replace('class="', 'class="ed-span ') : html;
+  const classes = [field.span ? 'ed-span' : '', field.cell ?? ''].filter(Boolean).join(' ');
+  return classes ? html.replace('class="', `class="${classes} `) : html;
 }
 
 /* -------------------------------------------- */
@@ -867,6 +897,7 @@ const AREA_WORDS = Object.freeze({
 const RESTORE_WORDS = Object.freeze({
   standard: 'standard action', bonus: 'bonus action', movement: 'movement', turn: 'whole turn'
 });
+const REMOVE_PIECE_WORDS = Object.freeze({ stacks: 'stack', phases: 'phase' });
 const MOVE_PAIR_LABELS = Object.freeze({ push: 'from', pull: 'toward', swap: 'with' });
 
 /** How a step's target reads in a summary line. */
@@ -914,18 +945,35 @@ function moveSummary(step) {
   }
 }
 
-/** The summary line of a remove-status step. */
+/**
+ * How a remove status card shows its step: by name or by kind, and the kinds it ticks. A step with no `which` shows
+ * by name when it has a name, and otherwise as a new step does: by kind, with all harmful ticked.
+ * @returns {{which: string, kinds: string[]}}
+ */
+function removeChoice(step) {
+  const kinds = Array.isArray(step.kinds) ? step.kinds : null;
+  if (REMOVE_WHICH.includes(step.which)) return { which: step.which, kinds: kinds ?? [] };
+  if (typeof step.name === 'string' && step.name.trim() !== '') return { which: 'name', kinds: [] };
+  return { which: 'kind', kinds: kinds ?? ['harmful'] };
+}
+
+/**
+ * The summary line of a remove status step: how much comes off, which statuses, who applied them, from whom, and who
+ * is spared. Every kind ticked reads as every status.
+ */
 function removeSummary(step) {
-  const dispels = [];
-  if (step.dispelHarmful) dispels.push('harmful');
-  if (step.dispelBeneficial) dispels.push('beneficial');
-  const what = dispels.length
-    ? `every ${dispels.join(' and ')} status${step.name ? ` and "${step.name}"` : ''}`
-    : (step.name ? `"${step.name}"` : 'a status');
-  const where = step.scope === 'global' ? 'every token' : targetSummary(step.target);
-  const placed = step.placedByActor ? ` placed by ${step.placedByActor}` : '';
-  const spared = step.scope === 'global' && step.excludeTarget ? ', sparing the target' : '';
-  return `remove ${what}${placed} from ${where}${spared}`;
+  const { which, kinds } = removeChoice(step);
+  const count = step.count ?? 1;
+  const piece = REMOVE_PIECE_WORDS[step.amount];
+  const amount = piece ? `${count} ${piece}${count === 1 ? '' : 's'} of ` : '';
+  const ticked = STATUS_KINDS.filter(k => kinds.includes(k));
+  const what = which === 'name' ? `"${step.name || '?'}"`
+    : ticked.length === STATUS_KINDS.length ? 'every status'
+    : `every ${ticked.join(' and ') || '?'} status`;
+  const applied = step.appliedBy ? ` applied by ${step.appliedBy}` : '';
+  const where = step.target === 'scene' ? 'every unit on the map' : targetSummary(step.target);
+  const except = step.except ? ` except ${step.except}` : '';
+  return `remove ${amount}${what}${applied} from ${where}${except}`;
 }
 
 /** The summary line of an animation step. */
@@ -1037,13 +1085,17 @@ const MOVE_FIELDS_BY_MODE = {
 const MOVE_COMMON_FIELDS = new Set(['target', 'mode']);
 
 /**
- * Whether a field belongs on a step's row of fields. A move step shows the fields its mode uses. A remove-status step
- * names a target only for one token, and spares the target only when it clears every token. A custom status shows
- * its id tag inside its panel rather than in the row.
+ * Whether a field gets a cell of its own on a step's card. A move step shows the fields its mode uses. A remove
+ * status step shows the status name when it removes by name and the three kind boxes when it removes by kind, and
+ * draws its count inside the amount cell. A custom status shows its id tag inside its panel rather than in the row.
  */
 function isStepFieldShown(step, name) {
-  if (step.kind === 'removeEffect' && name === 'target') return step.scope !== 'global';
-  if (step.kind === 'removeEffect' && name === 'excludeTarget') return step.scope === 'global';
+  if (step.kind === 'removeEffect') {
+    if (name === 'count') return false;
+    if (name === 'name') return step.which === 'name';
+    if (STATUS_KINDS.includes(name)) return step.which === 'kind';
+    return true;
+  }
   if (step.kind === 'applyEffect' && name === 'linkAnimationTag') return step.preset !== 'custom';
   if (step.kind !== 'moveToken' || MOVE_COMMON_FIELDS.has(name)) return true;
   const relevant = Object.hasOwn(MOVE_FIELDS_BY_MODE, step.mode) ? MOVE_FIELDS_BY_MODE[step.mode] : null;
@@ -1436,12 +1488,16 @@ function customStatusJsonHtml(step, data) {
 }
 
 /**
- * The value a descriptor shows for a step: restore-action boxes read the actions list, an area target shows as the
- * `area` choice with its panel beneath, and the reapplication select shows `durationStacks` as text.
+ * The value a descriptor shows for a step: restore-action boxes read the actions list, remove status kind boxes read
+ * the kinds list, an area target shows as the `area` choice with its panel beneath, and the reapplication select
+ * shows `durationStacks` as text.
  */
 function stepFieldValue(step, field) {
   if (step.kind === 'restoreAction' && ['standard', 'bonus', 'movement', 'turn'].includes(field.name)) {
     return Array.isArray(step.actions) && step.actions.includes(field.name);
+  }
+  if (step.kind === 'removeEffect' && STATUS_KINDS.includes(field.name)) {
+    return Array.isArray(step.kinds) && step.kinds.includes(field.name);
   }
   if (field.name === 'target' && isAreaTargetStep(step)) return 'area';
   if (step.kind === 'applyEffect' && field.name === 'durationStacks') return String(step.durationStacks === true);
@@ -1496,6 +1552,42 @@ function moveBodyHtml(step, idPrefix) {
     cells.splice(Math.max(0, cells.length - 1), 0, panel);
   }
   return `<div class="ed-grid ed-grid--3">${cells.join('')}</div>`;
+}
+
+/**
+ * A remove status card's amount cell: the count box in front of the amount select, under one label. Full removal
+ * has no count, so the box is left out.
+ * @param {object} countField     The count descriptor.
+ * @param {object} amountField    The amount descriptor.
+ * @param {string} idPrefix       What makes the controls' ids unique within the dialog.
+ */
+function removeAmountHtml(step, countField, amountField, idPrefix) {
+  const amount = REMOVE_AMOUNTS.includes(step.amount) ? step.amount : 'all';
+  const count = amount === 'all' ? '' : `<input type="number" step="1" min="${countField.min}"`
+    + ` id="${idPrefix}${countField.name}" data-step-field="${countField.name}" value="${escapeHtml(step.count ?? 1)}"`
+    + ` aria-label="${escapeHtml(countField.label)}" data-tooltip="${escapeHtml(getTooltip(countField.tooltip))}" />`;
+  const select = `<select id="${idPrefix}${amountField.name}" data-step-field="${amountField.name}"`
+    + ` aria-label="${escapeHtml(amountField.label)}">${optionMarkup(amountField.options, amount)}</select>`;
+  return `<div class="ed-field">${labelSpan(amountField.label, amountField.tooltip)}`
+    + `<span class="eff-rm-amount">${count}${select}</span></div>`;
+}
+
+/**
+ * The body of a remove status card, on four columns like the apply status card. The first row is who, which, amount
+ * and applied by. The second holds the status name or the three kind boxes, then except in the fourth column, greyed
+ * out unless the step clears the whole map.
+ * @param {string} idPrefix       What makes the controls' ids unique within the dialog.
+ */
+function removeBodyHtml(step, idPrefix) {
+  const shown = { ...step, ...removeChoice(step) };
+  const fields = FIELDS_BY_KIND.removeEffect;
+  const cells = fields.filter(f => isStepFieldShown(shown, f.name)).map(f => {
+    if (f.name === 'amount') return removeAmountHtml(shown, fields.find(c => c.name === 'count'), f, idPrefix);
+    if (f.name !== 'except' || shown.target === 'scene') return fieldHtml(f, stepFieldValue(shown, f), idPrefix);
+    const greyed = fieldHtml({ ...f, cell: `${f.cell} ed-field--disabled` }, undefined, idPrefix);
+    return greyed.replace('<select ', '<select disabled ');
+  });
+  return `<div class="ed-grid ed-grid--4">${cells.join('')}</div>`;
 }
 
 /** An add-step control: the button, and the search box `attachAddStepPicker` reveals beside it. */
@@ -1555,8 +1647,8 @@ function ifBodyHtml(step, idx, parentPath, depth) {
 }
 
 /**
- * The body of one step card. Animations, moves, guards and ifs lay themselves out. Every other kind shows the
- * descriptors isStepFieldShown keeps in a three-column grid, then the area or terrain panel its kind adds. An
+ * The body of one step card. Animations, moves, remove statuses, guards and ifs lay themselves out. Every other kind
+ * shows the descriptors isStepFieldShown keeps in a three-column grid, then the area or terrain panel its kind adds. An
  * apply-status card uses four columns and ends with its stock status's description, or with the custom status
  * panel, whose phases field reads the duration in the status's own data.
  * @param {number} idx            Its position in the list it sits in.
@@ -1569,6 +1661,7 @@ function stepBodyHtml(step, idx, parentPath, depth, custom = null) {
   switch (step.kind) {
     case 'animation': return animationBodyHtml(step, idPrefix);
     case 'moveToken': return moveBodyHtml(step, idPrefix);
+    case 'removeEffect': return removeBodyHtml(step, idPrefix);
     case 'guard': return '<div class="ed-summary">runs on the target</div>';
     case 'if': return ifBodyHtml(step, idx, parentPath, depth);
     default: break;
@@ -1849,6 +1942,28 @@ function readCustomStatus(cardEl, step) {
 }
 
 /**
+ * Turn a remove status card's fields into the step's keys. The kind boxes become `kinds`, and each key the card's
+ * other choices leave unused is dropped: the name or the kinds, a count without stacks or phases, `amount` for full
+ * removal, and except unless the step clears the whole map. A card just switched to by kind has no boxes drawn yet,
+ * so it ticks all harmful, as a new step does.
+ * @param {object} step          The step read so far, which this completes in place.
+ */
+function readRemoveFields(cardEl, step) {
+  const ticked = STATUS_KINDS.filter(k => step[k] === true);
+  const boxesDrawn = !!ownStepField(cardEl, STATUS_KINDS[0]);
+  for (const k of STATUS_KINDS) delete step[k];
+  if (step.which === 'kind') {
+    delete step.name;
+    step.kinds = boxesDrawn ? ticked : ['harmful'];
+  }
+  if (step.amount !== 'stacks' && step.amount !== 'phases') {
+    delete step.amount;
+    delete step.count;
+  }
+  if (step.target !== 'scene') delete step.except;
+}
+
+/**
  * Read the panel a step kind adds to its card back onto the step.
  * @param {string} kind          The step kind, which decides which panel is there to read.
  * @param {object} step          The step read so far, which this completes in place.
@@ -1880,6 +1995,8 @@ function readStepPanels(cardEl, kind, step) {
     }
     step.actions = actions;
   }
+
+  if (kind === 'removeEffect') readRemoveFields(cardEl, step);
 
   if (kind === 'applyEffect') {
     if (step.durationStacks === 'true') step.durationStacks = true;
@@ -2136,7 +2253,8 @@ function currentTrigger(dialogEl) {
 /** The selects whose choices name a unit or a square, on step cards, area panels and move-by-rule panels. */
 const REFERENCE_SELECTS = [
   'select[data-step-field="target"]', 'select[data-step-field="pair"]', 'select[data-step-field="location"]',
-  'select[data-step-field="placedByActor"]', 'select[data-area-field="center"]', 'select[data-tg-field="anchor"]'
+  'select[data-step-field="appliedBy"]', 'select[data-step-field="except"]', 'select[data-area-field="center"]',
+  'select[data-tg-field="anchor"]'
 ].join(', ');
 
 /**
@@ -2367,7 +2485,8 @@ function attachStepChanges(dialogEl, state, repaint) {
     const sel = ev.target.closest(
       'select[data-step-field="preset"], select[data-step-field="target"], '
       + '.ed-card[data-step-kind="moveToken"] select[data-step-field="mode"], '
-      + '.ed-card[data-step-kind="removeEffect"] select[data-step-field="scope"], '
+      + '.ed-card[data-step-kind="removeEffect"] select[data-step-field="which"], '
+      + '.ed-card[data-step-kind="removeEffect"] select[data-step-field="amount"], '
       + '.ed-card[data-step-kind="animation"] input[data-step-field="persistent"], '
       + '.ed-card[data-step-kind="animation"] input[data-step-field="await"], '
       + '.ed-card[data-step-kind="terrainEdit"] select[data-step-field="effect"], '
@@ -2787,9 +2906,9 @@ function readEntryFromDom(dialogEl, source = {}) {
 /* -------------------------------------------- */
 
 /**
- * A newly added step of a kind, with starting values that addStepRows then fits to the trigger. Spawn token, terrain
- * edit and remove status steps start empty and block Save until they are filled in, and a floating text step shows
- * nothing until it has text. A change faction step comes with the status it is tied to, as a list of two steps.
+ * A newly added step of a kind, with starting values that addStepRows then fits to the trigger. Spawn token and
+ * terrain edit steps start empty and block Save until they are filled in, and a floating text step shows nothing
+ * until it has text. A change faction step comes with the status it is tied to, as a list of two steps.
  */
 function makeStepDefault(kind) {
   switch (kind) {
@@ -2803,7 +2922,7 @@ function makeStepDefault(kind) {
         customData: turnedStatusTemplate() },
       { kind, target: 'target', actorType: 'Ally', linkStatusTag: 'turned' }
     ];
-    case 'removeEffect': return { kind, target: 'target', name: '' };
+    case 'removeEffect': return { kind, target: 'target', which: 'kind', kinds: ['harmful'] };
     case 'animation':    return { kind, animation: { steps: [] } };
     case 'floatingText': return { kind, target: 'target', text: '' };
     case 'moveToken':    return { kind, target: 'target', mode: 'push', pair: 'self', distance: '1' };
