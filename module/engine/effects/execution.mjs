@@ -84,15 +84,18 @@ export class EffectExecutionService {
    * the run goes on. The GM hears about it, and about each plan error, once.
    * `combatContext` (exchanges only) reaches the health reads and nothing else. It is kept out of the runtime, which
    * is sent to every client in presentation messages.
+   * `rolls` (retractable item uses only) is `{replay, journal}`: a chance or formula roll found in `replay` under
+   * the key of the step that makes it is reused instead of rolled, and every value drawn is written to `journal`.
    */
   async run({
     entries, triggers, runtime, context = {}, activatedItem = null, resources = null, audience = null,
-    combatContext = null
+    combatContext = null, rolls = null
   }) {
     const executionRuntime = { ...runtime };
     const chanceRolls = {};
     for (const requirement of effectChanceRequirements(entries)) {
-      chanceRolls[requirement.key] = await this.effects.randomPercent();
+      chanceRolls[requirement.key] = await drawRoll(rolls, `chance:${requirement.key}`,
+        () => this.effects.randomPercent());
     }
     const plan = planEffectEntries({ entries, triggers, context, activatedItem, chanceRolls });
     const identities = effectEntryIdentities(entries);
@@ -105,7 +108,7 @@ export class EffectExecutionService {
       this.#report({ ...warning, path: 'entry', kind: '' }, entries, identities, context, { notify: false });
     }
     const held = {
-      runtime: executionRuntime, context, resources, audience: noticeAudience(audience), combatContext,
+      runtime: executionRuntime, context, resources, audience: noticeAudience(audience), combatContext, rolls,
       blowCrit: (triggers ?? []).some(trigger => BLOW_CRIT_TRIGGERS.has(trigger)) && context.isCrit === true
     };
     const outcomes = [];
@@ -129,8 +132,8 @@ export class EffectExecutionService {
     return settledRun(outcomes, plan.errors, null);
   }
 
-  async #execute(operation, { runtime, context, resources, audience, combatContext, blowCrit }) {
-    const step = await this.#prepareStep(operation.step, context, operation);
+  async #execute(operation, { runtime, context, resources, audience, combatContext, rolls, blowCrit }) {
+    const step = await this.#prepareStep(operation.step, context, operation, rolls);
     const prepared = Object.freeze({ ...operation, step: Object.freeze(step) });
     if (operation.channel === 'presentation') {
       const projected = await this.effects.preparePresentation?.(prepared, runtime) ?? prepared;
@@ -140,11 +143,13 @@ export class EffectExecutionService {
       return { ok: true, presentation: shown, kind: step.kind };
     }
     if (operation.channel === 'control') {
-      if (step.kind === 'wait') await this.wait(effectWait(await this.#rollAmount(step.ms ?? 0, context)));
+      if (step.kind === 'wait') {
+        await this.wait(effectWait(await this.#rollAmount(step.ms ?? 0, context, stepDraw(rolls, operation, 'ms'))));
+      }
       return { ok: true, control: true, kind: step.kind };
     }
     if (step.kind === 'damage' || step.kind === 'heal') {
-      return this.#settleHealth(prepared, runtime, context, resources, combatContext, blowCrit);
+      return this.#settleHealth(prepared, runtime, context, resources, combatContext, blowCrit, rolls);
     }
     if (step.kind === 'spawnToken') return this.#spawn(prepared, runtime, resources);
     if (aimsAtMissingTarget(step, runtime)) return noTargetOutcome({ kind: step.kind });
@@ -232,17 +237,19 @@ export class EffectExecutionService {
     }
   }
 
-  async #prepareStep(step, context) {
+  async #prepareStep(step, context, operation, rolls = null) {
     const prepared = resolveEffectValue(step, context) ?? {};
     if (step.kind === 'modShield') {
-      prepared.formula = await this.#rollAmount(step.formula ?? 0, context);
+      prepared.formula = await this.#rollAmount(step.formula ?? 0, context, stepDraw(rolls, operation, 'formula'));
       if (step.cap !== undefined && step.cap !== null && step.cap !== '') {
-        prepared.cap = await this.#rollAmount(step.cap, context);
+        prepared.cap = await this.#rollAmount(step.cap, context, stepDraw(rolls, operation, 'cap'));
       }
     }
     if (step.kind === 'moveToken') {
       for (const key of ['distance', 'dx', 'dy']) {
-        if (step[key] !== undefined) prepared[key] = await this.#rollAmount(step[key], context);
+        if (step[key] !== undefined) {
+          prepared[key] = await this.#rollAmount(step[key], context, stepDraw(rolls, operation, key));
+        }
       }
     }
     return prepared;
@@ -257,7 +264,8 @@ export class EffectExecutionService {
    * the striker's own critical blow, so an On Struck, On Death or On Kill reply never doubles on it. An unknown
    * damage type deals untyped damage (effectDamageType).
    */
-  async #settleHealth(operation, runtime, context, resources = null, combatContext = null, blowCrit = false) {
+  async #settleHealth(operation, runtime, context, resources = null, combatContext = null, blowCrit = false,
+    rolls = null) {
     const step = operation.step;
     const named = await this.effects.resolveTargets(step.target, runtime);
     const targets = livingTargets(named, runtime);
@@ -267,9 +275,11 @@ export class EffectExecutionService {
     const echoed = step.kind === 'heal' && (runtime.healEchoes ?? []).length > 0 ? [runtime.self?.actorUuid] : [];
     const busy = claimWrites(resources, [...targets.map(target => target.actorUuid), ...echoed]);
     if (busy) return busy;
-    const rolledAmount = await this.#rollAmountDetailed(step.formula ?? '0', context);
+    const rolledAmount = await this.#rollAmountDetailed(step.formula ?? '0', context,
+      stepDraw(rolls, operation, 'formula'));
     const amount = rolledAmount.total;
-    const stanceAmount = await this.#rollAmount(step.kind === 'heal' ? step.stnAmount ?? 0 : step.brk ?? 0, context);
+    const stanceAmount = await this.#rollAmount(step.kind === 'heal' ? step.stnAmount ?? 0 : step.brk ?? 0, context,
+      stepDraw(rolls, operation, 'stance'));
     for (const target of targets) {
       const snapshot = await this.effects.healthSnapshot(target.actorUuid, target.tokenUuid, runtime, combatContext);
       if (!snapshot) continue;
@@ -375,18 +385,21 @@ export class EffectExecutionService {
     return { ok: outcomes.every(outcome => outcome?.ok === true), outcomes };
   }
 
-  async #rollAmount(value, context) {
-    return (await this.#rollAmountDetailed(value, context)).total;
+  async #rollAmount(value, context, draw = null) {
+    return (await this.#rollAmountDetailed(value, context, draw)).total;
   }
 
-  async #rollAmountDetailed(value, context) {
+  /**
+   * Work out one step amount. A fixed number is used as it is; a dice formula is rolled, or taken from the run's
+   * `rolls` when `draw` names a roll a retractable use already made.
+   */
+  async #rollAmountDetailed(value, context, draw = null) {
     const resolved = resolveEffectAmountFormula(value, context);
     if (resolved.fixed !== null) {
       return { total: resolved.fixed, formula: resolved.formula, rolled: false };
     }
-    return {
-      total: await this.effects.rollFormula(resolved.formula), formula: resolved.formula, rolled: true
-    };
+    const total = await drawRoll(draw?.rolls, draw?.key, () => this.effects.rollFormula(resolved.formula));
+    return { total, formula: resolved.formula, rolled: true };
   }
 
   async #presentSafely(message) {
@@ -507,6 +520,23 @@ function adoptSpawn(runtime, spawned) {
   if (!spawned?.tokenUuid) return;
   runtime.lastSpawnedTokenUuid = spawned.tokenUuid;
   runtime.lastSpawnedActorUuid = spawned.actorUuid;
+}
+
+/** Where one step's roll is looked up and written in a run's `rolls`: the entry, the step's path and the field. */
+function stepDraw(rolls, operation, field) {
+  if (!rolls) return null;
+  return { rolls, key: `formula:${operation.entryIdentity}:${operation.path.join('.')}:${field}` };
+}
+
+/**
+ * Roll one value, or reuse the one `rolls.replay` holds under `key`. With `rolls`, the value is written to
+ * `rolls.journal` under the same key.
+ */
+async function drawRoll(rolls, key, roll) {
+  if (!rolls || !key) return roll();
+  const value = Object.hasOwn(rolls.replay ?? {}, key) ? Number(rolls.replay[key]) : await roll();
+  rolls.journal[key] = value;
+  return value;
 }
 
 /** A wait or delay in milliseconds, held between 0 and MAX_EFFECT_WAIT_MS. */

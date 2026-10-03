@@ -28,6 +28,7 @@ import {
   snapshotStillCurrent, teleportOutcome, turnChangesLanded
 } from './movement-settlements.mjs';
 import { reportFoundryError , FoundryDiagnostics } from '../services/diagnostics.mjs';
+import { commitRetraction } from './retractions.mjs';
 
 /* -------------------------------------------- */
 /*  Movement constants                          */
@@ -306,7 +307,8 @@ export class FoundryMovementRepository {
    * Commit the preview position with the movement charge engine/movement worked out, then keep the plan open or
    * close it. A resumed leg writes only the Actor's turn. A close goes through closeMovementPlan
    * (document-writes/movement-settlements.mjs), which also releases the movement lock and finishes the plan's end.
-   * A cancelled close removes the effects that lapse on cancel, and a confirmed one keeps them.
+   * A cancelled close removes the effects that lapse on cancel, and a confirmed one keeps them. A commit that ends
+   * the turn makes the unit's kept retractable item use final (commitRetraction).
    */
   async commit(snapshot, resolution, {
     resume = true, endTurn = !resume, canter = false, charges = true, anchor = false,
@@ -315,6 +317,7 @@ export class FoundryMovementRepository {
     const token = await resolveToken(snapshot.tokenUuid);
     const actor = token?.actor;
     if (!token || !actor || !snapshotStillCurrent(token, actor, snapshot)) return false;
+    if (endTurn) await commitRetraction(actor, operation);
     const changes = {
       'system.turn.movementSpent': planMovementSpend({
         priorSpent: snapshot.movementSpent, legCost: resolution.cost, charges
@@ -454,11 +457,15 @@ export class FoundryMovementRepository {
     }) !== false;
   }
 
-  /** Spend the action, the bonus and the movement a crossing costs, and close the plan on the far side. */
+  /**
+   * Spend the action, the bonus and the movement a crossing costs, and close the plan on the far side. The crossing
+   * ends the turn, so the unit's kept retractable item use becomes final (commitRetraction).
+   */
   async settleCrossingTurn(snapshot, { operation = null } = {}) {
     const token = await resolveToken(snapshot.movement.tokenUuid);
     const actor = token?.actor;
     if (!token || !actor) return false;
+    await commitRetraction(actor, operation);
     const changes = {
       'system.turn.actionAvailable': false,
       'system.turn.bonusActionAvailable': false,

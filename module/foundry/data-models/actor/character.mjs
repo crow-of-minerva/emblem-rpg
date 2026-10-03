@@ -198,7 +198,12 @@ function characterTurnField({ F, number }) {
     movementControllerId: new F.StringField({ initial: '' }),
     movementAnchorX: number(0),
     movementAnchorY: number(0),
-    movementPlanStartedAt: number(0, { min: 0 })
+    movementPlanStartedAt: number(0, { min: 0 }),
+    // The unit's kept retractable item use and what its items remember this turn, as JSON text
+    // (game/items/retraction.mjs). Null when there is neither.
+    retraction: new F.StringField({ required: false, nullable: true, blank: false, initial: null }),
+    // The uuids of the items whose skill check failed this phase, which can't be used again until the next one.
+    lockedItems: new F.ArrayField(new F.StringField(), { initial: () => [] })
   });
 }
 

@@ -15,7 +15,7 @@ import {
 import { isInnateCharacterItem } from '../../game/character/inventory.mjs';
 import { isDroppableItem } from '../../game/objects/rules.mjs';
 import { emitBg3HudAction, showBg3EffectDescription } from './components.mjs';
-import { hydrateBg3Cell, projectBg3Cell, projectBg3Tooltip } from './document-projection.mjs';
+import { bg3ItemLocked, hydrateBg3Cell, projectBg3Cell, projectBg3Tooltip } from './document-projection.mjs';
 import {
   EmblemBg3AutoPopulate,
   EmblemBg3AutoSort,
@@ -100,9 +100,10 @@ export class EmblemBg3Adapter {
 
   async transformItemToCellData(item) { return projectBg3Cell(item); }
   async decorateCellElement(element, cellData) {
-    await presentation.decorateCell(element, await hydrateBg3Cell(cellData));
+    const cell = await hydrateBg3Cell(cellData);
+    await presentation.decorateCell(element, cell?.uuid ? { ...cell, _emblemLocked: bg3ItemLocked(cell.uuid) } : cell);
   }
-  updateCellDepletionStates() { presentation.updateDepletion(ui.BG3HUD_APP); }
+  updateCellDepletionStates() { presentation.updateDepletion(ui.BG3HUD_APP, bg3ItemLocked); }
   shouldAutoAddItem(item) { return isBg3HotbarItem(item); }
   resolveHotbarMembershipOnItemUpdate(item) { return isBg3HotbarItem(item) ? 'add' : 'remove'; }
 

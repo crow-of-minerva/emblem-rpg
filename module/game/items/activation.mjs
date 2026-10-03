@@ -6,7 +6,8 @@ import {
   MELEE_REACH_ABILITIES,
   ITEM_ACTIVATION_SUPPORT,
   ITEM_ACTIVATION_TRIGGERS,
-  PROFICIENCY_RANK_LETTERS
+  PROFICIENCY_RANK_LETTERS,
+  retractableAllowed
 } from '../../contracts/domains/items.mjs';
 import { RALLY_GRANT_KEY } from '../../contracts/domains/progression.mjs';
 import { GROWTH_KEYS, PROFICIENCIES, STATS } from '../../contracts/domains/characters.mjs';
@@ -191,6 +192,8 @@ export function deriveActivationEnvelope(input = {}) {
     usesType: String(system.uses?.type ?? 'limited'),
     usesCurrent: Math.max(0, Number(system.uses?.current) || 0),
     consumable: String(item.type ?? '') === CONSUMABLE_DOCUMENT_TYPE,
+    // An item marked retractable that isn't a bonus action targeting Self is used like any other.
+    retractable: system.retractable === true && retractableAllowed({ actionType, targetType }),
     dealsDamage,
     strikesObjects: dealsDamage && targetType !== 'Friendly',
     authored: (system.effects ?? []).some(entry => Array.isArray(entry?.action?.steps)
@@ -224,14 +227,19 @@ export function explorationAllowsItem(item = {}) {
 /**
  * Check caster and item legality for engine/items/activation.mjs and the hotbar entry in ui/controls/targeting.mjs,
  * before target geometry.
- * @param {object} input The envelope and the owner's turn state, plus `item` (the Item's data) and
- *   `proficiencyTotal` (the caster's compiled total in the Item's `system.weapon.req` proficiency).
- * @returns {{ok: boolean, code: string, data?: object}} A Spell rank refusal names the school and rank.
+ * @param {object} input The envelope and the owner's turn state, plus `item` (the Item's data),
+ *   `proficiencyTotal` (the caster's compiled total in the Item's `system.weapon.req` proficiency) and `locked`
+ *   (the item's skill check failed this phase, so it can't be used again until the next one).
+ * @returns {{ok: boolean, code: string, data?: object}} A Spell rank refusal names the school and rank, and a locked
+ *   item refusal names the item.
  */
 export function validateActivationLegality(input = {}) {
   const envelope = input.envelope;
   if (input.controlled !== true) return verdict(false, RESULT_CODES.OWNER_REQUIRED);
   if (input.turnOver === true) return verdict(false, RESULT_CODES.ITEM_ACTION_UNAVAILABLE);
+  if (input.locked === true) {
+    return verdict(false, RESULT_CODES.ITEM_LOCKED_THIS_PHASE, { itemName: String(envelope.itemName ?? '') });
+  }
   if (envelope.actionType === 'Standard Action' && input.standardAvailable !== true) {
     return verdict(false, RESULT_CODES.ITEM_ACTION_UNAVAILABLE);
   }
@@ -875,17 +883,17 @@ export function activationHoldsCastArt(input = {}) {
 }
 
 /**
- * What the unit's turn does after an activation, for engine/items/activation.mjs. Dash keeps its movement
- * plan, and a Bonus Action keeps the unit on its square with no movement. Other actions offer the Extra Action, then
- * Canter after a Spell or a staff (activationAllowsCanter), then end the turn, in the order resolveCombatContinuation
- * in game/combat/exchange.mjs uses after an attack. Multiattack only follows an attack.
- * @param {object} input Plain action cost and live turn state, plus `cantersAfter`, `hasCanter` and the
- *   `movementRemaining` the walked leg left.
+ * What the unit's turn does after an activation, for engine/items/activation.mjs. A retractable item keeps its
+ * movement plan open, and a Bonus Action keeps the unit on its square with no movement. Other actions offer the Extra
+ * Action, then Canter after a Spell or a staff (activationAllowsCanter), then end the turn, in the order
+ * resolveCombatContinuation in game/combat/exchange.mjs uses after an attack. Multiattack only follows an attack.
+ * @param {object} input Plain action cost and live turn state, plus `retractable`, `cantersAfter`, `hasCanter` and
+ *   the `movementRemaining` the walked leg left.
  * @returns {Readonly<object>} The continuation every client reads.
  */
 export function resolveActivationContinuation(input = {}) {
   if (input.sourceDefeated === true) return turnContinuation(COMBAT_CONTINUATIONS.END_TURN);
-  if (input.unlocked === true) return turnContinuation(COMBAT_CONTINUATIONS.MOVEMENT);
+  if (input.retractable === true) return turnContinuation(COMBAT_CONTINUATIONS.MOVEMENT);
   if (input.actionType === 'Bonus Action') return turnContinuation(COMBAT_CONTINUATIONS.BONUS_ACTION);
   if (input.explorationActive === true) return turnContinuation(COMBAT_CONTINUATIONS.EXPLORATION);
   if (input.extraActionUsed !== true && Math.max(0, Number(input.extraActionsRemaining) || 0) > 0) {

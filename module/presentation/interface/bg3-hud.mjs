@@ -177,7 +177,10 @@ function clearLegacyNoFadeStyles(app, root, container) {
   container.style.removeProperty?.('transition-duration');
 }
 
-/** Restore equipped, active-art, and depletion markers after Core replaces a cell. */
+/**
+ * Restore equipped, active-art, and depletion markers after Core replaces a cell. An item locked for the phase
+ * (`_emblemLocked`) is greyed like a depleted one.
+ */
 export async function decorateBg3Cell(element, cellData, activeItem = undefined, cellId = '') {
   if (!element || !cellData) return;
   const facts = cellData;
@@ -200,17 +203,21 @@ export async function decorateBg3Cell(element, cellData, activeItem = undefined,
     element.style.removeProperty?.('--emblem-active-color');
   }
   element.classList.toggle('emblem-active-weapon-art', facts._emblemIsActiveWepArt === true);
-  element.classList.toggle('emblem-depleted', facts.depleted === true || facts.uses?.value === 0);
+  element.classList.toggle('emblem-depleted',
+    facts.depleted === true || facts.uses?.value === 0 || facts._emblemLocked === true);
   element.dataset.equipped = equipped ? 'true' : 'false';
   element.querySelectorAll('img, video').forEach(image => image.style.imageRendering = 'pixelated');
 }
 
-/** Update depletion without requesting a full HUD rebuild. */
-export function updateBg3CellDepletionStates(app) {
+/**
+ * Update depletion without requesting a full HUD rebuild. `locked(uuid)` says whether a cell's item failed its skill
+ * check this phase; its cell is greyed too, but its uses count keeps its colour.
+ */
+export function updateBg3CellDepletionStates(app, locked = () => false) {
   for (const cell of allGridCells(app)) {
     const uses = cell?.data?.uses;
     const depleted = Boolean(cell?.data?.depleted || (uses?.max > 0 && uses.value <= 0));
-    cell?.element?.classList?.toggle('emblem-depleted', depleted);
+    cell?.element?.classList?.toggle('emblem-depleted', depleted || locked(cell?.data?.uuid) === true);
     cell?.element?.querySelector?.('.hotbar-item-uses')?.classList?.toggle('depleted', depleted);
   }
 }

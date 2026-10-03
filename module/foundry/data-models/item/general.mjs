@@ -122,6 +122,9 @@ export class ItemDataModel extends foundry.abstract.TypeDataModel {
         dc: number(10)
       }),
       actionType: new F.StringField({ initial: 'Standard Action', choices: ACTION_TYPES }),
+      // Whether a use can be taken back with Cancel until the unit moves or acts again. Only a bonus action that
+      // targets Self may be retractable (retractableAllowed in contracts/domains/items.mjs).
+      retractable: bool(false),
       uses: new F.SchemaField({
         current: number(0), max: number(0),
         type: new F.StringField({ initial: 'limited', choices: USE_TYPES }),

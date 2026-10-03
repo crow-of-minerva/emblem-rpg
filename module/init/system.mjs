@@ -187,6 +187,7 @@ import {
   revertFactionLink
 } from '../foundry/adapters/document-writes/effect-execution.mjs';
 import { FoundryEncounterRepository } from '../foundry/adapters/document-writes/encounters.mjs';
+import { FoundryRetractionRepository } from '../foundry/adapters/document-writes/retractions.mjs';
 import { FoundryDevelopmentRepository } from '../foundry/adapters/document-writes/development.mjs';
 import { FoundryItemActivationRepository } from '../foundry/adapters/projections/items.mjs';
 import { FoundryMovementRepository } from '../foundry/adapters/document-writes/movement.mjs';
@@ -532,9 +533,10 @@ export function createSystemRuntime() {
    * completeStartup() below undoes any command the host's last session left unfinished, before commands are accepted.
    * If an undo fails, the GM sees one notice and the console names the documents.
    */
+  const documentSnapshots = new FoundryDocumentSnapshots();
   const operations = new OperationRecovery({ diagnostics,
     store: new FoundryOperationStore(),
-    snapshots: new FoundryDocumentSnapshots(),
+    snapshots: documentSnapshots,
     notifyGm: () => {
       if (localUserIsActiveGm()) notifications.show(NOTIFICATION_IDS.OPERATION_RESTORE_FAILED);
     }
@@ -794,6 +796,8 @@ export function createSystemRuntime() {
   registerCommands(createItemActivationCommandContribution({ diagnostics,
     activations: activationProjection,
     settlement: activationSettlement,
+    // Taking a retractable use back writes its saved old values through the same service the undo records use.
+    retractions: new FoundryRetractionRepository({ snapshots: documentSnapshots }),
     effects: effectExecution,
     checks,
     continuations: { getSnapshot: tokenUuid => combatState.getContinuationSnapshot(tokenUuid) },

@@ -5,7 +5,6 @@ import {
   ITEM_ACTIVATION_PRESENTATION_BEATS,
   ITEM_ACTIVATION_TIMING,
   ITEM_USE_PROFICIENCY_HIT_RATIO,
-  UNLOCKED_ACTIVATION_ITEM_NAME,
   itemActivationPresentationMessage,
   normalizeItemActivationIntent
 } from '../../contracts/domains/items.mjs';
@@ -45,6 +44,7 @@ import {
   validateGroundPlacement,
   validateMountActivation
 } from '../../game/items/activation.mjs';
+import { activationCheckFailed, rememberedCheck } from '../../game/items/retraction.mjs';
 import {
   buildSavingThrow,
   buildSkillCheck,
@@ -68,19 +68,21 @@ import { recordDiagnostic, requirePorts, DIAGNOSTIC_SEVERITIES } from '../../con
 /* -------------------------------------------- */
 
 /**
- * The ITEMS.ACTIVATE command, registered with CommandDispatcher from init/system.mjs. It arrives through the public
- * API's `items.activate` (api/facade.mjs), from the targeting controls (ui/controls/targeting.mjs) and the Enemy AI.
+ * The ITEMS.ACTIVATE and ITEMS.RETRACT commands, registered with CommandDispatcher from init/system.mjs. A use
+ * arrives through the public API's `items.activate` (api/facade.mjs), from the targeting controls
+ * (ui/controls/targeting.mjs) and the Enemy AI. Taking a use back arrives through `items.retract`, which the Cancel
+ * key calls from ui/controls/movement.mjs.
  */
 export function createItemActivationCommandContribution({
-  diagnostics, activations, settlement, effects, checks, continuations, presentation, checkPresentation, skills,
-  support, events, progression, movements, inventory, defeats, objects, authority, wait
+  diagnostics, activations, settlement, retractions, effects, checks, continuations, presentation,
+  checkPresentation, skills, support, events, progression, movements, inventory, defeats, objects, authority, wait
 }) {
-  requirePorts('createItemActivationCommandContribution', { diagnostics, activations, settlement, effects, checks,
-    continuations, presentation, checkPresentation, skills, support, events, progression, movements, inventory,
-    defeats, objects, wait });
+  requirePorts('createItemActivationCommandContribution', { diagnostics, activations, settlement, retractions,
+    effects, checks, continuations, presentation, checkPresentation, skills, support, events, progression,
+    movements, inventory, defeats, objects, wait });
   const services = { diagnostics,
-    activations, settlement, effects, checks, continuations, presentation, checkPresentation, skills, support,
-    events, progression, movements, inventory, defeats, objects, wait
+    activations, settlement, retractions, effects, checks, continuations, presentation, checkPresentation, skills,
+    support, events, progression, movements, inventory, defeats, objects, wait
   };
   const authorize = createCommandAuthorization(authority);
   return [
@@ -91,7 +93,12 @@ export function createItemActivationCommandContribution({
       concurrencyKeys: async context => [...await activations.resourceKeys(context.payload), KARMA_LEDGER_RESOURCE_KEY],
       handler: context => activateItem(context, services)
     },
-
+    {
+      id: COMMAND_IDS.ITEMS.RETRACT,
+      authorize: authorize.tokenController(payload => payload.tokenUuid, { requirePlan: true }),
+      concurrencyKeys: context => movements.resourceKeys(String(context.payload?.tokenUuid ?? '')),
+      handler: context => retractItem(context, services)
+    }
   ];
 }
 
@@ -113,16 +120,26 @@ async function activateItem(context, services) {
 
   // The item-use data plus this command's operation, which records every write so a failed use can be undone.
   const owned = { ...snapshot, operation: context.operation ?? null };
-  return deliverActivatedItem(context, services, owned, intent, isUnlockedActivation(snapshot));
+  return deliverActivatedItem(context, services, owned, intent);
 }
 
 /**
  * Run one item use on the host client: the opening animation, on-use passives, effects on each target, costs, XP
  * and what the unit does next. Then remove the units it defeated, pause for the animation, and end the turn if the
  * use ends it. If the handler refuses or throws, every change the use made is undone.
+ *
+ * A retractable item (`envelope.retractable`) leaves the movement plan open, with no XP, closing pause or turn end.
+ * Its use is kept on the unit with the undo record of everything it wrote, so Cancel can take it back (retractItem),
+ * and the item's uses are spent only when the use becomes final. Any other use makes a kept use final first.
  */
-async function deliverActivatedItem(context, services, snapshot, intent, unlocked) {
-  const cinematic = intent.cinematic === true && !unlocked;
+async function deliverActivatedItem(context, services, snapshot, intent) {
+  const retractable = snapshot.envelope.retractable === true;
+  // A unit keeps one use at most, so a retractable use made while another is kept is final straight away.
+  const keepsUse = retractable && snapshot.source.retraction.pending !== true
+    && typeof context.operation?.retain === 'function';
+  const remembered = keepsUse ? snapshot.source.retraction.memory : null;
+  const rolls = keepsUse ? { replay: remembered?.rolls ?? {}, journal: {} } : null;
+  const cinematic = intent.cinematic === true && snapshot.item.skipCinematic !== true;
   const deliveries = [];
   const claims = [];
   const impacts = [];
@@ -133,24 +150,28 @@ async function deliverActivatedItem(context, services, snapshot, intent, unlocke
     if (!await services.activations.stillCurrent(snapshot)) {
       throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_STALE);
     }
-    const walked = unlocked ? null : await resolveWalkedLeg(services, snapshot);
+    if (!keepsUse) await services.retractions.commit(snapshot.source.actorUuid, snapshot.operation);
+    const walked = retractable ? null : await resolveWalkedLeg(services, snapshot);
     cinematicStarted = cinematic;
     await presentSafely(services, leadInMessage(snapshot, intent, cinematic));
     await services.settlement.captureUse(snapshot);
     await settleSanctuary(services.settlement, snapshot);
-    await runUseItemPassives(services, snapshot, intent, context, claims);
+    await runUseItemPassives(services, snapshot, intent, context, claims, rolls);
     await presentSafely(services, castMessage(snapshot, intent));
     await settleMountToggle(services, snapshot);
 
     const shared = await rollSharedSkillCheck(services, snapshot, context);
-    deliveries.push(...await deliverActivation(services, snapshot, intent, context, shared, { claims, impacts }));
-    if (await settleActivationCosts(services, snapshot, deliveries, context) !== true) {
+    deliveries.push(...await deliverActivation(services, snapshot, intent, context, shared,
+      { claims, impacts, rolls, remembered }));
+    const kept = keepsUse && !activationCheckFailed(deliveries);
+    if (await settleActivationCosts(services, snapshot, deliveries, context, { kept }) !== true) {
       throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
     }
     await settleRallySupport(services, snapshot, deliveries, context);
     await settleAdjacentGrounding(services, snapshot);
-    if (unlocked) {
-      continuation = resolveActivationContinuation({ unlocked: true });
+    if (retractable) {
+      continuation = resolveActivationContinuation({ retractable: true });
+      await settleRetraction(services, snapshot, context, deliveries, { kept, rolls });
     } else {
       experience = await settleActivationExperience(services, snapshot, impacts);
       await settleItemProficiency(services, snapshot, context);
@@ -167,19 +188,55 @@ async function deliverActivatedItem(context, services, snapshot, intent, unlocke
   const outcome = activationOutcome(snapshot, deliveries, continuation, context);
   services.events.publish(EVENT_IDS.ITEM_ACTIVATION_COMMITTED, outcome, { operation: context.operation ?? null });
   await settleActivationDefeats(services, claims, context);
-  if (!unlocked) await services.wait(ITEM_ACTIVATION_TIMING.settleTail);
+  if (!retractable) await services.wait(ITEM_ACTIVATION_TIMING.settleTail);
   await publishActivationExperience(services, experience, context);
   await presentSafely(services, endMessage(snapshot, cinematic));
-  if (!unlocked) await settleDeferredEndTurn(services, outcome, context.operation ?? null);
+  if (!retractable) await settleDeferredEndTurn(services, outcome, context.operation ?? null);
   return accept(RESULT_CODES.ITEM_ACTIVATED, outcome);
 }
 
 /**
- * Dash leaves the unit's movement plan open: it gets no cinematic, no closing pause, no experience and no turn end.
- * It still spends its authored action through settleActivationCosts, like any other use.
+ * Finish a retractable use. A failed skill check locks the item for the rest of the phase. A kept use is saved on
+ * the unit with a copy of the undo record, taken here after every other write the use made.
  */
-function isUnlockedActivation(snapshot) {
-  return snapshot.item.name.trim() === UNLOCKED_ACTIVATION_ITEM_NAME;
+async function settleRetraction(services, snapshot, context, deliveries, { kept, rolls }) {
+  if (activationCheckFailed(deliveries)) {
+    await services.retractions.lock(snapshot.source.actorUuid, snapshot.envelope.itemUuid, snapshot.operation);
+    return;
+  }
+  if (!kept) return;
+  const record = await context.operation.retain();
+  await services.retractions.keep(snapshot.source.tokenUuid, {
+    record,
+    itemUuid: snapshot.envelope.itemUuid,
+    landed: deliveries.some(delivery => delivery.landed === true),
+    check: rememberedCheck(deliveries),
+    rolls: { ...rolls.replay, ...rolls.journal }
+  }, snapshot.operation);
+}
+
+/**
+ * Take back the unit's kept retractable use (ITEMS.RETRACT): every write it made is undone, which gives its bonus
+ * action back. It is refused when nothing is kept or the unit has moved since the use. What the use rolled stays
+ * remembered, so using the item again this turn rolls the same.
+ */
+async function retractItem(context, services) {
+  const tokenUuid = String(context.payload?.tokenUuid ?? '');
+  const standing = await services.retractions.getStanding(tokenUuid);
+  if (!standing?.pending) return refuse(RESULT_CODES.ITEM_RETRACTION_NONE);
+  if (standing.moved) return refuse(RESULT_CODES.ITEM_RETRACTION_MOVED);
+  try {
+    if (await services.retractions.retract(tokenUuid, context.operation ?? null) !== true) {
+      return refuse(RESULT_CODES.ITEM_RETRACTION_FAILED);
+    }
+  } catch (error) {
+    recordDiagnostic(services?.diagnostics, { sourcePath: import.meta.url, error, detail: 'retractItem' });
+    return refuse(RESULT_CODES.ITEM_RETRACTION_FAILED);
+  }
+  return accept(RESULT_CODES.ITEM_RETRACTED, {
+    tokenUuid, actorUuid: standing.actorUuid, itemUuid: standing.itemUuid,
+    requestId: context.requestId, userId: context.userId
+  });
 }
 
 function validateActivationRequest(snapshot, intent, resolveTerrainGeometry) {
@@ -194,7 +251,8 @@ function validateActivationRequest(snapshot, intent, resolveTerrainGeometry) {
     magical: snapshot.item.magical,
     stanceAvailable: snapshot.source.stanceAvailable,
     item: snapshot.source.conditionItem,
-    proficiencyTotal: snapshot.source.proficiency?.total
+    proficiencyTotal: snapshot.source.proficiency?.total,
+    locked: snapshot.source.lockedItems.includes(snapshot.envelope.itemUuid)
   });
   if (!legality.ok) return refuse(legality.code, legality.data);
   const landing = planForcedLanding({
@@ -255,7 +313,8 @@ function validateActivationRequest(snapshot, intent, resolveTerrainGeometry) {
 
 /**
  * Apply the use to each target in turn, or once when it has no target. `reach` collects the units the effects
- * defeated (`claims`) and what each unit took or gained (`impacts`), which the XP award reads.
+ * defeated (`claims`) and what each unit took or gained (`impacts`), which the XP award reads. For a kept
+ * retractable use it also carries the run's `rolls` and what the item `remembered` from a use taken back.
  */
 async function deliverActivation(services, snapshot, intent, context, shared, reach) {
   const deliveries = [];
@@ -269,7 +328,8 @@ async function deliverActivation(services, snapshot, intent, context, shared, re
   return deliveries;
 }
 
-async function deliverToTarget(services, snapshot, intent, context, target, shared, { claims, impacts }) {
+async function deliverToTarget(services, snapshot, intent, context, target, shared,
+  { claims, impacts, rolls = null, remembered = null }) {
   const envelope = snapshot.envelope;
   if (envelope.rally) return deliverRally(services, snapshot, target, impacts);
   if (envelope.booster) return deliverBooster(services, snapshot, context);
@@ -284,7 +344,7 @@ async function deliverToTarget(services, snapshot, intent, context, target, shar
     ? await rollActivationSave(services, snapshot, context, target, delivery)
     : null;
   const skillCheck = delivery.kind === 'check'
-    ? await resolveActivationCheck(services, snapshot, context, target, delivery, shared)
+    ? await resolveActivationCheck(services, snapshot, context, target, delivery, shared, remembered)
     : null;
   const landed = resolveActivationLanded({ kind: delivery.kind, savingThrow, skillCheck });
 
@@ -294,7 +354,8 @@ async function deliverToTarget(services, snapshot, intent, context, target, shar
     target,
     savingThrow,
     skillCheck,
-    audience: requesterAudience(context)
+    audience: requesterAudience(context),
+    rolls
   }));
   if (result.outcomes.some(outcome => outcome?.ok === false)) {
     throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
@@ -441,7 +502,11 @@ async function rollActivationSave(services, snapshot, context, target, delivery)
   return Object.freeze({ success: roll.success === true, total: roll.total, natural: roll.natural, dc });
 }
 
-async function resolveActivationCheck(services, snapshot, context, target, delivery, shared) {
+/**
+ * Roll the caster's skill check against one target, or reuse the shared roll. A retractable item used again after
+ * being taken back reuses its remembered passed check, with no new roll or card.
+ */
+async function resolveActivationCheck(services, snapshot, context, target, delivery, shared, remembered = null) {
   if (delivery.autoSucceed) return Object.freeze({ success: true, total: 999, autoSucceeded: true });
   const envelope = snapshot.envelope;
   const dc = target
@@ -458,6 +523,11 @@ async function resolveActivationCheck(services, snapshot, context, target, deliv
   }
   const check = activationSkillCheck(snapshot, envelope, dc);
   if (!check) return null;
+  if (remembered?.check?.success === true) {
+    // Taking the use back also took back the skill experience it earned, so the reused check earns it again.
+    await grantSkillExperience(services, snapshot.source.actorUuid, check.skillKey);
+    return Object.freeze({ ...remembered.check });
+  }
   const roll = await services.checks.roll(snapshot.source.actorUuid, check,
     { requestId: context.requestId, operation: context.operation });
   await presentCheck(services, snapshot, target, check, roll, 'skill', context);
@@ -501,7 +571,7 @@ function activationSkillCheck(snapshot, envelope, dc) {
 /*  Effect requests                             */
 /* -------------------------------------------- */
 
-function activationEffectRequest({ snapshot, intent, target, savingThrow, skillCheck, audience }) {
+function activationEffectRequest({ snapshot, intent, target, savingThrow, skillCheck, audience, rolls = null }) {
   const selfActor = snapshot.source.conditionSelf;
   const targetActor = target?.conditionSelf ?? null;
   return {
@@ -517,7 +587,8 @@ function activationEffectRequest({ snapshot, intent, target, savingThrow, skillC
       skillCheckRequired: Boolean(snapshot.envelope.skillCheck?.required)
     }),
     activatedItem: snapshot.source.conditionItem,
-    audience
+    audience,
+    rolls
   };
 }
 
@@ -536,7 +607,7 @@ function activationRuntime(snapshot, intent, target) {
   });
 }
 
-async function runUseItemPassives(services, snapshot, intent, context, claims) {
+async function runUseItemPassives(services, snapshot, intent, context, claims, rolls = null) {
   if (!snapshot.passiveEntries.length) return;
   const result = await services.effects.run({
     entries: snapshot.passiveEntries,
@@ -544,7 +615,8 @@ async function runUseItemPassives(services, snapshot, intent, context, claims) {
     runtime: activationRuntime(snapshot, intent, null),
     context: effectContext(snapshot.source.conditionSelf, null, snapshot.source.conditionItem),
     activatedItem: snapshot.source.conditionItem,
-    audience: requesterAudience(context)
+    audience: requesterAudience(context),
+    rolls
   });
   if (result.outcomes.some(outcome => outcome?.ok === false)) {
     throw new CombatPersistenceError(RESULT_CODES.ITEM_ACTIVATION_FAILED);
@@ -612,11 +684,14 @@ async function settleMountToggle(services, snapshot) {
 
 /**
  * Spend the use's charge and action, and count each ally it Rallied in the caster's record of this map's Rallies, in
- * the order they were Rallied so several targets each add their own.
+ * the order they were Rallied so several targets each add their own. A `kept` retractable use spends only its
+ * action; its charge is spent when the use becomes final.
  */
-async function settleActivationCosts(services, snapshot, deliveries, context) {
+async function settleActivationCosts(services, snapshot, deliveries, context, { kept = false } = {}) {
   const landed = deliveries.some(delivery => delivery.landed === true);
-  const consumption = resolveActivationConsumption({ envelope: snapshot.envelope, landed });
+  const consumption = kept
+    ? { consume: false, remaining: snapshot.envelope.usesCurrent, destroy: false }
+    : resolveActivationConsumption({ envelope: snapshot.envelope, landed });
   return services.settlement.settleActivation(snapshot, {
     consumption,
     actionSpend: resolveActivationActionSpend(snapshot.envelope.actionType),

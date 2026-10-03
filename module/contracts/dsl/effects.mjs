@@ -3,7 +3,7 @@ import { DAMAGE_TYPES } from '../domains/damage.mjs';
 import { validate as validateAnimation } from './animations.mjs';
 import { DEFAULT_STATUS_DURATION, FACTION_ROLES, REGISTERED_STATUS_KEYS } from '../domains/characters.mjs';
 import { GUARD_BOND_REFUSALS } from '../domains/combat.mjs';
-import { ITEM_ACTIVATION_SUPPORT } from '../domains/items.mjs';
+import { ITEM_ACTIVATION_SUPPORT, retractableAllowed } from '../domains/items.mjs';
 import { normalizeGeometry, validateGeometry } from './terrain-geometry.mjs';
 import { isPlainObject } from '../../lib/core/runtime.mjs';
 import { readsOtherUnit, validate as validateConditionTree } from './conditions.mjs';
@@ -83,6 +83,9 @@ export const ATTACK_EFFECT_TRIGGERS = Object.freeze([
 export const ACTIVATION_EFFECT_TRIGGERS = Object.freeze([
   'onActivation', 'onFailedSave', 'onSucceedSave', 'onFailedCheck', 'onSucceedCheck'
 ]);
+
+/** The triggers a retractable item may use: its activation and the outcome of its skill check. */
+export const RETRACTABLE_EFFECT_TRIGGERS = Object.freeze(['onActivation', 'onFailedCheck', 'onSucceedCheck']);
 
 /**
  * Group C: triggers for passive Abilities, firing on phases, a death, a kill, a blow taken, an evade or another
@@ -203,6 +206,8 @@ export const TRIGGER_CAPABILITIES = Object.freeze(Object.fromEntries(EFFECT_TRIG
  * @property {number} [targets] How many units it may target.
  * @property {object|null} [save] Its saving throw settings.
  * @property {object|null} [check] Its skill check settings.
+ * @property {boolean} [retractable] Whether the item is marked retractable (`system.retractable`).
+ * @property {string} [actionType] The action it spends, as `system.actionType` names it.
  */
 /**
  * The details of an Item, or of anything shaped like one (`{type, system}`), that decide which triggers and steps
@@ -212,7 +217,12 @@ export const TRIGGER_CAPABILITIES = Object.freeze(Object.fromEntries(EFFECT_TRIG
  */
 export function effectCarrier(item) {
   const system = item?.system ?? {};
-  const carrier = { type: String(item?.type ?? ''), itemType: String(system.itemType ?? '') };
+  const carrier = {
+    type: String(item?.type ?? ''),
+    itemType: String(system.itemType ?? ''),
+    retractable: system.retractable === true,
+    actionType: String(system.actionType ?? 'Standard Action')
+  };
   const data = system.effectData;
   if (!data || typeof data !== 'object') return carrier;
   return {
@@ -670,6 +680,7 @@ function validateEntryContext(entry, carrier, path, out) {
   if (trigger === 'onUseItem' && !listed(entry.itemNames) && !listed(entry.itemUuids)) {
     fail(path, 'uses a use item trigger but names no item to watch for');
   }
+  checkRetractable(trigger, carrier, path, out.errors);
   checkOutcomeTrigger(trigger, carrier, path, fail, warn);
   if (cap.target === 'none' && readsOtherUnit(entry.condition)) {
     fail(`${path}.condition`, `reads the other unit, but ${TRIGGER_PHRASES[trigger]} has no other unit`);
@@ -685,6 +696,21 @@ function validateEntryContext(entry, carrier, path, out) {
 /** Whether a list names at least one non-empty string. */
 function listed(value) {
   return Array.isArray(value) && value.some(entry => typeof entry === 'string' && entry.trim() !== '');
+}
+
+/**
+ * A retractable item must be a bonus action that targets Self, and its effects may fire only on activation and
+ * skill check triggers. The item sheet offers no other choice, so these catch pack and pasted items.
+ */
+function checkRetractable(trigger, carrier, at, errors) {
+  if (carrier.retractable !== true) return;
+  if (!retractableAllowed(carrier)) {
+    errors.push('This item is retractable, but only a bonus action that targets self can be taken back.');
+  }
+  if (!RETRACTABLE_EFFECT_TRIGGERS.includes(trigger)) {
+    errors.push(say(placeOf(at), `fires on ${TRIGGER_PHRASES[trigger]}. A retractable item only fires on activation `
+      + 'and skill check triggers'));
+  }
 }
 
 /** Save and check outcome triggers need the item to roll that save or check. */

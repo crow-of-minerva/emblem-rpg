@@ -471,17 +471,28 @@ function readDurationFromDom(paneEl) {
   return parseFloat(inp?.value) || 0;
 }
 
+/** The pane's Skip cinematic box, which only activation tabs have. */
+function skipCinematicBox(paneEl) {
+  return paneEl.querySelector('.anim-skip-cinematic');
+}
+
 /* -------------------------------------------- */
 /*  Payloads                                    */
 /* -------------------------------------------- */
 
-/** Build one tab's animation payload, or null where it has no steps. */
+/**
+ * Build one tab's animation payload, or null where it has no steps and no ticked Skip cinematic box. An activation
+ * tab always saves the box as true or false, because Foundry merges a slot into the stored one and would otherwise
+ * keep an old true.
+ */
 function buildPayloadFromTab(paneEl, tabKey) {
   const steps = readStepsFromDom(paneEl, tabKey);
-  if (steps.length === 0) return null;
+  const skip = skipCinematicBox(paneEl);
+  if (steps.length === 0 && skip?.checked !== true) return null;
   const payload = { steps };
   const dur = readDurationFromDom(paneEl);
   if (dur > 0) payload.duration = dur;
+  if (skip) payload.skipCinematic = skip.checked;
   return payload;
 }
 
@@ -526,10 +537,10 @@ async function persistAnim(it, anim) {
 /*  Step Lists                                  */
 /* -------------------------------------------- */
 
-/** The stored animation for one slot and range, or an empty one. */
+/** The stored animation for one slot and range, or an empty one. A tab with only Skip cinematic ticked is kept. */
 function readPayload(item, slot, range) {
   const data = foundry.utils.getProperty(item, `system.anim.${slot}.${range}`);
-  if (isPopulated(data)) return data;
+  if (isPopulated(data) || data?.skipCinematic === true) return data;
   return empty();
 }
 
@@ -556,8 +567,9 @@ function appendStepList(paneEl, steps) {
  * the same controls in each.
  * @param {string} tabKey         Which tab, written onto every control the handlers read it from.
  * @param {number} duration       The stored duration.
+ * @param {boolean} [skipCinematic]  The stored Skip cinematic box, which only activation tabs show.
  */
-function renderPaneMarkup(tabKey, duration) {
+function renderPaneMarkup(tabKey, duration, skipCinematic = false) {
   const key = escapeHtml(tabKey);
   const tip = id => escapeHtml(getTooltip(id));
   const addButton = (kind, icon, tipId) => `
@@ -567,15 +579,22 @@ function renderPaneMarkup(tabKey, duration) {
         <button type="button" class="anim-pane-btn ${cls}" data-anim-tab="${key}" data-tooltip="${tip(tipId)}">
           <i class="fas ${icon}"></i>
         </button>`;
+  const skipHtml = TAB_DEFINITIONS[tabKey]?.slot !== 'activation' ? '' : `
+        <label class="ed-field ed-field--check">
+          <span class="ed-label" data-tooltip="${tip('animation.skip-cinematic')}">skip cinematic</span>
+          <span class="ed-check-slot">
+            <input type="checkbox" class="anim-skip-cinematic"${skipCinematic === true ? ' checked' : ''} />
+          </span>
+        </label>`;
   return `
       <div class="anim-pane-toolbar">
-        <label class="ed-field" style="width:110px">
+        <label class="ed-field" style="width:84px">
           <span class="ed-label" data-tooltip="${tip('animation.duration')}">duration</span>
           <span class="ed-with-unit" data-unit="ms">
             <input type="number" class="anim-duration-input" value="${escapeHtml(duration)}"
               min="0" step="50" placeholder="0" />
           </span>
-        </label>
+        </label>${skipHtml}
         ${addButton('effect', 'fa-plus', 'animation.add-effect-step')}
         ${addButton('sound', 'fa-volume-high', 'animation.add-sound-step')}
         ${addButton('wait', 'fa-hourglass-half', 'animation.add-wait-step')}
@@ -983,7 +1002,7 @@ export async function openAnimationEditorDialog(item) {
       range: def.range,
       label: def.label,
       icon: def.icon,
-      paneHtml: renderPaneMarkup(key, payload.duration ?? 0),
+      paneHtml: renderPaneMarkup(key, payload.duration ?? 0, payload.skipCinematic === true),
       _payload: payload
     };
   });

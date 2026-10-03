@@ -67,6 +67,18 @@ export function projectBg3Cell(item) {
   });
 }
 
+/**
+ * Whether a hotbar cell's item failed its skill check this phase and is locked until the next one, read from the
+ * live item so a cell drawn earlier is greyed and cleared on time.
+ * @param {string} uuid The cell's document uuid.
+ * @returns {boolean}
+ */
+export function bg3ItemLocked(uuid) {
+  const item = uuid ? globalThis.fromUuidSync?.(String(uuid), { strict: false }) : null;
+  const locked = item?.documentName === 'Item' ? item.actor?.system?.turn?.lockedItems : null;
+  return Array.isArray(locked) && locked.includes(item.uuid);
+}
+
 /** Name the targeting-grid colour the item would draw: null for a Self item, and '' when no colour is set. */
 function activeTargetingColorName(item) {
   if (item.type === 'Ability' && String(item.name ?? '') === STEAL_ABILITY_NAME) return 'Orange';

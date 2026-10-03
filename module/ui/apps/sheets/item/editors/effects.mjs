@@ -2318,9 +2318,10 @@ function currentEntryIndex(itemSheet, snapshot, openedAt) {
  * trigger select lists the item group's triggers (triggerChoices), and is 150px wide unless an unavailable trigger's
  * longer label needs more. Only an item that is used reads the hold pose, so the other groups don't show it.
  * @param {string} group          The owning item's trigger group.
+ * @param {boolean} retractable   Whether the owning item is retractable, which narrows the triggers it lists.
  */
-function effectHeaderHtml(entry, group) {
-  const choices = triggerChoices(group, entry.trigger);
+function effectHeaderHtml(entry, group, retractable = false) {
+  const choices = triggerChoices(group, entry.trigger, { retractable });
   const longest = Math.max(...choices.map(choice => choice.label.length));
   const triggerOpts = choices.map(({ value, label, disabled }) =>
     `<option value="${escapeHtml(value)}"${value === entry.trigger ? ' selected' : ''}${disabled ? ' disabled' : ''}>`
@@ -2440,7 +2441,7 @@ export async function openEffectActionEditor(itemSheet, entryIndex, { group = ''
 
   const content = `
     <div class="eff-editor-root">
-      ${effectHeaderHtml(entry, group)}
+      ${effectHeaderHtml(entry, group, itemSheet.document.system?.retractable === true)}
       <div class="eff-step-pane">
         <div class="ed-list" data-branch-list="root"></div>
         ${effectFooterHtml()}

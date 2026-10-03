@@ -728,7 +728,8 @@ async function activateEffectItemFromHotbar(itemUuid, cellId = '') {
     }),
     stanceAvailable: context.source.stanceAvailable,
     item: context.source.conditionItem,
-    proficiencyTotal: context.source.proficiency?.total
+    proficiencyTotal: context.source.proficiency?.total,
+    locked: context.source.lockedItems.includes(context.itemUuid)
   });
   if (!verdict.ok) return refuseTargeting(verdict.code, verdict.data);
   const authored = validateActivationRequirements({
@@ -1411,6 +1412,7 @@ const CATALOG_REFUSALS = new Set([
   RESULT_CODES.ITEM_TARGET_FACTION,
   RESULT_CODES.ITEM_TARGET_SANCTUARY,
   RESULT_CODES.ITEM_SPELL_RANK_REQUIRED,
+  RESULT_CODES.ITEM_LOCKED_THIS_PHASE,
   RESULT_CODES.ITEM_FORCED_TARGET_AIRBORNE,
   RESULT_CODES.ITEM_FORCED_SQUARE_OCCUPIED,
   RESULT_CODES.ITEM_FORCED_SQUARE_BLOCKED,

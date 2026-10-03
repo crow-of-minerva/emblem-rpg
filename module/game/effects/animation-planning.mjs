@@ -12,15 +12,29 @@ import { evaluateScaling, isScalingActive } from '../items/rules.mjs';
  * variants.
  */
 export function selectAnimationRange(slot, engagement, { self = false } = {}) {
-  if (!slot || typeof slot !== 'object' || Array.isArray(slot)) return null;
+  return animationRangeOrder(slot, engagement, self).find(isPopulated) ?? null;
+}
+
+/**
+ * Whether an item use skips its cinematic bars and camera pan: the Skip cinematic box on the activation animation
+ * tab that applies, picked in selectAnimationRange's order. A tab with the box ticked and no steps still counts.
+ */
+export function animationSkipsCinematic(slot, engagement, { self = false } = {}) {
+  const payload = animationRangeOrder(slot, engagement, self)
+    .find(candidate => isPopulated(candidate) || candidate?.skipCinematic === true);
+  return payload?.skipCinematic === true;
+}
+
+/** The variants of a slot in the order they are tried: self first for a self use, then the engagement's range. */
+function animationRangeOrder(slot, engagement, self) {
+  if (!slot || typeof slot !== 'object' || Array.isArray(slot)) return [];
   const isSelf = self || !engagement;
   const isMelee = engagement === ENGAGEMENT_KINDS.MELEE;
-  const order = isSelf
+  return isSelf
     ? [slot.self, slot.melee, slot.ranged]
     : isMelee
       ? [slot.melee, slot.ranged]
       : [slot.ranged, slot.melee];
-  return order.find(isPopulated) ?? null;
 }
 
 /**

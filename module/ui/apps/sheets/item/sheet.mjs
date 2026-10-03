@@ -1,6 +1,8 @@
 /** @layer ui/apps/sheets/item */
 import { SYSTEM_ID } from '../../../../contracts/protocol.mjs';
-import { FOOD_TYPE_STATS, FOOD_TYPES, ITEM_SUBTYPES, RESOURCE_TYPES } from '../../../../contracts/domains/items.mjs';
+import {
+  FOOD_TYPE_STATS, FOOD_TYPES, ITEM_SUBTYPES, RESOURCE_TYPES, retractableAllowed
+} from '../../../../contracts/domains/items.mjs';
 import { triggerGroupForItem } from '../../../../contracts/dsl/effects.mjs';
 import { NOTIFICATION_IDS, NotificationService } from '../../../../presentation/interface/notifications.mjs';
 import {
@@ -204,6 +206,7 @@ function refuseUnreadableAuthoredFields(submitData) {
  *   back its shown value, so the saved base value survives;
  * - keep each modifier's saved condition tree and the saved effect list;
  * - give a Multiple-target range at least 2 targets;
+ * - untick Retractable once the item is no longer a bonus action that targets Self;
  * - set the steal DC to match the stealable flag.
  */
 function reconcileItemSubmitData(submitData, { prepared, stored, echoGuardActive = false } = {}) {
@@ -240,6 +243,12 @@ function reconcileItemSubmitData(submitData, { prepared, stored, echoGuardActive
       effectData.targets = Math.max(2, Number.isFinite(incoming) ? incoming : fallback);
     }
   }
+  const kind = {
+    actionType: submittedSystem?.actionType ?? storedSystem.actionType,
+    targetType: effectData?.targetType ?? storedSystem.effectData?.targetType
+  };
+  const retractable = submittedSystem?.retractable === true || storedSystem.retractable === true;
+  if (submittedSystem && retractable && !retractableAllowed(kind)) submittedSystem.retractable = false;
   const stealable = submittedSystem?.stealable;
   if (stealable?.flag === 'Drops') stealable.dc = 0;
   else if (stealable?.flag === 'Stealable'
@@ -367,6 +376,9 @@ export class ItemSheet extends EmblemSheetMixin(foundry.applications.sheets.Item
     context.hasParams = item.system.effectData.params.length > 0
       || item.system.effectData.savingThrowDC.required === true
       || item.system.effectData.skillCheckDC.required === true;
+    context.retractableAllowed = retractableAllowed({
+      actionType: item.system.actionType, targetType: item.system.effectData.targetType
+    });
     context.tradeDisabled = item.system.tradeDisabled === true;
     context.hideValueField = context.tradeDisabled && !this.isEditable;
     context.owner = actorOwnerContext(item);

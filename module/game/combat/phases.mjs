@@ -36,7 +36,8 @@ const TURN_ACTIVE = Object.freeze({
   'system.turn.attackIndex': 0,
   'system.turn.continuationPending': '',
   'system.turn.continuationRequestId': '',
-  'system.turn.continuationCanters': false
+  'system.turn.continuationCanters': false,
+  'system.turn.lockedItems': []
 });
 
 /** What a restoreAction `turn` restore writes: every slot back, with movement spent and its penalty cleared. */
@@ -66,7 +67,8 @@ const TURN_INACTIVE = Object.freeze({
   'system.turn.attackIndex': 0,
   'system.turn.continuationPending': '',
   'system.turn.continuationRequestId': '',
-  'system.turn.continuationCanters': false
+  'system.turn.continuationCanters': false,
+  'system.turn.lockedItems': []
 });
 
 /**

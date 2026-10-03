@@ -110,12 +110,14 @@ function createExchangeState(snapshot, intent, context, walked) {
 /* -------------------------------------------- */
 
 /**
- * Open the attack after the preview check: save undo data for everything an attack always writes in one go, then
- * land the attacker if attacking grounds it, and run the pre-combat animation and effects.
+ * Open the attack after the preview check: save undo data for everything an attack always writes in one go, make
+ * the attacker's kept retractable item use final, then land the attacker if attacking grounds it, and run the
+ * pre-combat animation and effects.
  */
 async function openExchange(services, exchange) {
   const { snapshot } = exchange;
   await services.settlement.captureExchange(snapshot, exchange.operation);
+  await services.settlement.commitRetraction(snapshot.sourceActorUuid, exchange.operation);
   await services.settlement.settleGrounding(snapshot.source, exchange.operation);
   await services.settlement.prepareExchange(snapshot, exchange.operation);
   await presentSafely(services, startMessage(snapshot));

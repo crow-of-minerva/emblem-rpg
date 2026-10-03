@@ -78,8 +78,15 @@ export const EXPLORATION_ACTIVATION_SUBTYPES = Object.freeze({
   Ability: Object.freeze(['Mount'])
 });
 
-/** The Ability whose use leaves the unit's movement open, with no cinematic, XP award or turn end. */
-export const UNLOCKED_ACTIVATION_ITEM_NAME = 'Dash';
+/**
+ * Whether an item may be retractable (`system.retractable`): only a bonus action that targets Self can be taken
+ * back. The item sheet, the effect validator and the item use all apply this one rule.
+ * @param {{actionType?: string, targetType?: string}} item The Item's action type and target type.
+ * @returns {boolean}
+ */
+export function retractableAllowed({ actionType, targetType } = {}) {
+  return actionType === 'Bonus Action' && targetType === 'Self';
+}
 
 /**
  * An Item use counts as one and a half weapon hits of proficiency experience. At two points per hit that's three

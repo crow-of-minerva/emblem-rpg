@@ -16,6 +16,7 @@ import { createGeometryResolver } from '../../../game/targeting/shapes.mjs';
 import { crossingFallDamage, normalizeTerrainProfile } from '../../../game/terrain/rules.mjs';
 import { hasStealAbility, isStealableItem, tradeActionAvailable } from '../../../game/economy/trade.mjs';
 import { factionGroup, resolveAvatarScale, unitIgnoresLineOfSight } from '../../../game/character/rules.mjs';
+import { parseRetraction, retractionStanding } from '../../../game/items/retraction.mjs';
 import {
   isAirborneActor, isStanceBrokenActor, projectActorStatusKeys, projectWieldedArmament, tauntedByActorUuid
 } from './combat-context.mjs';
@@ -144,7 +145,10 @@ export function projectMovementSnapshot(token, { ignoreTokenIds = [], nextTurn =
     walls: supportedGrid ? projectMovementWalls(scene, gridSize) : NO_WALLS,
     attackRanges,
     anchorPosition: Object.freeze({ ...anchorPosition }),
-    sourcePosition: Object.freeze({ ...currentPosition })
+    sourcePosition: Object.freeze({ ...currentPosition }),
+    // Whether the unit has a retractable item use the Cancel key can take back, and whether it moved since.
+    retraction: Object.freeze(retractionStanding(parseRetraction(turn.retraction),
+      { movementSpent, ...currentPosition }))
   });
 }
 

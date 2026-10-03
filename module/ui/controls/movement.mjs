@@ -783,6 +783,11 @@ async function commitPlan(plan, resume) {
 /* -------------------------------------------- */
 /*  Cancelling                                  */
 /* -------------------------------------------- */
+/**
+ * The Cancel key on an open plan. A retractable item use the unit hasn't moved since is taken back first. Otherwise
+ * the plan rolls back to where it started, or closes when it can't. While a use is kept, a moved unit rolls back
+ * rather than closing its plan, so a second Cancel can take the use back.
+ */
 async function stepCancelPlan() {
   const plan = activeMovementPlan();
   if (!plan || !movementAcceptsInput()) return;
@@ -791,7 +796,10 @@ async function stepCancelPlan() {
     if (plan.token?.movementAnimationPromise) return cancelPlan();
     const snapshot = await liveSnapshot(plan);
     if (!snapshot || activeMovementPlan() !== plan) return;
-    if (!planSettlement(snapshot).rollback || plan.kind !== 'committed') return cancelPlan();
+    if (snapshot.retraction?.pending === true && snapshot.retraction.moved !== true) return retractUse(plan, snapshot);
+    const rollsBack = plan.kind === 'committed'
+      || (snapshot.retraction?.pending === true && !sameCell(snapshot.current, snapshot.start));
+    if (!planSettlement(snapshot).rollback || !rollsBack) return cancelPlan();
     if (sameCell(snapshot.current, snapshot.start)) {
       const action = await endTurnPrompt();
       if (action === 'end' && activeMovementPlan() === plan) await commitPlan(plan, false);
@@ -812,6 +820,24 @@ async function stepCancelPlan() {
       } else if (activeMovementPlan() === plan) await releaseUnusablePlan(plan);
     } finally { advanceMovement(MOVEMENT_EVENTS.ROLLED_BACK); }
   });
+}
+
+/** Take back the unit's retractable item use (api.items.retract), then redraw the plan as a rollback does. */
+async function retractUse(plan, snapshot) {
+  advanceMovement(MOVEMENT_EVENTS.ROLLBACK);
+  try {
+    const result = await game.emblemRpg.api.items.retract(snapshot.tokenUuid);
+    if (!result.ok) {
+      notifications.showResult(result);
+      return;
+    }
+    if (activeMovementPlan() !== plan) return;
+    const restored = await game.emblemRpg.api.movement.getPlan(snapshot.tokenUuid);
+    if (restored?.movementPlanning && activeMovementPlan() === plan) {
+      installPlan(plan.token, restored, plan.kind);
+      playMovementSound(SOUND_IDS.UI_UNSELECT);
+    } else if (activeMovementPlan() === plan) await releaseUnusablePlan(plan);
+  } finally { advanceMovement(MOVEMENT_EVENTS.ROLLED_BACK); }
 }
 
 async function cancelPlan({ release = true } = {}) {

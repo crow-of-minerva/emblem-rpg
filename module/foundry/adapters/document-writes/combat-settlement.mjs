@@ -6,6 +6,7 @@ import { bookKarmaSequence } from '../dice/karma.mjs';
 import { SYSTEM_ID } from '../../../contracts/protocol.mjs';
 import { collectionValues, finite } from '../../../lib/core/runtime.mjs';
 import { clone, resolveActor, resolveArmamentActor, resolveItem, resolveToken } from '../services/host.mjs';
+import { commitRetraction } from './retractions.mjs';
 
 const settlementOptions = () => ({ emblemCombatSettlement: true });
 
@@ -100,6 +101,11 @@ export class FoundryCombatSettlementRepository {
     reservedFlankedIds.set(operation, flankedIds);
     await operation.capture({ documents, deleting, creating, settings: EXCHANGE_SETTINGS });
     return true;
+  }
+
+  /** An attack is the unit acting again, so its kept retractable item use becomes final (commitRetraction). */
+  async commitRetraction(actorUuid, operation = null) {
+    return commitRetraction(await resolveActor(actorUuid), operation);
   }
 
   /* -------------------------------------------- */

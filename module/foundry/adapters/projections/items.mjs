@@ -10,7 +10,8 @@ import {
 import { INNATE_GRANT_FLAG } from '../../../game/character/innate-grants.mjs';
 import { ITEM_ACTIVATION_TRIGGERS } from '../../../contracts/domains/items.mjs';
 import { isPopulated } from '../../../contracts/dsl/animations.mjs';
-import { selectAnimationRange } from '../../../game/effects/animation-planning.mjs';
+import { animationSkipsCinematic, selectAnimationRange } from '../../../game/effects/animation-planning.mjs';
+import { parseRetraction, retractionMemoryFor } from '../../../game/items/retraction.mjs';
 import { entriesAlwaysGuard } from '../../../game/effects/planning.mjs';
 import { MOVEMENT_PERMISSION_FLAG, mountsForbidden, normalizeMovementPermission } from '../../../game/movement/input-policy.mjs';
 import {
@@ -349,6 +350,10 @@ function projectActivationSource(token, item, gridSize) {
     }),
     standardAvailable: turn.actionAvailable !== false,
     bonusAvailable: turn.bonusActionAvailable !== false,
+    // The items whose skill check failed this phase, and the unit's kept retractable use with what this item
+    // remembers from a use taken back this turn.
+    lockedItems: Object.freeze((turn.lockedItems ?? []).map(String)),
+    retraction: activationRetraction(parseRetraction(turn.retraction), String(item.uuid ?? '')),
     turnOver: turn.actionAvailable === false && turn.bonusActionAvailable === false
       && turn.movementAvailable === false,
     magicBlocked: statuses.has('silenced') || system.statuses?.silenced === true,
@@ -364,6 +369,11 @@ function projectActivationSource(token, item, gridSize) {
     conditionSelf: projectFoundryCombatActorContext(actor),
     conditionItem: projectItemFacts(item)
   });
+}
+
+/** Whether the caster has a kept retractable use, and what this item remembers from a use taken back this turn. */
+function activationRetraction(retraction, itemUuid) {
+  return Object.freeze({ pending: Boolean(retraction?.pending), memory: retractionMemoryFor(retraction, itemUuid) });
 }
 
 /**
@@ -461,8 +471,19 @@ function projectActivationItem(item, engagement, source, envelope) {
       numeric: param?.numeric === true
     }))),
     activationAnimation: clone(selectActivationAnimation(item, engagement, source, envelope)),
-    attackAnimation: clone(selectAnimationRange(system.anim?.attack, engagement))
+    attackAnimation: clone(selectAnimationRange(system.anim?.attack, engagement)),
+    skipCinematic: activationSkipsCinematic(item, engagement, source, envelope)
   });
+}
+
+/** Whether the activation animation tab that applies to this use has Skip cinematic ticked. */
+function activationSkipsCinematic(item, engagement, source, envelope) {
+  const slot = item.system?.anim?.activation;
+  if (!isMountActivation(item)) {
+    return animationSkipsCinematic(slot, engagement, { self: envelope?.selfTargeted === true });
+  }
+  const payload = mountActivationIntent(source) === 'dismount' ? slot?.ranged : slot?.melee;
+  return payload?.skipCinematic === true;
 }
 
 /**

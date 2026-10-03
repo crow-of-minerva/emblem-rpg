@@ -59,7 +59,7 @@ export const COMMAND_IDS = Object.freeze({
     RESOLVE_EXCHANGE: 'combat.resolve-exchange',
     RESOLVE_CONTINUATION: 'combat.resolve-continuation'
   }),
-  ITEMS: Object.freeze({ ACTIVATE: 'items.activate' }),
+  ITEMS: Object.freeze({ ACTIVATE: 'items.activate', RETRACT: 'items.retract' }),
   OBJECTS: Object.freeze({
     OPEN_LOCK: 'objects.open-lock',
     WIELD_ARMAMENT: 'objects.wield-armament',
@@ -201,8 +201,9 @@ export function commandLane(commandId) {
 
 /**
  * Whether players see the "please wait" overlay while this command runs. Inspect and upkeep commands, movement
- * planning (begin, cancel, rollback and the flight toggles) and the counterattack mode toggle leave the interface
- * open. A movement commit shows it only when the unit doesn't go back to planning more movement.
+ * planning (begin, cancel, rollback and the flight toggles), taking back an item use and the counterattack mode
+ * toggle leave the interface open. A movement commit shows it only when the unit doesn't go back to planning more
+ * movement.
  */
 export function commandBlocks(commandId, payload = {}) {
   if ([COMMAND_LANES.INSPECT, COMMAND_LANES.MAINTENANCE].includes(commandLane(commandId))) return false;
@@ -212,12 +213,13 @@ export function commandBlocks(commandId, payload = {}) {
 
 const PLANNING_COMMANDS = new Set([
   COMMAND_IDS.MOVEMENT.BEGIN, COMMAND_IDS.MOVEMENT.CANCEL, COMMAND_IDS.MOVEMENT.ROLLBACK,
-  COMMAND_IDS.MOVEMENT.TOGGLE_FLIGHT, COMMAND_IDS.MOVEMENT.TAKE_OFF, COMMAND_IDS.MOVEMENT.SET_FLIGHT
+  COMMAND_IDS.MOVEMENT.TOGGLE_FLIGHT, COMMAND_IDS.MOVEMENT.TAKE_OFF, COMMAND_IDS.MOVEMENT.SET_FLIGHT,
+  COMMAND_IDS.ITEMS.RETRACT
 ]);
 
 /**
- * Whether the world pause freezes this command: every gameplay command except cancelling or rolling back a move.
- * Pair it with pauseFreezesUser, which checks the requester's role.
+ * Whether the world pause freezes this command: every gameplay command except cancelling or rolling back a move,
+ * or taking back an item use. Pair it with pauseFreezesUser, which checks the requester's role.
  * @param {string} commandId A command id from {@link COMMAND_IDS} or {@link INTERNAL_COMMAND_IDS}.
  * @returns {boolean}
  */
@@ -226,7 +228,9 @@ export function commandFrozenByPause(commandId) {
 }
 
 /**
- * Cancel and rollback stay allowed during the world pause, so a player can still put down the unit they were
- * moving.
+ * Cancel, rollback and taking back an item use stay allowed during the world pause, so a player can still put down
+ * the unit they were moving.
  */
-const PAUSE_RELEASE_COMMANDS = new Set([COMMAND_IDS.MOVEMENT.CANCEL, COMMAND_IDS.MOVEMENT.ROLLBACK]);
+const PAUSE_RELEASE_COMMANDS = new Set([
+  COMMAND_IDS.MOVEMENT.CANCEL, COMMAND_IDS.MOVEMENT.ROLLBACK, COMMAND_IDS.ITEMS.RETRACT
+]);

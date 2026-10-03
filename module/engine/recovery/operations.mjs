@@ -190,6 +190,17 @@ class Operation {
     return Boolean(next);
   }
 
+  /**
+   * A copy of the record as it stands, for a command that keeps its undo past its own end: a retractable item use
+   * saves it on the unit so Cancel can write the old values back later. The world setting is still cleared when the
+   * run succeeds and still written back when it fails. Captures made after this call are not in the copy.
+   * @returns {Promise<object|null>} The record, or null when nothing has been saved yet.
+   */
+  async retain() {
+    await this.#queue;
+    return this.#record ? structuredClone(this.#record) : null;
+  }
+
   /** Run `callback` once the record is committed (cleared after success). An undo drops it instead. */
   onCommit(callback) {
     if (typeof callback === 'function') this.#callbacks.push(callback);

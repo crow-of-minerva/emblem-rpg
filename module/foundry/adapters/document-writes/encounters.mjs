@@ -25,6 +25,7 @@ import {
   forcedDeletion, resolveActor, resolveScene, resolveToken, stackRescale as rescaleDecayChanges
 } from '../services/host.mjs';
 import { reportFoundryError, reportFoundryProbe } from '../services/diagnostics.mjs';
+import { commitRetraction } from './retractions.mjs';
 
 /* -------------------------------------------- */
 /*  Encounter settlement                        */
@@ -152,7 +153,8 @@ export class FoundryEncounterRepository {
   }
 
   /**
-   * Write every participating unit's opening turn state, recording their turn state first. Neighbouring world Actors
+   * Write every participating unit's opening turn state, recording their turn state first. Each unit's kept
+   * retractable item use becomes final before its turn is replaced (commitRetraction). Neighbouring world Actors
    * share one write; see turnUpdateBatches.
    */
   async applyTurnUpdates(sceneUuid, plan = [], operation = null) {
@@ -164,6 +166,7 @@ export class FoundryEncounterRepository {
     if (!actors.length) return true;
     try {
       await operation?.capture({ documents: actors.map(entry => ({ document: entry.actor, paths: TURN_PATHS })) });
+      for (const { actor } of actors) await commitRetraction(actor, operation);
       for (const batch of turnUpdateBatches(actors)) {
         if (batch.length === 1) await batch[0].actor.update({ ...batch[0].updates }, encounterOptions());
         else {
@@ -376,6 +379,26 @@ export class FoundryEncounterRepository {
       return summons.every(token => !scene.tokens.get(token.id));
     } catch (diagnosticError) {
       reportFoundryError(import.meta.url, diagnosticError, 'clearEncounterAftermath');
+      return false;
+    }
+  }
+
+  /**
+   * Make the kept retractable item use of every unit on an ending encounter's map final (commitRetraction), so no
+   * use outlives the encounter it was made in.
+   * @param {string} sceneUuid The map whose encounter is ending.
+   * @param {object|null} [operation] The ending command's undo record.
+   * @returns {Promise<boolean>} False when the Scene is gone or a write failed.
+   */
+  async commitRetractions(sceneUuid, operation = null) {
+    const scene = await resolveScene(sceneUuid);
+    if (!scene) return false;
+    try {
+      const actors = new Set(collectionValues(scene.tokens).map(token => token.actor).filter(Boolean));
+      for (const actor of actors) await commitRetraction(actor, operation);
+      return true;
+    } catch (diagnosticError) {
+      reportFoundryError(import.meta.url, diagnosticError, 'commitRetractions');
       return false;
     }
   }

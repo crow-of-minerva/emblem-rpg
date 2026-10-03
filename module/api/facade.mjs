@@ -423,6 +423,7 @@ function itemApi({ itemAuthoring, authority, execute, itemCinematicEnabled }) {
       params: intent?.params ?? {},
       cinematic: intent?.cinematic !== false && itemCinematicEnabled(intent?.cinematicCategory)
     }),
+    retract: tokenUuid => execute(COMMAND_IDS.ITEMS.RETRACT, { tokenUuid: tokenUuid ?? '' }),
     authoring: Object.freeze({
       copyAsStaff: itemUuid => itemAuthoring.copyAsStaff(authority(), itemUuid),
       getTerrainPresets: () => itemAuthoring.terrainPresets()

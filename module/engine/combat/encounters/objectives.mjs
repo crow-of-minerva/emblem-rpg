@@ -253,9 +253,9 @@ export async function resolveObjectiveEnd(sceneUuid, services, { pausing = false
 }
 
 /**
- * Finish timed-terrain cleanup before the encounter writer deletes its record, and on a real end clear the
- * encounter's aftermath too. Use the requested Scene, including off-canvas scenes. A successful no-op is not a
- * cleanup failure.
+ * Finish timed-terrain cleanup before the encounter writer deletes its record, and on a real end make every kept
+ * retractable item use final and clear the encounter's aftermath too. Use the requested Scene, including off-canvas
+ * scenes. A successful no-op is not a cleanup failure.
  * @param {string} sceneUuid The Scene whose encounter is ending or pausing.
  * @param {object} services The encounter services.
  * @param {{pausing?: boolean}} [options] Whether the encounter is only being paused.
@@ -265,6 +265,7 @@ async function completeTeardown(sceneUuid, services, { pausing = false } = {}) {
   const operation = services.operation ?? null;
   const reverted = await services.terrain.revertTimedEdits(sceneUuid, operation);
   if (reverted.ok !== true) return false;
+  if (!pausing && await services.encounters.commitRetractions(sceneUuid, operation) !== true) return false;
   if (!pausing && !await clearAftermath(sceneUuid, services)) return false;
   return await services.encounters.clearPhase(sceneUuid, operation) === true;
 }

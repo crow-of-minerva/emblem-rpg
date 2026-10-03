@@ -9,6 +9,7 @@ import {
   ACTIVATION_EFFECT_TRIGGERS,
   ATTACK_EFFECT_TRIGGERS,
   PASSIVE_EFFECT_TRIGGERS,
+  RETRACTABLE_EFFECT_TRIGGERS,
   TRIGGER_CAPABILITIES
 } from '../../../../../contracts/dsl/effects.mjs';
 import { triggerLabel } from '../../../../../config/triggers.mjs';
@@ -18,12 +19,17 @@ import { triggerLabel } from '../../../../../config/triggers.mjs';
 /* -------------------------------------------- */
 
 /**
- * The triggers an item of one trigger group may use, in the order the trigger select lists them.
+ * The triggers an item of one trigger group may use, in the order the trigger select lists them. A retractable item
+ * gets only its activation and skill check triggers.
  * @param {string} group          'A' for items that attack, 'B' for items that are used, 'C' for passive Abilities.
+ * @param {object} [options]
+ * @param {boolean} [options.retractable]  Whether the item is marked retractable.
  * @returns {readonly string[]}
  */
-export function triggerKeysForGroup(group) {
-  return group === 'C' ? PASSIVE_EFFECT_TRIGGERS : group === 'B' ? ACTIVATION_EFFECT_TRIGGERS : ATTACK_EFFECT_TRIGGERS;
+export function triggerKeysForGroup(group, { retractable = false } = {}) {
+  const keys = group === 'C' ? PASSIVE_EFFECT_TRIGGERS
+    : group === 'B' ? ACTIVATION_EFFECT_TRIGGERS : ATTACK_EFFECT_TRIGGERS;
+  return retractable ? keys.filter(key => RETRACTABLE_EFFECT_TRIGGERS.includes(key)) : keys;
 }
 
 /** Whether a trigger fires on items of a trigger group. */
@@ -32,14 +38,16 @@ export function triggerFitsGroup(trigger, group) {
 }
 
 /**
- * The trigger select's options for an effect on an item of one group. An effect whose trigger that group never fires
+ * The trigger select's options for an effect on an item of one group. An effect whose trigger the item can't use
  * gets it as a disabled first option, so the select still shows it and the validation bar says why it can't be saved.
  * @param {string} group          The item's trigger group.
  * @param {string} current        The effect's trigger.
+ * @param {object} [options]
+ * @param {boolean} [options.retractable]  Whether the item is marked retractable.
  * @returns {Array<{value: string, label: string, disabled?: boolean}>}
  */
-export function triggerChoices(group, current) {
-  const choices = triggerKeysForGroup(group).map(key => ({ value: key, label: triggerLabel(key) }));
+export function triggerChoices(group, current, { retractable = false } = {}) {
+  const choices = triggerKeysForGroup(group, { retractable }).map(key => ({ value: key, label: triggerLabel(key) }));
   if (!current || choices.some(choice => choice.value === current)) return choices;
   const unavailable = { value: current, label: `${triggerLabel(current)}, not available on this item`, disabled: true };
   return [unavailable, ...choices];

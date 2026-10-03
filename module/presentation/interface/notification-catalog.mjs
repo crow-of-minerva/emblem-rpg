@@ -152,6 +152,17 @@ export const NOTIFICATIONS = Object.freeze({
     text: ({ proficiency, rankLabel, itemName }) =>
       `${proficiency || 'Proficiency'} ${rankLabel || ''} required to cast ${itemName || 'that spell'}.`
   },
+  [NOTIFICATION_IDS.ITEM_LOCKED_THIS_PHASE]: {
+    level: 'warn',
+    text: ({ itemName } = {}) =>
+      `${itemName || 'That item'} failed this phase and cannot be used again until the next one.`
+  },
+  [NOTIFICATION_IDS.ITEM_RETRACTED]: { silent: true, text: () => '' },
+  [NOTIFICATION_IDS.ITEM_RETRACTION_NONE]: { level: 'warn', text: () => 'There is no item use to take back.' },
+  [NOTIFICATION_IDS.ITEM_RETRACTION_MOVED]: {
+    level: 'warn', text: () => 'This unit has moved since that item was used, so the use cannot be taken back.'
+  },
+  [NOTIFICATION_IDS.ITEM_RETRACTION_FAILED]: { level: 'warn', text: () => 'That item use could not be taken back.' },
   [NOTIFICATION_IDS.ITEM_TARGET_INVALID]: { level: 'warn', text: () => 'That item cannot be aimed at those units.' },
   [NOTIFICATION_IDS.ITEM_TARGET_OBJECT]: {
     level: 'warn', text: () => 'Objects are only struck by attacks and damaging effects.'
