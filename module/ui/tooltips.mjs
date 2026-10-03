@@ -437,7 +437,7 @@ const TOOLTIPS = Object.freeze({
   'item.booster-growths': "Growths to raise, comma-separated: HP, Mgt, Agi, Tqn, Wit, Cha, Def, Res",
   'item.booster-growth-value': "Added to each listed growth rate",
   'item.click-to-edit-target-parameters': "Edit target parameters",
-  'item.retractable': 'The unit can press Cancel to take this use back until it moves or acts again.',
+  'item.retractable': 'The unit may retract this action by pressing the Unselect/Cancel keybind.',
   'item.click-to-edit-range-scaling': "Edit range scaling",
   'item.effect-size-at-the-target-location': "Effect size at the target location",
   'item.attacks-receive-a-damage-bonus-from-this-stat': "Attacks receive a damage bonus from this stat",
