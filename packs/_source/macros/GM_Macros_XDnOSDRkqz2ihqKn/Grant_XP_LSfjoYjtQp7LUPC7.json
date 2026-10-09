@@ -1,0 +1,25 @@
+{
+  "_id": "LSfjoYjtQp7LUPC7",
+  "name": "Grant XP",
+  "type": "script",
+  "img": "icons/svg/explosion.svg",
+  "scope": "global",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 600000,
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Grant XP is GM-only.');\n\nconst units = (canvas.tokens?.controlled ?? []).filter(token => token.actor?.type === 'Character');\nif (units.length !== 1) return ui.notifications.warn('Select exactly one unit.');\n\nconst unit = units[0].actor;\nconst PROGRESSING_ROLES = ['Lord', 'Retainer'];\nconst role = unit.system.faction?.role ?? 'Neutral';\nif (!PROGRESSING_ROLES.includes(role)) {\n  return ui.notifications.warn(`${unit.name} is ${role}, which does not gain XP.`);\n}\n\nconst MAX_LEVEL = 30;\nconst XP_PER_LEVEL = 100;\nconst progression = unit.system.progression ?? {};\nconst level = Number(progression.level) || 1;\nconst exp = Number(progression.experience) || 0;\n\nconst amount = await foundry.applications.api.DialogV2.wait({\n  window: { title: `Grant XP — ${unit.name}` },\n  classes: ['emblem-rpg', 'dialog-editor'],\n  position: { width: 400 },\n  content: `\n    <div class=\"ed-container\">\n      <div class=\"ed-section ed-section--highlight\">\n        <p class=\"ed-description\">Level ${level} &mdash; ${exp} / ${XP_PER_LEVEL} XP</p>\n      </div>\n      <div class=\"ed-section\">\n        <label class=\"ed-label\" for=\"emblem-xp-amount\">XP to grant</label>\n        <input id=\"emblem-xp-amount\" class=\"ed-input\" type=\"number\" name=\"xp\" min=\"1\" step=\"1\" value=\"10\" autofocus />\n      </div>\n      ${level >= MAX_LEVEL ? '<div class=\"ed-section\"><p class=\"ed-description\">This unit is at max level; XP will be discarded.</p></div>' : ''}\n    </div>`,\n  buttons: [\n    {\n      action: 'grant',\n      label: 'Grant XP',\n      icon: 'fas fa-star',\n      default: true,\n      callback: (event, button) => Number(button.form.elements.xp.value)\n    },\n    { action: 'cancel', label: 'Cancel', callback: () => null }\n  ],\n  rejectClose: false\n});\n\nif (amount === null || amount === undefined || typeof amount !== 'number') return;\nif (!Number.isFinite(amount) || amount <= 0) return ui.notifications.warn('Enter a positive XP amount.');\n\nconst before = { level, exp };\nconst result = await game.emblemRpg.api.character.progression.grantExperience({\n  actorUuid: unit.uuid,\n  experience: Math.floor(amount)\n});\nif (!result.ok) return;\nconst after = {\n  level: Number(unit.system.progression?.level) || before.level,\n  exp: Number(unit.system.progression?.experience) || 0\n};\n\nconsole.log(`emblem-rpg | Grant XP — ${unit.name} +${Math.floor(amount)} XP`, { before, after, result });",
+  "author": null,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788532965874,
+    "modifiedTime": 1789617992691,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!LSfjoYjtQp7LUPC7"
+}

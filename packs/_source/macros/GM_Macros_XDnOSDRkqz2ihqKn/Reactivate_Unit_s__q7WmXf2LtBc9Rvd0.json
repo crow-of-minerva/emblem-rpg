@@ -1,0 +1,25 @@
+{
+  "_id": "q7WmXf2LtBc9Rvd0",
+  "name": "Reactivate Unit(s)",
+  "type": "script",
+  "img": "icons/svg/aura.svg",
+  "scope": "global",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 500000,
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Reactivate Unit(s) is GM-only.');\n\nconst selected = canvas.tokens?.controlled ?? [];\nconst units = selected.filter(token => token.actor?.type === 'Character');\nif (!units.length) return ui.notifications.warn('Select one or more Character units first.');\n\nconst planning = units.filter(token => token.actor.system?.turn?.movementPlanning === true);\nconst ready = units.filter(token => token.actor.system?.turn?.movementPlanning !== true);\n\nconst TURN_RESET = {\n  'system.turn.actionAvailable': true,\n  'system.turn.bonusActionAvailable': true,\n  'system.turn.movementAvailable': true,\n  'system.turn.movementSpent': 0,\n  'system.turn.extraActionUsed': false,\n  'system.turn.traded': false,\n  'system.turn.continuationPending': '',\n  'system.turn.continuationRequestId': ''\n};\n\nconst restored = [];\nconst failures = [];\n\nfor (const token of ready) {\n  const actor = token.actor;\n  const turn = actor.system?.turn ?? {};\n  const spent = [\n    turn.actionAvailable === true ? null : 'action',\n    turn.bonusActionAvailable === true ? null : 'bonus',\n    turn.movementAvailable === true ? null : 'movement'\n  ].filter(Boolean);\n  try {\n    await actor.update(TURN_RESET);\n    restored.push({\n      unit: actor.name,\n      restored: spent.length ? spent.join(', ') : 'already reactive',\n      movementSpent: Number(turn.movementSpent) || 0\n    });\n  } catch (err) {\n    failures.push({ unit: actor.name, error: err.message });\n    console.error(`emblem-rpg | Reactivate Unit(s) failed for ${actor.name}:`, err);\n  }\n}\n\nconsole.group(`emblem-rpg | Reactivate Unit(s) — ${restored.length} unit(s) reactivated`);\nif (restored.length) console.table(restored);\nif (planning.length) console.table(planning.map(token => ({ unit: token.actor.name, skipped: 'movement plan open' })));\nif (failures.length) console.table(failures);\nconsole.groupEnd();\n\nconst held = planning.length ? ` ${planning.length} skipped with an open movement plan.` : '';\nif (failures.length) {\n  ui.notifications.error(`Reactivated ${restored.length} unit(s); ${failures.length} failed, see console.${held}`);\n} else if (!restored.length) {\n  ui.notifications.warn(`No unit reactivated.${held}`);\n} else {\n  ui.notifications.info(`Reactivated ${restored.length} unit(s).${held}`);\n}",
+  "author": "kzOpWgw6gzYcVsrZ",
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788973039560,
+    "modifiedTime": 1789617992691,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!q7WmXf2LtBc9Rvd0"
+}

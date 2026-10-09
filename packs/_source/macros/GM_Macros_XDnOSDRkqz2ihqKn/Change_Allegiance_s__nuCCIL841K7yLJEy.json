@@ -1,0 +1,25 @@
+{
+  "_id": "nuCCIL841K7yLJEy",
+  "name": "Change Allegiance(s)",
+  "type": "script",
+  "img": "icons/svg/hanging-sign.svg",
+  "scope": "global",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 1000000,
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Change Allegiance(s) is GM-only.');\n\nconst units = (canvas.tokens?.controlled ?? []).filter(token => token.actor?.type === 'Character');\nif (!units.length) return ui.notifications.warn('Select one or more units first.');\n\nconst OWNER = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;\nconst OWNABLE_ROLES = ['Retainer', 'Ally'];\nconst ROLES = ['Retainer', 'Neutral', 'Enemy', 'Ally'];\nconst players = game.users.filter(user => !user.isGM);\nconst escape = foundry.utils.escapeHTML;\n\nconst roleOptions = ROLES.map(role => `<option value=\"${role}\">${role}</option>`).join('');\nconst ownerOptions = [\n  '<option value=\"\">No owner (GM only)</option>',\n  ...players.map(user => `<option value=\"${user.id}\">${escape(user.name)}</option>`)\n].join('');\nconst roster = units.map(token => `${escape(token.actor.name)} (${token.actor.system?.faction?.role ?? 'Neutral'})`)\n  .join(', ');\n\nconst choice = await foundry.applications.api.DialogV2.wait({\n  window: { title: 'Change Allegiance(s)' },\n  classes: ['emblem-rpg', 'dialog-editor'],\n  position: { width: 460 },\n  content: `\n    <div class=\"ed-container\">\n      <div class=\"ed-section ed-section--highlight\">\n        <p class=\"ed-description\">${roster}</p>\n      </div>\n      <div class=\"ed-section\">\n        <label class=\"ed-label\" for=\"emblem-allegiance-role\">Faction role</label>\n        <select id=\"emblem-allegiance-role\" class=\"ed-input\" name=\"role\">${roleOptions}</select>\n      </div>\n      <div class=\"ed-section\">\n        <label class=\"ed-label\" for=\"emblem-allegiance-owner\">Owned by</label>\n        <select id=\"emblem-allegiance-owner\" class=\"ed-input\" name=\"owner\">${ownerOptions}</select>\n        <p class=\"ed-description\">A player may own a Retainer or an Ally only.</p>\n      </div>\n    </div>`,\n  buttons: [\n    {\n      action: 'apply',\n      label: 'Change Allegiance',\n      icon: 'fas fa-flag',\n      default: true,\n      callback: (event, button) => ({\n        role: button.form.elements.role.value,\n        owner: button.form.elements.owner.value\n      })\n    },\n    { action: 'cancel', label: 'Cancel', callback: () => null }\n  ],\n  render: (event, dialog) => {\n    const role = dialog.element.querySelector('[name=\"role\"]');\n    const owner = dialog.element.querySelector('[name=\"owner\"]');\n    const sync = () => {\n      const ownable = OWNABLE_ROLES.includes(role.value);\n      owner.disabled = !ownable;\n      if (!ownable) owner.value = '';\n    };\n    role.addEventListener('change', sync);\n    sync();\n  },\n  rejectClose: false\n});\n\nif (!choice || typeof choice !== 'object') return;\nconst grantOwner = OWNABLE_ROLES.includes(choice.role) ? choice.owner : '';\n\nconst changed = [];\nconst failures = [];\nfor (const token of units) {\n  const actor = token.actor;\n  const from = actor.system?.faction?.role ?? 'Neutral';\n  const update = { 'system.faction.role': choice.role };\n  if (grantOwner) update[`ownership.${grantOwner}`] = OWNER;\n  if (choice.role === 'Retainer' && !actor.isToken) update['prototypeToken.actorLink'] = true;\n  try {\n    await actor.update(update);\n    changed.push({ unit: actor.name, role: `${from} → ${choice.role}`, owner: grantOwner ? game.users.get(grantOwner)?.name : 'none' });\n  } catch (err) {\n    failures.push({ unit: actor.name, error: err.message });\n    console.error(`emblem-rpg | Change Allegiance(s) failed for ${actor.name}:`, err);\n  }\n}\n\nconsole.group(`emblem-rpg | Change Allegiance(s) — ${changed.length} unit(s) changed`);\nif (changed.length) console.table(changed);\nif (failures.length) console.table(failures);\nconsole.groupEnd();\n\nif (failures.length) ui.notifications.error(`Changed ${changed.length} unit(s); ${failures.length} failed, see console.`);\nelse ui.notifications.info(`${changed.length} unit(s) are now ${choice.role}${grantOwner ? `, owned by ${game.users.get(grantOwner)?.name}.` : '.'}`);",
+  "author": null,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788532965874,
+    "modifiedTime": 1789617992691,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!nuCCIL841K7yLJEy"
+}

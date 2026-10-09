@@ -1,0 +1,21 @@
+{
+  "_id": "XDnOSDRkqz2ihqKn",
+  "name": "GM Macros",
+  "type": "Macro",
+  "color": "#4a1c1c",
+  "sorting": "m",
+  "sort": 0,
+  "folder": null,
+  "description": "",
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.364",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788532965874,
+    "modifiedTime": 1788532965874,
+    "lastModifiedBy": null,
+    "exportSource": null
+  },
+  "_key": "!folders!XDnOSDRkqz2ihqKn"
+}

@@ -1,0 +1,25 @@
+{
+  "_id": "RepairScene00001",
+  "name": "Repair Items (Scene)",
+  "type": "script",
+  "img": "icons/svg/chest.svg",
+  "scope": "global",
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Repair Items (Scene) is GM-only.');\n\nconst scene = canvas.scene;\nif (!scene) return ui.notifications.warn('No map is active.');\n\nconst result = await game.emblemRpg.api.development.repairItems({ scope: 'scene', sceneUuid: scene.uuid });\n\nconsole.group(`emblem-rpg | Repair Items (Scene) — ${result.ok ? 'settled' : 'refused'}`);\nconsole.log(result.ok ? result.data : result);\nconsole.groupEnd();",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 1200000,
+  "author": "WJI1HGqH1q9W6m4R",
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1789608501216,
+    "modifiedTime": 1789617992692,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!RepairScene00001"
+}

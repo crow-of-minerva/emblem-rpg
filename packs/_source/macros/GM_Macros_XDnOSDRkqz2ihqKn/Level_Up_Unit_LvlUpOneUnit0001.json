@@ -1,0 +1,25 @@
+{
+  "_id": "LvlUpOneUnit0001",
+  "name": "Level Up Unit",
+  "type": "script",
+  "img": "icons/svg/ice-aura.svg",
+  "scope": "global",
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Level Up Unit is GM-only.');\n\nconst MAX_LEVEL = 30;\nconst units = (canvas.tokens?.controlled ?? []).filter(token => token.actor?.type === 'Character');\nif (units.length !== 1) return ui.notifications.warn('Select exactly one unit.');\n\nconst unit = units[0].actor;\nconst from = Number(unit.system.progression?.level) || 1;\nif (from >= MAX_LEVEL) return ui.notifications.warn(`${unit.name} is already at max level (${MAX_LEVEL}).`);\n\nconst result = await game.emblemRpg.api.character.progression.levelUp({ actorUuid: unit.uuid });\nconsole.log(`emblem-rpg | Level Up Unit — ${unit.name}`, result.ok ? result.data : result);",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 700000,
+  "author": "WJI1HGqH1q9W6m4R",
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1789608501216,
+    "modifiedTime": 1789617992691,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!LvlUpOneUnit0001"
+}

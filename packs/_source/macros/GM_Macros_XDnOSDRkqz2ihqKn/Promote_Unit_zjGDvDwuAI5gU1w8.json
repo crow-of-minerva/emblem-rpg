@@ -1,0 +1,25 @@
+{
+  "_id": "zjGDvDwuAI5gU1w8",
+  "name": "Promote Unit",
+  "type": "script",
+  "img": "icons/svg/paralysis.svg",
+  "scope": "global",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 900000,
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Promote Unit is GM-only.');\n\nconst units = (canvas.tokens?.controlled ?? []).filter(token => token.actor?.type === 'Character');\nif (units.length !== 1) return ui.notifications.warn('Select exactly one unit.');\n\nconst placed = units[0];\nawait game.emblemRpg.api.character.classes.openPromotion({\n  actorUuid: placed.actor.uuid,\n  tokenUuid: placed.document.uuid,\n  bypassItem: true,\n  bypassRequirements: true\n});",
+  "author": null,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788532965874,
+    "modifiedTime": 1789617992691,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!zjGDvDwuAI5gU1w8"
+}

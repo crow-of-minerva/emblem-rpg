@@ -1,0 +1,15 @@
+{
+  "name": "emblem-rpg",
+  "version": "1.0.3",
+  "private": true,
+  "type": "module",
+  "description": "Build tooling for the Emblem RPG system. The game code needs none of this; it compiles and extracts compendium packs.",
+  "scripts": {
+    "build:db": "node ./utils/packs.mjs pack",
+    "build:json": "node ./utils/packs.mjs unpack",
+    "build:clean": "node ./utils/packs.mjs clean"
+  },
+  "devDependencies": {
+    "@foundryvtt/foundryvtt-cli": "^3.0.4"
+  }
+}

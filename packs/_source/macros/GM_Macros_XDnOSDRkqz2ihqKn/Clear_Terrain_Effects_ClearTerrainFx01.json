@@ -1,0 +1,25 @@
+{
+  "_id": "ClearTerrainFx01",
+  "name": "Clear Terrain Effects",
+  "type": "script",
+  "img": "icons/svg/hazard.svg",
+  "scope": "global",
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Clear Terrain Effects is GM-only.');\n\nconst map = canvas.scene;\nif (!map) return ui.notifications.warn('No map is active.');\n\nconst result = await game.emblemRpg.api.development.clearTerrainEffects({ sceneUuid: map.uuid });\nconsole.group(`emblem-rpg | Clear Terrain Effects — ${map.name}`);\nconsole.log(result.ok ? result.data : result);\nconsole.groupEnd();",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 1700000,
+  "author": "WJI1HGqH1q9W6m4R",
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1789617236042,
+    "modifiedTime": 1789617992693,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!ClearTerrainFx01"
+}

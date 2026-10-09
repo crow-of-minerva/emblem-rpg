@@ -1,0 +1,25 @@
+{
+  "_id": "RepairWorld00001",
+  "name": "Repair Items (World)",
+  "type": "script",
+  "img": "icons/svg/chest.svg",
+  "scope": "global",
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Repair Items (World) is GM-only.');\n\nconst proceed = await foundry.applications.api.DialogV2.confirm({\n  window: { title: 'Repair Items (World)' },\n  classes: ['emblem-rpg', 'dialog-editor'],\n  content: `\n    <div class=\"ed-container\">\n      <div class=\"ed-section\">\n        <p class=\"ed-description\">Return every item carried by every unit in the world to its full uses?</p>\n      </div>\n    </div>`,\n  rejectClose: false\n});\nif (!proceed) return;\n\nconst result = await game.emblemRpg.api.development.repairItems({ scope: 'world' });\n\nconsole.group(`emblem-rpg | Repair Items (World) — ${result.ok ? 'settled' : 'refused'}`);\nconsole.log(result.ok ? result.data : result);\nconsole.groupEnd();",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 1400000,
+  "author": "WJI1HGqH1q9W6m4R",
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1789608501216,
+    "modifiedTime": 1789617992692,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!RepairWorld00001"
+}

@@ -1,0 +1,25 @@
+{
+  "_id": "VkvTvaCjXsinbot9",
+  "name": "Configure Combat AI",
+  "type": "script",
+  "img": "icons/svg/combat.svg",
+  "scope": "global",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 1100000,
+  "command": "const enemyAi = game.modules.get('emblem-rpg-enemy-ai');\nif (!enemyAi?.active || typeof enemyAi.api?.openMassEdit !== 'function') {\n  return ui.notifications.warn('The Emblem RPG Enemy AI module is not active; Configure Combat AI lives there.');\n}\nreturn enemyAi.api.openMassEdit();",
+  "author": "kzOpWgw6gzYcVsrZ",
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788801109141,
+    "modifiedTime": 1789617992691,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!VkvTvaCjXsinbot9"
+}

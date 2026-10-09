@@ -1,0 +1,25 @@
+{
+  "_id": "ReleaseControl01",
+  "name": "Release Player Controls",
+  "type": "script",
+  "img": "icons/svg/lever.svg",
+  "scope": "global",
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Release Player Controls is GM-only.');\n\nconst api = game.emblemRpg.api;\nconst lock = api.movement.getLock();\nif (!lock) return ui.notifications.info('No unit is under token control; nothing to release.');\nif (lock.holderId === game.user.id) {\n  return ui.notifications.warn(`You hold ${lock.tokenName} yourself — cancel your own plan instead.`);\n}\n\nconst holder = game.users.get(lock.holderId);\nconst proceed = await foundry.applications.api.DialogV2.confirm({\n  window: { title: 'Release Player Controls' },\n  classes: ['emblem-rpg', 'dialog-editor'],\n  content: `\n    <div class=\"ed-container\">\n      <div class=\"ed-section ed-section--highlight\">\n        <p class=\"ed-description\">${foundry.utils.escapeHTML(lock.holderName)} is pathfinding\n          ${foundry.utils.escapeHTML(lock.tokenName)}.</p>\n      </div>\n      <div class=\"ed-section\">\n        <p class=\"ed-description\">Cancel that plan, return the unit to where it started and release token\n          control, exactly as the holder's own cancel key would. Token lockdown clears for the whole table.</p>\n      </div>\n    </div>`,\n  rejectClose: false\n});\nif (!proceed) return;\n\nconst result = await api.recovery.clearLock({ announcement: 'timeout' });\nconsole.log('emblem-rpg | Release Player Controls', { lock, holder: holder?.name ?? 'offline', result });\nif (!result.ok) {\n  ui.notifications.warn(`Token control was not released (${result.code}). Try again once the table is idle.`);\n} else if (result.data?.cleared !== true) {\n  ui.notifications.warn('Token control was already clear by the time the host answered.');\n}",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 1500000,
+  "author": "WJI1HGqH1q9W6m4R",
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1789608501217,
+    "modifiedTime": 1789657886188,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!ReleaseControl01"
+}

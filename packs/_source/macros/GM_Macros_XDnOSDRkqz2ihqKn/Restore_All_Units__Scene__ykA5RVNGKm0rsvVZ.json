@@ -1,0 +1,25 @@
+{
+  "_id": "ykA5RVNGKm0rsvVZ",
+  "name": "Restore All Units (Scene)",
+  "type": "script",
+  "img": "icons/svg/heal.svg",
+  "scope": "global",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 100000,
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Restore All Units (Scene) is GM-only.');\n\nconst scene = canvas.scene;\nif (!scene) return ui.notifications.warn('No map is active.');\nconst placed = scene.tokens.filter(token => token.actor?.type === 'Character').length;\nif (!placed) return ui.notifications.warn(`No units are placed on ${scene.name}.`);\nconst reachLabel = `every unit on ${scene.name}`;\n\nconst proceed = await foundry.applications.api.DialogV2.wait({\n  window: { title: 'Restore All Units (Scene)' },\n  classes: ['emblem-rpg', 'dialog-editor'],\n  position: { width: 460 },\n  content: `\n    <div class=\"ed-container\">\n      <div class=\"ed-section ed-section--highlight\">\n        <p class=\"ed-description\">Fully restore ${reachLabel}?</p>\n      </div>\n      <div class=\"ed-section\">\n        <p class=\"ed-description\">Every unit in reach is set back to its maximum resources and a fresh turn.\n          All temporary active effects are dispelled, leaving wielded, mounted and armor\n          effects intact, and every item they carry that Refreshes is returned to full uses.</p>\n      </div>\n    </div>`,\n  buttons: [\n    { action: 'confirm', label: 'Restore', icon: 'fas fa-heart', callback: () => true },\n    { action: 'cancel', label: 'Cancel', default: true, callback: () => false }\n  ],\n  rejectClose: false\n});\nif (!proceed) return;\n\nconst result = await game.emblemRpg.api.development.restoreUnits({ scope: 'scene', sceneUuid: scene.uuid });\n\nconsole.group(`emblem-rpg | Restore All Units (Scene) — ${result.ok ? 'settled' : 'refused'}`);\nconsole.log(result.ok ? result.data : result);\nconsole.groupEnd();",
+  "author": null,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788532965874,
+    "modifiedTime": 1789617992690,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!ykA5RVNGKm0rsvVZ"
+}

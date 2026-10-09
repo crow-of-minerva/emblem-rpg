@@ -1,0 +1,25 @@
+{
+  "_id": "RepairSelected01",
+  "name": "Repair Items",
+  "type": "script",
+  "img": "icons/svg/chest.svg",
+  "scope": "global",
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Repair Items is GM-only.');\n\nconst units = (canvas.tokens?.controlled ?? []).filter(token => token.actor?.type === 'Character');\nif (!units.length) return ui.notifications.warn('Select one or more units first.');\n\nconst result = await game.emblemRpg.api.development.repairItems({\n  scope: 'selection',\n  actorUuids: units.map(token => token.actor.uuid)\n});\n\nconsole.group(`emblem-rpg | Repair Items — ${result.ok ? 'settled' : 'refused'}`);\nconsole.log(result.ok ? result.data : result);\nconsole.groupEnd();",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 1300000,
+  "author": "WJI1HGqH1q9W6m4R",
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1789608501216,
+    "modifiedTime": 1789617992692,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!RepairSelected01"
+}

@@ -1,0 +1,25 @@
+{
+  "_id": "a9G0fMbs8Jnchlbc",
+  "name": "Dispel Effect from Unit(s)",
+  "type": "script",
+  "img": "icons/svg/daze.svg",
+  "scope": "global",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 1600000,
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Dispel Effect from Unit(s) is GM-only.');\n\nconst units = (canvas.tokens?.controlled ?? []).filter(token => token.actor?.type === 'Character');\nif (!units.length) return ui.notifications.warn('Select one or more units first.');\n\nconst present = new Set();\nfor (const token of units) {\n  for (const effect of token.actor.effects) present.add(effect.name);\n}\n\nconst options = [...present].sort((a, b) => a.localeCompare(b))\n  .map(name => `<option value=\"${foundry.utils.escapeHTML(name)}\"></option>`).join('');\n\nconst raw = await foundry.applications.api.DialogV2.wait({\n  window: { title: 'Dispel Effect from Unit(s)' },\n  classes: ['emblem-rpg', 'dialog-editor'],\n  position: { width: 440 },\n  content: `\n    <div class=\"ed-container\">\n      <div class=\"ed-section\">\n        <label class=\"ed-label\" for=\"emblem-dispel-names\">Effect names, separated by commas</label>\n        <input id=\"emblem-dispel-names\" class=\"ed-input\" type=\"text\" name=\"names\" list=\"emblem-dispel-present\" placeholder=\"Poisoned, Restrained\" autofocus />\n        <datalist id=\"emblem-dispel-present\">${options}</datalist>\n      </div>\n      ${present.size ? '' : '<div class=\"ed-section\"><p class=\"ed-description\">The selected unit(s) carry no active effects.</p></div>'}\n    </div>`,\n  buttons: [\n    {\n      action: 'dispel',\n      label: 'Dispel',\n      icon: 'fas fa-wind',\n      default: true,\n      callback: (event, button) => button.form.elements.names.value\n    },\n    { action: 'cancel', label: 'Cancel', callback: () => null }\n  ],\n  rejectClose: false\n});\n\nif (typeof raw !== 'string') return;\n\nconst wanted = raw.split(',').map(entry => entry.trim().toLowerCase()).filter(Boolean);\nif (!wanted.length) return ui.notifications.warn('No effect names entered.');\n\nconst matched = new Set();\nconst removedByUnit = [];\nconst failures = [];\n\nfor (const token of units) {\n  const actor = token.actor;\n  const ids = [];\n  const names = [];\n  for (const effect of actor.effects) {\n    const keys = [effect.name, ...(effect.statuses ?? [])]\n      .filter(Boolean).map(key => String(key).trim().toLowerCase());\n    const hit = wanted.find(entry => keys.includes(entry));\n    if (!hit) continue;\n    matched.add(hit);\n    ids.push(effect.id);\n    names.push(effect.name);\n  }\n  if (!ids.length) continue;\n  try {\n    await actor.deleteEmbeddedDocuments('ActiveEffect', ids);\n    removedByUnit.push({ unit: actor.name, removed: names.join(', '), count: ids.length });\n  } catch (err) {\n    failures.push({ unit: actor.name, error: err.message });\n    console.error(`emblem-rpg | Dispel failed for ${actor.name}:`, err);\n  }\n}\n\nconst missed = wanted.filter(entry => !matched.has(entry));\nconst total = removedByUnit.reduce((sum, row) => sum + row.count, 0);\n\nconsole.group(`emblem-rpg | Dispel Effect from Unit(s) — ${total} effect(s) removed`);\nif (removedByUnit.length) console.table(removedByUnit);\nif (missed.length) console.log('Not found on any selected unit:', missed);\nif (failures.length) console.table(failures);\nconsole.groupEnd();\n\nif (failures.length) ui.notifications.error(`Removed ${total} effect(s); ${failures.length} unit(s) failed, see console.`);\nelse if (!total) ui.notifications.warn(`No matching effects found for: ${wanted.join(', ')}.`);\nelse if (missed.length) ui.notifications.info(`Removed ${total} effect(s). Not found: ${missed.join(', ')}.`);\nelse ui.notifications.info(`Removed ${total} effect(s).`);",
+  "author": null,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788532965874,
+    "modifiedTime": 1789617992692,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!a9G0fMbs8Jnchlbc"
+}

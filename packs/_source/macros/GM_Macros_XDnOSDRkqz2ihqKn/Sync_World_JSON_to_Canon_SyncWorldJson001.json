@@ -1,0 +1,25 @@
+{
+  "_id": "SyncWorldJson001",
+  "name": "Sync World JSON to Canon",
+  "type": "script",
+  "img": "icons/svg/book.svg",
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Sync World JSON is GM-only.');\n\nconst SHIPPED = 'systems/' + game.system.id + '/json/';\nconst WORLD = 'worlds/' + game.world.id + '/json';\nconst Picker = foundry.applications.apps.FilePicker.implementation;\n\n/** The world files that replace a shipped file whole, so canon is a copy of the shipped one. */\nconst FILES = [\n  { name: 'affinities.json', what: 'Replaced with the shipped affinities.' },\n  { name: 'exp-data.json', what: 'Replaced with the shipped activation XP table.' }\n];\n\n/** A file's text past the browser cache, or null when it doesn't exist. */\nasync function read(path) {\n  const response = await fetch(foundry.utils.getRoute(path), { cache: 'no-store' });\n  if (response.status === 404) return null;\n  if (!response.ok) throw new Error(path + ' responded ' + response.status);\n  return response.text();\n}\n\nfunction parsed(text) {\n  try { return JSON.parse(text); } catch { return undefined; }\n}\n\n/** Whether the world's copy is out of sync: missing, unreadable or different. Only then can it be synced. */\nfunction outOfSync(file, current) {\n  if (file.target === null) return false;\n  const data = current === null ? undefined : parsed(current);\n  return data === undefined || !foundry.utils.equals(data, parsed(file.target));\n}\n\nfor (const file of FILES) {\n  try {\n    file.target = await read(SHIPPED + file.name);\n    file.syncable = outOfSync(file, await read(WORLD + '/' + file.name));\n  } catch (error) {\n    file.target = null;\n    file.syncable = false;\n    console.error('emblem-rpg | Sync World JSON to Canon could not read ' + file.name, error);\n  }\n}\nif (!FILES.some(file => file.syncable)) return ui.notifications.info('Every world JSON file already matches canon.');\n\nconst rows = FILES.map(file => '<div class=\"ed-section\">'\n  + '<label class=\"ed-check' + (file.syncable ? '' : ' ed-field--disabled') + '\">'\n  + '<input type=\"checkbox\" name=\"' + file.name + '\"' + (file.syncable ? '' : ' disabled') + '> ' + file.name + '</label>'\n  + '<p class=\"ed-description\">' + file.what + '</p></div>').join('');\n\nconst chosen = await foundry.applications.api.DialogV2.wait({\n  window: { title: 'Sync World JSON to Canon' },\n  classes: ['emblem-rpg', 'dialog-editor'],\n  position: { width: 460 },\n  content: '<div class=\"ed-container\"><div class=\"ed-section ed-section--highlight\">'\n    + '<p class=\"ed-description\" style=\"font-size:13px; font-style:normal; color:var(--color-light-2);\">Overwrites the checked files in ' + WORLD + ' with the system\\'s shipped copy.</p>'\n    + '</div>' + rows + '</div>',\n  buttons: [\n    {\n      action: 'sync',\n      label: 'Sync',\n      icon: 'fas fa-rotate',\n      default: true,\n      callback: (event, button) => [...button.form.querySelectorAll('input[type=\"checkbox\"]:checked')].map(box => box.name)\n    },\n    { action: 'cancel', label: 'Cancel', callback: () => null }\n  ],\n  rejectClose: false\n});\nif (!Array.isArray(chosen)) return;\nif (!chosen.length) return ui.notifications.info('No file was checked, so nothing was synced.');\n\nconst synced = [];\nconst failed = [];\ntry {\n  const listing = await Picker.browse('data', 'worlds/' + game.world.id);\n  if (!(listing?.dirs ?? []).some(dir => String(dir).split('/').pop() === 'json')) {\n    await Picker.createDirectory('data', WORLD, {});\n  }\n} catch (error) {\n  return ui.notifications.error('Could not prepare ' + WORLD + ': ' + error.message);\n}\nfor (const file of FILES.filter(entry => chosen.includes(entry.name))) {\n  try {\n    const upload = new File([file.target], file.name, { type: 'application/json' });\n    const response = await Picker.upload('data', WORLD, upload, {}, { notify: false });\n    if (!response?.path) throw new Error('the upload was refused');\n    synced.push(file.name);\n  } catch (error) {\n    failed.push(file.name + ' (' + error.message + ')');\n  }\n}\n\nconsole.log('emblem-rpg | Sync World JSON to Canon', { synced, failed });\nif (failed.length) ui.notifications.error('Could not sync ' + failed.join(', ') + '.');\nif (synced.length) {\n  ui.notifications.info('Synced ' + synced.join(', ') + ' to canon. Reload Foundry on every client to apply it.');\n}",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "ownership": {
+    "default": 0
+  },
+  "sort": 1950000,
+  "author": "dp5SCKyretGAXe5A",
+  "scope": "global",
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.368",
+    "systemId": "emblem-rpg",
+    "systemVersion": "1.0.1",
+    "createdTime": 1790685830139,
+    "modifiedTime": 1790686152497,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!SyncWorldJson001"
+}

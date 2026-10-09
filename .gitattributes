@@ -1,3 +1,4 @@
 packs/** -text
+packs/_source/** text eol=lf
 .github export-ignore
 scripts export-ignore

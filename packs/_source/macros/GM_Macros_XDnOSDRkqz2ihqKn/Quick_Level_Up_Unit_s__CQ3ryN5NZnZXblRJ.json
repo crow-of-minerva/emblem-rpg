@@ -1,0 +1,25 @@
+{
+  "_id": "CQ3ryN5NZnZXblRJ",
+  "name": "Quick Level Up Unit(s)",
+  "type": "script",
+  "img": "icons/svg/ice-aura.svg",
+  "scope": "global",
+  "folder": "XDnOSDRkqz2ihqKn",
+  "sort": 800000,
+  "command": "if (!game.user.isGM) return ui.notifications.warn('Quick Level Up Unit(s) is GM-only.');\n\nconst STAT_LABELS = {\n  hp: 'HP', mgt: 'MGT', agi: 'AGI', tqn: 'TQN', wit: 'WIT', cha: 'CHA', def: 'DEF', res: 'RES'\n};\nconst MAX_LEVEL = 30;\n\nconst units = (canvas.tokens?.controlled ?? []).filter(token => token.actor?.type === 'Character');\nif (!units.length) return ui.notifications.warn('Select one or more units first.');\n\nconst levels = await foundry.applications.api.DialogV2.wait({\n  window: { title: 'Quick Level Up Unit(s)' },\n  classes: ['emblem-rpg', 'dialog-editor'],\n  position: { width: 400 },\n  content: `\n    <div class=\"ed-container\">\n      <div class=\"ed-section ed-section--highlight\">\n        <p class=\"ed-description\">${units.length} unit${units.length === 1 ? '' : 's'} selected.\n          Each level is rolled silently; the growths are reported in the console only.</p>\n      </div>\n      <div class=\"ed-section\">\n        <label class=\"ed-label\" for=\"emblem-quick-levels\">Levels to gain</label>\n        <input id=\"emblem-quick-levels\" class=\"ed-input\" type=\"number\" name=\"levels\" min=\"1\" max=\"${MAX_LEVEL}\" step=\"1\" value=\"1\" autofocus />\n      </div>\n    </div>`,\n  buttons: [\n    {\n      action: 'level',\n      label: 'Level Up',\n      icon: 'fas fa-angles-up',\n      default: true,\n      callback: (event, button) => Number(button.form.elements.levels.value)\n    },\n    { action: 'cancel', label: 'Cancel', callback: () => null }\n  ],\n  rejectClose: false\n});\n\nif (typeof levels !== 'number' || !Number.isFinite(levels) || levels < 1) return;\nconst rounds = Math.floor(levels);\n\nconst summary = [];\nconst growths = [];\nconst failures = [];\n\nfor (const token of units) {\n  const actor = token.actor;\n  const from = Number(actor.system.progression?.level) || 1;\n  let reached = from;\n  for (let round = 0; round < rounds; round += 1) {\n    if (reached >= MAX_LEVEL) break;\n    const result = await game.emblemRpg.api.character.progression.levelUp({ actorUuid: actor.uuid, quiet: true });\n    if (!result.ok) {\n      failures.push({ unit: actor.name, atLevel: reached, code: result.code });\n      break;\n    }\n    reached = Number(result.data.level) || reached;\n    for (const [key, stat] of Object.entries(result.data.stats ?? {})) {\n      if (!stat.increased) continue;\n      growths.push({\n        unit: actor.name,\n        level: reached,\n        stat: STAT_LABELS[key] ?? key,\n        from: stat.oldValue,\n        to: stat.newValue,\n        roll: `${stat.roll} vs ${stat.growthChance}`\n      });\n    }\n  }\n  summary.push({ unit: actor.name, level: `${from} → ${reached}`, gained: reached - from });\n}\n\nconsole.group(`emblem-rpg | Quick Level Up Unit(s) — ${rounds} level(s) requested on ${units.length} unit(s)`);\nconsole.table(summary);\nif (growths.length) console.table(growths);\nelse console.log('No stat grew on any roll.');\nif (failures.length) console.table(failures);\nconsole.groupEnd();\n\nconst gained = summary.reduce((total, row) => total + row.gained, 0);\nif (failures.length) ui.notifications.error(`Gained ${gained} level(s); ${failures.length} refused, see console.`);\nelse ui.notifications.info(`Gained ${gained} level(s) quietly — growths in the console.`);",
+  "author": null,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {},
+  "_stats": {
+    "coreVersion": "14.367",
+    "systemId": "emblem-rpg",
+    "systemVersion": "0.2.0",
+    "createdTime": 1788532965874,
+    "modifiedTime": 1789617992691,
+    "lastModifiedBy": "emblembuilder000",
+    "exportSource": null
+  },
+  "_key": "!macros!CQ3ryN5NZnZXblRJ"
+}
