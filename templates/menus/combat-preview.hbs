@@ -1,0 +1,147 @@
+
+<div id="combat-window" class="combat-window">
+
+    <div class="combat-window-frame">
+        <img class="combat-frame-img" src="systems/emblem-rpg/assets/ui/combat-frame/CombatFrame.png">
+    </div>
+
+    <img class="atk-nameplate" src="systems/emblem-rpg/assets/ui/combat-frame/blue-nameplate.png">
+    <img class="def-nameplate" src="systems/emblem-rpg/assets/ui/combat-frame/red-nameplate.png">
+
+    {{#if weaponArt}}
+    <div class="weapon-art-display">
+        <img src="{{weaponArt.img}}">
+        <span>{{weaponArt.name}}</span>
+    </div>
+    {{/if}}
+
+    <div class="actor-images-container">
+        <img class="atk-img{{#if atkLegacyArt}} is-legacy-art{{/if}}" src="{{atkImage}}" style="left: {{atkAnchorX}}px;" data-scale="{{atkImageScale}}" data-original-h="{{atkOriginalH}}">
+        <img class="def-img{{#if defLegacyArt}} is-legacy-art{{/if}}" src="{{defImage}}" style="left: {{defAnchorX}}px;" data-scale="{{defImageScale}}" data-original-h="{{defOriginalH}}">
+    </div>
+
+    {{#if atkStnDamage}}
+    <img class="LRArrow" src="systems/emblem-rpg/assets/ui/combat-frame/LRArrow.png">
+    <p class="atk-stn-dmg">{{atkStnDamage}} Brk!</p>
+    {{/if}}
+
+    {{#if atkOnBreakText}}
+    <p class="atk-on-break-text">{{atkOnBreakText}}</p>
+    {{/if}}
+
+    {{#if defStnDamage}}
+    <img class="RLArrow" src="systems/emblem-rpg/assets/ui/combat-frame/RLArrow.png">
+    <p class="def-stn-dmg">{{defStnDamage}} Brk!</p>
+    {{/if}}
+
+    {{#if defOnBreakText}}
+    <p class="def-on-break-text">{{defOnBreakText}}</p>
+    {{/if}}
+
+    <div class="left-half">
+        <div class="atk-name text-fit-container">{{this.atkName}}</div>
+        <div class="atk-weapon-container">
+            <img class="atk-wep-img {{#if atkIsEffective}}effective-weapon{{/if}}" src="{{atkWepImg}}" style="{{atkWepTransform}}" id="atk-wep-img">
+            {{#if atkWeaponIsFixed}}
+            <span class="weapon-select weapon-select-fixed" id="atk-weapon-name">{{atkWepName}}</span>
+            {{else}}
+            <select id="atk-weapon-select" class="weapon-select">
+                {{#each atkValidWeapons}}
+                <option value="{{this.id}}" data-img="{{this.img}}" data-dmg-type="{{this.damageType}}" {{#if @first}}selected{{/if}} {{#if this.shieldBlocked}}disabled data-tooltip="{{tooltip 'combat-preview.two-handed-shield'}}"{{/if}}>{{this.name}}</option>
+                {{/each}}
+            </select>
+            {{/if}}
+            <select id="atk-dmg-type-select" class="dmg-type-select {{#if (eq atkArrow "effective")}}effective-type{{/if}} {{#if (eq atkArrow "ineffective")}}ineffective-type{{/if}}" {{#if atkDmgRandomize}}data-tooltip="{{tooltip 'combat-preview.random-damage-type'}}"{{/if}}>
+                {{#each atkDmgTypes}}
+                <option value="{{this}}" {{#if (eq this ../atkSelectedDmgType)}}selected{{/if}}>{{capitalize this}}{{#if ../atkDmgRandomize}} (?){{/if}}</option>
+                {{/each}}
+            </select>
+            {{#unless (eq atkSelectedDmgType "none")}}
+
+            <img id="weapon-dmg-icon" class="weapon-dmg-icon" src="systems/emblem-rpg/assets/ui/dmg-types/{{atkSelectedDmgType}}.png">
+            {{/unless}}
+            {{#unless atkWepInfinite}}<span class="atk-wep-uses" style="color:{{atkWepColor}}!important;">{{atkWepUses}} / {{atkWepMaxUses}}</span>{{/unless}}
+        </div>
+        {{#if atkHasAdvantage}}
+        <img class="weapon-advantage-arrow atk-advantage-arrow" src="systems/emblem-rpg/assets/ui/combat-frame/UpArrow.png" alt="Advantage">
+        {{/if}}
+        {{#if atkHasDisadvantage}}
+        <img class="weapon-advantage-arrow atk-disadvantage-arrow" src="systems/emblem-rpg/assets/ui/combat-frame/DownArrow.png" alt="Disadvantage">
+        {{/if}}
+
+        <div class="atk-hp-container">
+            <span class="atk-HP">{{atkHp}}</span>
+            <div class="atk-bars-container">
+                {{{atkHpBar}}}
+            </div>
+        </div>
+
+        <div class="atk-stance-bar">
+            <span class="atk-stance-value">{{atkStn}}</span>
+            {{#each atkStnIcons}}
+                <i class="{{this.class}}" style="color: {{this.color}};"></i>
+            {{/each}}
+        </div>
+
+        <div class="atk-combat-details">
+            <span {{#if atkIsEffective}}style="color: #10A42E;"{{/if}}>{{atkDamage}}</span>
+            <span style="color:{{atkHitColor}};">{{atkHitChance}}</span>
+            <span>{{atkCritChance}}</span>
+        </div>
+
+        <p class="atk-double-text circle-float">{{{atkDoubleText}}}</p>
+    </div>
+
+    <div class="right-half">
+        <div class="def-name text-fit-container">{{this.defName}}</div>
+        {{#if defWeapon}}
+        <div class="def-weapon-container">
+            <img class="def-wep-img {{#if defIsEffective}}effective-weapon{{/if}}" src="{{defWepImg}}" style="{{defWepTransform}}" id="def-wep-img">
+            <span class="def-weapon-label">{{defWepName}}</span>
+            {{#unless (eq defDmgType "none")}}
+            <img id="def-weapon-dmg-icon" class="def-weapon-dmg-icon" src="systems/emblem-rpg/assets/ui/dmg-types/{{defDmgType}}.png">
+            {{/unless}}
+            <span class="def-dmg-type">{{capitalize defDmgType}}</span>
+            {{#unless defWepInfinite}}<span class="def-wep-uses" style="color:{{defWepColor}}!important;">{{defWepUses}}/{{defWepMaxUses}}</span>{{/unless}}
+        </div>
+        {{/if}}
+            {{#if defHasAdvantage}}
+            <img class="weapon-advantage-arrow def-advantage-arrow" src="systems/emblem-rpg/assets/ui/combat-frame/UpArrow.png" alt="Advantage">
+            {{/if}}
+            {{#if defHasDisadvantage}}
+            <img class="weapon-advantage-arrow def-disadvantage-arrow" src="systems/emblem-rpg/assets/ui/combat-frame/DownArrow.png" alt="Disadvantage">
+            {{/if}}
+
+        <div class="def-hp-container">
+            <span class="def-HP">{{defHp}}</span>
+            <div class="def-bars-container">
+                {{{defHpBar}}}
+            </div>
+        </div>
+
+        <div class="def-stance-bar">
+            <span class="def-stance-value">{{defStn}}</span>
+            {{#each defStnIcons}}
+                <i class="{{this.class}}" style="color: {{this.color}};"></i>
+            {{/each}}
+        </div>
+
+        <div class="def-combat-details">
+            <span {{#if defIsEffective}}style="color: #10A42E;"{{/if}}>{{defDamage}}</span>
+            <span style="color:{{defHitColor}};">{{defHitChance}}</span>
+            <span>{{defCritChance}}</span>
+        </div>
+
+        <p class="def-double-text circle-float">{{{defDoubleText}}}</p>
+    </div>
+
+    {{#if previewNotice}}
+    <div class="attack-sequence-display combat-preview-notice">{{previewNotice}}</div>
+    {{else if attackSequence}}
+    <div class="attack-sequence-display">
+        Attack Order: {{{coloredAttackSequence}}}
+    </div>
+    {{/if}}
+</div>
+
+

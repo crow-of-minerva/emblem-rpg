@@ -1,0 +1,14 @@
+<div class="effect-description-dialog">
+  <img src="{{effectImg}}" alt="{{effectName}}" class="effect-description-img" />
+  <div class="effect-description-text">{{{description}}}</div>
+  {{#if hasDuration}}
+    <div class="effect-description-duration">
+      <i class="fas fa-hourglass-half"></i>
+      {{#if untilRemoved}}
+        Duration: <strong>until removed</strong>
+      {{else}}
+        Duration: <strong>{{duration}}</strong> Turn{{#if plural}}s{{/if}}
+      {{/if}}
+    </div>
+  {{/if}}
+</div>

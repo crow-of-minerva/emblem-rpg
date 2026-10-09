@@ -1,0 +1,102 @@
+<div class="gm-menu gathering-menu">
+
+  <header class="gm-topbar">
+    <div class="gm-actor gather-actor-node">
+      <img class="gm-actor-img" src="{{node.image}}" alt="{{node.name}}" />
+      <div class="gm-actor-meta">
+        <div class="gm-actor-name">{{node.name}}</div>
+        <div class="gm-actor-sub">Gathering Node</div>
+      </div>
+    </div>
+    <div class="gm-topbar-spacer"></div>
+    <label class="gm-field gather-to-field">
+      <span>Gather To</span>
+      <select class="gm-select" name="gatherTo">
+        {{#each destinations}}
+        <option value="{{this.value}}"{{#if this.selected}} selected{{/if}}>{{this.label}}</option>
+        {{/each}}
+      </select>
+    </label>
+  </header>
+
+  <section class="gm-panel gather-details-panel">
+    {{#if node.description}}
+    <div class="gm-panel-head gather-desc-head">
+      <p class="gather-desc">{{node.description}}</p>
+    </div>
+    {{/if}}
+    <div class="gm-panel-body">
+      <div class="gather-field-row">
+        <div class="gm-field"><span>Skill</span><div class="gm-field-value">{{node.skillLabel}}</div></div>
+        <div class="gm-field"><span>Multiplier</span><div class="gm-field-value">×{{node.multiplier}}</div></div>
+        <div class="gm-field"><span>Energy Cost</span><div class="gm-field-value">{{node.energyCost}}</div></div>
+        <div class="gm-field"><span>Method</span><div class="gm-field-value gather-field-method">{{node.method}}</div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="gm-bottom">
+
+    <section class="gm-panel gather-dest-panel">
+      <div class="gm-panel-head"><span class="gm-panel-title">Select Gatherer</span></div>
+      <div class="gm-panel-scroll">
+        {{#if hasPerformers}}
+        <div class="gm-pick-list">
+          {{#each performers}}
+          <div class="gm-pick{{#if this.selected}} is-chosen{{/if}}{{#unless this.eligible}} is-blocked{{/unless}}"
+               data-action="selectPerformer" data-uuid="{{this.actorUuid}}" data-eligible="{{this.eligible}}"
+               {{#unless this.eligible}}data-tooltip="{{this.blocked}}"{{/unless}}>
+            <img class="gm-pick-img" src="{{this.image}}" alt="{{this.name}}" style="{{this.avatarStyle}}" />
+            <span class="gm-pick-body">
+              <span class="gm-pick-name">{{this.name}}</span>
+              {{#if this.eligible}}
+              <span class="gm-pick-sub">{{this.skillLabel}} {{#if this.skillDie}}<strong>{{this.skillDie}}</strong> {{/if}}+ {{this.skillBonus}}</span>
+              {{else}}
+              <span class="gm-pick-sub is-bad">{{this.blocked}}</span>
+              {{/if}}
+            </span>
+            <span class="gm-pick-pips">{{#each this.pips}}<span class="energy-pip{{#if this.filled}} filled{{/if}}"></span>{{/each}}</span>
+            <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+          </div>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="gm-empty">No party member is on this map.</div>
+        {{/if}}
+      </div>
+    </section>
+
+    <section class="gm-panel gather-pool-panel">
+      <div class="gm-panel-head">
+        <span class="gm-panel-title">Gatherables</span>
+        <span class="gm-panel-meta">{{gatherableCount}} kind{{#unless (eq gatherableCount 1)}}s{{/unless}}</span>
+      </div>
+      <div class="gm-panel-scroll">
+        {{#if hasGatherables}}
+        <ul class="gather-pool-list">
+          {{#each gatherables}}
+          <li class="gather-pool-row{{#if this.hidden}} is-hidden{{/if}}">
+            {{#unless this.hidden}}
+            <img class="gather-pool-img" src="{{this.image}}" alt="{{this.name}}" />
+            {{/unless}}
+            <span class="gather-pool-name">{{this.name}}</span>
+            {{#unless this.hidden}}<span class="gather-pool-qty">{{this.total}} remaining</span>{{/unless}}
+          </li>
+          {{/each}}
+        </ul>
+        {{else}}
+        <div class="gm-empty">This node has no gatherables.</div>
+        {{/if}}
+      </div>
+    </section>
+
+  </div>
+
+  <footer class="gm-footer">
+    {{#if warning}}<div class="gm-warning"><i class="fas fa-triangle-exclamation"></i> {{warning}}</div>{{/if}}
+    <button type="button" class="gm-action-btn" data-action="gather" {{#unless canGather}}disabled{{/unless}}>
+      Begin Gathering
+    </button>
+  </footer>
+
+</div>

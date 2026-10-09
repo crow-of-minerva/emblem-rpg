@@ -1,0 +1,119 @@
+<div class="ed-container ed-params-container">
+  <section class="ed-section">
+    <h3>Delivery</h3>
+    <div class="ed-grid" style="grid-template-columns:210px 1fr">
+      <label class="ed-field">
+        <span class="ed-label" data-tooltip="{{tooltip 'editor.params.required-check'}}">required check</span>
+        <select id="params-delivery-type">
+          <option value="None" {{#unless (or saveRequired skillRequired)}}selected{{/unless}}>None</option>
+          <option value="SavingThrow" {{#if saveRequired}}selected{{/if}}>Saving throw</option>
+          <option value="SkillCheck" {{#if skillRequired}}selected{{/if}}>Skill check</option>
+        </select>
+      </label>
+      <div class="ed-field">
+        <span class="ed-label" aria-hidden="true">&nbsp;</span>
+        <output class="ed-summary" data-role="check-summary" for="params-delivery-type"></output>
+      </div>
+    </div>
+
+    <div id="params-saving-throw-block" class="ed-panel{{#unless saveRequired}} is-hidden{{/unless}}"
+      data-block="SavingThrow">
+      <div class="ed-grid ed-grid--3">
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.params.base-dc'}}">base dc</span>
+          <input type="number" id="params-save-base" value="{{savingThrowDC.base}}" min="0" step="1">
+        </label>
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.params.caster-adds'}}">caster adds</span>
+          <select id="params-save-attribute">
+            <option value="None" {{#if (eq savingThrowDC.attribute 'None')}}selected{{/if}}>None</option>
+            <option value="Mgt" {{#if (eq savingThrowDC.attribute 'Mgt')}}selected{{/if}}>Mgt</option>
+            <option value="Agi" {{#if (eq savingThrowDC.attribute 'Agi')}}selected{{/if}}>Agi</option>
+            <option value="Tqn" {{#if (eq savingThrowDC.attribute 'Tqn')}}selected{{/if}}>Tqn</option>
+            <option value="Wit" {{#if (eq savingThrowDC.attribute 'Wit')}}selected{{/if}}>Wit</option>
+            <option value="Cha" {{#if (eq savingThrowDC.attribute 'Cha')}}selected{{/if}}>Cha</option>
+          </select>
+        </label>
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.params.target-rolls'}}">target rolls</span>
+          <select id="params-save-target-attr">
+            <option value="None" {{#if (eq savingThrowDC.targetAttribute 'None')}}selected{{/if}}>None</option>
+            <option value="Mgt" {{#if (eq savingThrowDC.targetAttribute 'Mgt')}}selected{{/if}}>Mgt</option>
+            <option value="Tqn" {{#if (eq savingThrowDC.targetAttribute 'Tqn')}}selected{{/if}}>Tqn</option>
+            <option value="Agi" {{#if (eq savingThrowDC.targetAttribute 'Agi')}}selected{{/if}}>Agi</option>
+            <option value="Wit" {{#if (eq savingThrowDC.targetAttribute 'Wit')}}selected{{/if}}>Wit</option>
+            <option value="Cha" {{#if (eq savingThrowDC.targetAttribute 'Cha')}}selected{{/if}}>Cha</option>
+          </select>
+        </label>
+        <label class="ed-check ed-span" data-tooltip="{{tooltip 'editor.params.friendlies'}}">
+          <input type="checkbox" id="params-save-ignore-friendly" {{#if savingThrowDC.ignoreForFriendly}}checked{{/if}}>
+          <span>friendlies auto-succeed</span>
+        </label>
+      </div>
+    </div>
+
+    <div id="params-skill-check-block" class="ed-panel{{#unless skillRequired}} is-hidden{{/unless}}"
+      data-block="SkillCheck">
+      <div class="ed-grid ed-grid--3">
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.params.base-dc'}}">base dc</span>
+          <input type="number" id="params-skill-base" value="{{skillCheckDC.base}}" min="0" step="1">
+        </label>
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.params.target-adds'}}">target adds</span>
+          <select id="params-skill-target-attr">
+            <option value="None" {{#if (eq skillCheckDC.targetAttribute 'None')}}selected{{/if}}>None</option>
+            <option value="Mgt" {{#if (eq skillCheckDC.targetAttribute 'Mgt')}}selected{{/if}}>Mgt</option>
+            <option value="Tqn" {{#if (eq skillCheckDC.targetAttribute 'Tqn')}}selected{{/if}}>Tqn</option>
+            <option value="Agi" {{#if (eq skillCheckDC.targetAttribute 'Agi')}}selected{{/if}}>Agi</option>
+            <option value="Wit" {{#if (eq skillCheckDC.targetAttribute 'Wit')}}selected{{/if}}>Wit</option>
+            <option value="Cha" {{#if (eq skillCheckDC.targetAttribute 'Cha')}}selected{{/if}}>Cha</option>
+            <option value="Bld" {{#if (eq skillCheckDC.targetAttribute 'Bld')}}selected{{/if}}>Bld</option>
+          </select>
+        </label>
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.params.skill'}}">skill</span>
+          <select id="params-skill-skill">
+            {{#each skillOptions as |skill|}}
+            <option value="{{skill}}" {{#if (eq ../skillCheckDC.skill skill)}}selected{{/if}}>{{skill}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <label class="ed-check ed-span" data-tooltip="{{tooltip 'editor.params.friendlies'}}">
+          <input type="checkbox" id="params-skill-ignore-friendly" {{#if skillCheckDC.ignoreForFriendly}}checked{{/if}}>
+          <span>friendlies auto-succeed</span>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <section class="ed-section">
+    <h3>Custom Parameters</h3>
+    <div class="effect-param-row ed-params-head{{#unless params.length}} is-hidden{{/unless}}" data-role="params-head">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.params.custom-name'}}">name</span>
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.params.custom-options'}}">options</span>
+      <span class="ed-label" data-tooltip="{{tooltip 'effect-param.numeric'}}">num</span>
+      <span></span>
+    </div>
+    <div id="params-container" class="ed-params-list">
+      {{#each params}}
+      <div class="effect-param-row ed-param-entry" data-index="{{@index}}">
+        <input type="text" class="param-name" value="{{this.name}}" placeholder="name" aria-label="Parameter name"
+          data-tooltip="{{tooltip 'editor.params.custom-name'}}">
+        <input type="text" class="param-options" value="{{this.options}}" placeholder="a, b, c or formula"
+          aria-label="Options" data-tooltip="{{tooltip 'editor.params.custom-options'}}">
+        <input type="checkbox" class="param-numeric" {{#if this.numeric}}checked{{/if}}
+          data-tooltip="{{tooltip 'effect-param.numeric'}}" aria-label="Numeric">
+        <button type="button" class="delete-param" data-tooltip="{{tooltip 'effect-param.delete'}}"
+          aria-label="Delete parameter"><i class="fas fa-trash"></i></button>
+      </div>
+      {{/each}}
+    </div>
+    <div class="ed-params-empty{{#if params.length}} is-hidden{{/if}}" data-role="params-empty">no parameters</div>
+    <div class="ed-params-footer">
+      <button type="button" id="add-new-param" class="ed-btn" data-tooltip="{{tooltip 'editor.params.add'}}">
+        + add parameter
+      </button>
+    </div>
+  </section>
+</div>

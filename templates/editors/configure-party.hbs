@@ -1,0 +1,146 @@
+<div class="cp-root">
+  <header class="cp-topbar">
+    <button type="button" class="cp-btn cp-btn-primary" data-action="createParty">
+      <i class="fas fa-plus"></i>Create Party
+    </button>
+  </header>
+
+  <div class="cp-body">
+    <section class="cp-pane cp-parties-pane">
+      <header class="cp-pane-header"><i class="fas fa-flag"></i> Parties</header>
+      <div class="cp-pane-scroll">
+        {{#each parties}}
+          <section class="cp-card cp-party-card" data-party="{{id}}">
+            <header class="cp-card-header">
+              <span class="cp-card-title">{{name}}</span>
+              <div class="cp-card-tools">
+                <button type="button" class="cp-icon" data-action="renameParty" data-party="{{id}}"
+                        data-tooltip="{{@root.tooltips.renameParty}}">
+                  <i class="fas fa-pen"></i>
+                </button>
+                <button type="button" class="cp-icon cp-icon-danger" data-action="deleteParty" data-party="{{id}}"
+                        data-tooltip="{{@root.tooltips.deleteParty}}">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </header>
+            <div class="cp-card-body">
+              <div class="cp-field">
+                <span class="cp-field-label">Convoy</span>
+                <div class="cp-drop" data-drop="convoy" data-party="{{id}}">
+                  {{#if convoy}}
+                    <div class="cp-row is-convoy">
+                      <img class="cp-row-img" src="{{convoy.img}}" alt="" />
+                      <span class="cp-row-name">{{convoy.name}}</span>
+                      <button type="button" class="cp-row-x" data-action="unlinkConvoy" data-party="{{id}}"
+                              data-tooltip="{{@root.tooltips.unlinkConvoy}}">
+                        <i class="fas fa-xmark"></i>
+                      </button>
+                    </div>
+                  {{else}}
+                    <p class="cp-drop-hint">Drop a Convoy actor</p>
+                  {{/if}}
+                </div>
+              </div>
+
+              <div class="cp-field">
+                <span class="cp-field-label">Players</span>
+                {{#if memberPills.length}}
+                  <div class="cp-pills">
+                    {{#each memberPills}}
+                      <label class="cp-pill">
+                        <input type="checkbox" data-party-toggle="{{../id}}" data-user="{{id}}"
+                               {{#if checked}}checked{{/if}} />
+                        <span class="cp-user-dot" style="background:{{color}};"></span>
+                        <span class="cp-pill-name">{{name}}</span>
+                      </label>
+                    {{/each}}
+                  </div>
+                {{else}}
+                  <p class="cp-drop-hint">No non-GM users exist in this world.</p>
+                {{/if}}
+              </div>
+            </div>
+          </section>
+        {{/each}}
+        {{#unless hasParties}}
+          <p class="cp-empty">No parties yet. Use Create Party to add one.</p>
+        {{/unless}}
+      </div>
+    </section>
+
+    <section class="cp-pane cp-players-pane">
+      <header class="cp-pane-header"><i class="fas fa-users"></i> Players</header>
+      <div class="cp-pane-scroll">
+        {{#each players}}
+          <section class="cp-card cp-player-card{{#if collapsed}} is-collapsed{{/if}}" data-user="{{id}}">
+            <header class="cp-card-header" data-action="togglePlayer" data-user="{{id}}"
+                    data-tooltip="{{toggleTooltip}}">
+              <span class="cp-user-dot" style="background:{{color}};"></span>
+              <span class="cp-card-title">{{name}}</span>
+              {{#if partyName}}<span class="cp-card-badge">{{partyName}}</span>{{/if}}
+            </header>
+            <div class="cp-card-body">
+              <div class="cp-field">
+                <span class="cp-field-label">Lord</span>
+                <div class="cp-drop" data-drop="lord" data-user="{{id}}">
+                  {{#if lord}}
+                    <div class="cp-row is-lord{{#if lord.isToken}} is-token{{/if}}" draggable="true"
+                         data-unit-drag data-uuid="{{lord.uuid}}" data-user="{{id}}">
+                      <img class="cp-row-img" src="{{lord.img}}" alt=""
+                           {{#unless lord.isToken}}style="{{avatarScale lord clip=true}}"{{/unless}} />
+                      <span class="cp-row-name">
+                        {{lord.name}}
+                        {{#if lord.isToken}}<small class="cp-row-scene">{{lord.scene}}</small>{{/if}}
+                      </span>
+                      <button type="button" class="cp-row-x" data-action="removeUnit" data-user="{{id}}"
+                              data-uuid="{{lord.uuid}}" data-tooltip="{{@root.tooltips.removeUnit}}">
+                        <i class="fas fa-xmark"></i>
+                      </button>
+                    </div>
+                  {{else}}
+                    <p class="cp-drop-hint">Drop a Lord actor</p>
+                  {{/if}}
+                </div>
+              </div>
+
+              <div class="cp-field">
+                <div class="cp-field-labelrow">
+                  <span class="cp-field-label">Retainers</span>
+                  <button type="button" class="cp-mini" data-action="addByUuid" data-user="{{id}}"
+                          data-tooltip="{{@root.tooltips.addByUuid}}">UUID</button>
+                </div>
+                <div class="cp-drop" data-drop="retainers" data-user="{{id}}">
+                  {{#if hasRetainers}}
+                    <ul class="cp-retainer-grid">
+                      {{#each retainers}}
+                        <li class="cp-row{{#if isToken}} is-token{{/if}}" draggable="true"
+                            data-unit-drag data-uuid="{{uuid}}" data-user="{{../id}}">
+                          <img class="cp-row-img" src="{{img}}" alt=""
+                               {{#unless isToken}}style="{{avatarScale this clip=true}}"{{/unless}} />
+                          <span class="cp-row-name">
+                            {{name}}
+                            {{#if isToken}}<small class="cp-row-scene">{{scene}}</small>{{/if}}
+                          </span>
+                          <button type="button" class="cp-row-x" data-action="removeUnit" data-user="{{../id}}"
+                                  data-uuid="{{uuid}}" data-tooltip="{{@root.tooltips.removeUnit}}">
+                            <i class="fas fa-xmark"></i>
+                          </button>
+                        </li>
+                      {{/each}}
+                    </ul>
+                  {{else}}
+                    <p class="cp-drop-hint">Drop Retainer actors</p>
+                  {{/if}}
+                </div>
+              </div>
+            </div>
+          </section>
+        {{/each}}
+        {{#unless hasPlayers}}
+          <p class="cp-empty">No non-GM users exist in this world.</p>
+        {{/unless}}
+      </div>
+    </section>
+  </div>
+</div>

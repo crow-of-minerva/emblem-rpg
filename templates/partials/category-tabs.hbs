@@ -1,0 +1,4 @@
+{{#each categories}}
+<button type="button" class="{{../tabClass}} {{#if active}}active{{/if}}" data-tab="{{key}}"{{#if ../tooltips}} data-tooltip="{{label}}"{{/if}}><img class="{{../iconClass}}" src="systems/emblem-rpg/assets/ui/vendor-tabs/{{icon}}" alt="" />{{#if ../labels}} {{label}}{{/if}}{{#if ../badgeClass}}{{#if count}} <span class="{{../badgeClass}}">{{count}}</span>{{/if}}{{/if}}</button>
+{{/each}}
+

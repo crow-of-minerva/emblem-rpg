@@ -1,0 +1,13 @@
+<div class="bundle-editor">
+  <div class="bundle-editor-header">
+    <label class="be-field"><span>level</span><input type="number" name="bundleLvl" value="{{bundle.lvl}}" min="1" class="bundle-editor-num"></label>
+    <label class="be-field"><span>acquisition type</span><select name="bundleAcquisitionType" class="bundle-editor-select"><option value="all" {{#if (eq bundle.acquisitionType "all")}}selected{{/if}}>All</option><option value="choice" {{#if (eq bundle.acquisitionType "choice")}}selected{{/if}}>Choice</option></select></label>
+    <label class="be-field bundle-editor-choice-count {{#unless (eq bundle.acquisitionType "choice")}}is-hidden{{/unless}}"><span>choices</span><input type="number" name="bundleChoiceCount" value="{{bundle.choiceCount}}" min="1" class="bundle-editor-num"></label>
+    <label class="be-field be-field-check" data-tooltip="{{tooltip 'class.bundle-unique'}}"><span>unique</span><input type="checkbox" name="bundleUnique" {{checked bundle.unique}}></label>
+    <label class="be-field be-field-grow bundle-editor-exceptions {{#unless bundle.unique}}is-hidden{{/unless}}" data-tooltip="{{tooltip 'class.bundle-exceptions'}}"><span>exceptions</span><input type="text" name="bundleExceptions" value="{{bundle.exceptions}}" placeholder="Warrior,Mage,Knight"></label>
+    {{#if reopenable}}<label class="be-field be-field-check"><span>reopen</span><input type="checkbox" name="bundleReopen"></label>{{/if}}
+  </div>
+  <div class="bundle-editor-add"><input type="text" name="itemSearch" placeholder="Search feature" class="bundle-editor-search"></div>
+  <ul class="bundle-items"></ul>
+</div>
+

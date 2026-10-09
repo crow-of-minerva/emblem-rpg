@@ -1,0 +1,28 @@
+<div class="ed-container craft-container">
+  <div class="craft-tab-pane" data-tab="creation">
+    <div class="ed-section">
+      <div class="ed-grid ed-grid--2">
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.crafting.skill'}}">skill check</span>
+          <select name="creationSkillCheck">
+            {{#each skills}}
+            <option value="{{this}}" {{#if (eq this ../creation.skillCheck)}}selected{{/if}}>{{this}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.crafting.difficulty'}}">difficulty class</span>
+          <input type="number" name="creationDC" value="{{creation.difficultyClass}}" min="0" placeholder="10" />
+        </label>
+      </div>
+    </div>
+
+    <div class="ed-section craft-materials-section">
+      <h3>required materials</h3>
+      <div class="craft-material-search">
+        <input type="text" name="materialSearch" placeholder="search resources" />
+      </div>
+      <ul class="craft-material-list"></ul>
+    </div>
+  </div>
+</div>

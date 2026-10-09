@@ -1,0 +1,73 @@
+<div class="ed-container mod-container">
+  <div class="ed-section mod-meta">
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.modifier.name'}}">name</span>
+      <input type="text" id="mod-name" class="ed-input" value="{{modifier.name}}" placeholder="Acc Bonus" />
+    </label>
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.modifier.stat'}}">stat</span>
+      <input type="text" id="mod-target" class="ed-input mod-expression-input" data-path-input="target"
+        value="{{modifier.target}}" placeholder="atk" autocomplete="off" />
+    </label>
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.modifier.amount'}}">amount</span>
+      <input type="text" id="mod-quantity" class="ed-input mod-expression-input" value="{{modifier.quantity}}"
+        placeholder="5" />
+    </label>
+    {{#if isAura}}
+    <label class="ed-field ed-field--row">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.modifier.applies-to'}}">applies to</span>
+      <select id="mod-target-type" class="ed-select">
+        <option value="All" {{#if (eq modifier.targetType "All")}}selected{{/if}}>All</option>
+        <option value="Friendly+Self" {{#if (eq modifier.targetType "Friendly+Self")}}selected{{/if}}>
+          Friendly and self
+        </option>
+        <option value="Friendly" {{#if (eq modifier.targetType "Friendly")}}selected{{/if}}>Friendly</option>
+        <option value="Hostile" {{#if (eq modifier.targetType "Hostile")}}selected{{/if}}>Hostile</option>
+      </select>
+    </label>
+    {{/if}}
+    <div class="ed-hrow">
+      <label class="ed-check" data-tooltip="{{tooltip 'editor.modifier.equipped'}}">
+        <input type="checkbox" id="mod-equipped" class="ed-checkbox" {{#if modifier.requiresEquipped}}checked{{/if}} />
+        <span>only while equipped</span>
+      </label>
+      <label class="ed-check" data-tooltip="{{tooltip 'editor.modifier.active'}}">
+        <input type="checkbox" id="mod-activation" class="ed-checkbox" {{#if modifier.requiresActivation}}checked{{/if}}
+          {{#if isAura}}disabled{{/if}} />
+        <span>only while active</span>
+      </label>
+      {{#if isAura}}
+      <label class="ed-check" data-tooltip="{{tooltip 'editor.modifier.stackable'}}">
+        <input type="checkbox" id="mod-stackable" class="ed-checkbox" {{#if modifier.stackable}}checked{{/if}} />
+        <span>stackable</span>
+      </label>
+      {{/if}}
+    </div>
+  </div>
+
+  <div class="ed-section mod-condition-section">
+    <div class="mod-condition-header">
+      <span class="ed-label" data-tooltip="{{tooltip 'editor.modifier.condition'}}">condition</span>
+      <span class="mod-condition-summary"></span>
+    </div>
+    <div class="mod-tree-root">
+      <div class="mod-tree-contents"></div>
+      <div class="mod-tree-footer">
+        <button type="button" class="ed-btn mod-toolbar-btn mod-copy-btn"
+          data-tooltip="{{tooltip 'modifier.copy-condition'}}">
+          <i class="fas fa-copy"></i> copy
+        </button>
+        <button type="button" class="ed-btn mod-toolbar-btn mod-paste-btn"
+          data-tooltip="{{tooltip 'modifier.paste-condition'}}">
+          <i class="fas fa-paste"></i> paste
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <details class="mod-advanced">
+    <summary>advanced json</summary>
+    <textarea class="mod-advanced-json" rows="6" spellcheck="false"></textarea>
+  </details>
+</div>

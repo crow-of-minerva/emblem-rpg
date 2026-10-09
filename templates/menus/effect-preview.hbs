@@ -1,0 +1,101 @@
+<div class="effect-preview-dialog">
+  {{#if mount}}
+  <div class="effect-header mount-header">
+    <span class="mount-confirmation-text">{{mount.header}}</span>
+    {{#unless (eq item.usesType "infinite")}}
+      <div class="item-uses">
+        <span class="uses-text">Uses: {{item.usesCurrent}}/{{item.usesMax}}</span>
+      </div>
+    {{/unless}}
+  </div>
+
+  <hr class="effect-preview-divider" />
+
+  <div class="mount-stat-changes">
+    {{#if mount.statChanges.length}}
+      {{#each mount.statChanges}}
+        <div class="mount-stat-row mount-stat-{{this.direction}}">
+          <span class="mount-stat-label">{{this.label}}</span>
+          <span class="mount-stat-from">{{this.from}}</span>
+          <span class="mount-stat-arrow"><i class="fas fa-arrow-right"></i></span>
+          <span class="mount-stat-to">{{this.to}}</span>
+        </div>
+      {{/each}}
+    {{else}}
+      <div class="mount-stat-empty">No stat changes.</div>
+    {{/if}}
+  </div>
+  {{else}}
+  <div class="effect-header">
+    <div class="effect-confirmation-prompt">
+      <img src="{{item.img}}" alt="{{item.name}}" class="item-icon" />
+      {{#if hasTokenTargets}}
+        <span class="confirmation-text">Use "{{item.name}}" on the following target(s)?</span>
+      {{else}}
+        <span class="confirmation-text">Use "{{item.name}}" at the target location?</span>
+      {{/if}}
+    </div>
+
+    {{#unless (eq item.usesType "infinite")}}
+      <div class="item-uses">
+        <span class="uses-text">Uses: {{item.usesCurrent}}/{{item.usesMax}}</span>
+      </div>
+    {{/unless}}
+
+    {{#if params.length}}
+      <div class="effect-params">
+        <div class="params-container">
+          {{#each params}}
+            <div class="param-row">
+              <label class="param-label">{{this.name}}:</label>
+              <select class="param-selector" name="param-{{@index}}">
+                {{#each this.options}}
+                  <option value="{{this}}">{{this}}</option>
+                {{/each}}
+              </select>
+            </div>
+          {{/each}}
+        </div>
+      </div>
+    {{/if}}
+  </div>
+
+  {{#if hasTokenTargets}}
+  <hr class="effect-preview-divider" />
+
+  <div class="target-grid-container">
+    <div class="target-grid {{#if isTargetArray}}multiple-targets{{else}}single-target{{/if}}"
+         data-target-count="{{targets.length}}">
+      {{#each targets}}
+        <div class="target-token-container{{#unless ../isTargetArray}} centered{{/unless}}"
+             data-target-index="{{@index}}">
+          <div class="target-token-frame">
+            <img src="{{this.img}}" alt="{{this.name}}"
+                 class="target-token-image{{#if this.legacyArt}} is-legacy-art{{/if}}" />
+          </div>
+          <label class="target-name">{{this.name}}</label>
+          {{#if this.rallyBonuses}}
+            <div class="rally-bonuses">
+              {{#each this.rallyBonuses}}<span class="rally-bonus{{#if this.penalty}} is-penalty{{/if}}">{{this.label}} {{this.value}}</span>{{/each}}
+            </div>
+          {{/if}}
+          {{#if (eq this.delivery "save")}}
+            <div class="failure-chance {{successRateClass this.successRate}}">
+              Success Rate: {{this.successRate}}%
+            </div>
+          {{/if}}
+          {{#if (eq this.delivery "check")}}
+            <div class="skill-check-dc">
+              <div class="skill-info">{{this.skillLabel}} vs DC {{this.skillDc}}</div>
+              <div class="failure-chance {{successRateClass this.successRate}}">
+                Success Rate: {{this.successRate}}%
+              </div>
+            </div>
+          {{/if}}
+        </div>
+      {{/each}}
+    </div>
+  </div>
+  {{/if}}
+  {{/if}}
+</div>

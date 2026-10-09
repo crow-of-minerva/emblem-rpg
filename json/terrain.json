@@ -1,0 +1,72 @@
+{
+  "presets": [
+    {
+      "name": "Fire Tile",
+      "icon": "icons/svg/fire.svg",
+      "params": {
+        "movementCost": 2, "evasionMod": -2, "defMod": -2, "resMod": 0,
+        "effect": "jb2a.flames.orange.03.2x1.0", "effectScale": 1.3, "effectOpacity": 1, "effectSpan": false,
+        "tileEffects": [{ "type": "fire", "value": 10 }],
+        "soundFile": "psfx.ambient.firesources.fireplace.002", "soundRadius": 1, "soundVolume": 0.8, "soundEasing": true, "audioSpan": false,
+        "lightSpan": false,
+        "light": {
+          "dim": 2.5, "bright": 0.5, "walls": true, "color": "#ff811a", "alpha": 0.5,
+          "animType": "torch", "animSpeed": 5, "animIntensity": 5, "vision": true,
+          "coloration": 100, "luminosity": 0.5, "attenuation": 0.7, "saturation": 0, "contrast": 0, "shadows": 0
+        },
+        "obstacle": false, "impassable": false, "transition": "", "transitionRestrict": "",
+        "teleportLetter": "A", "teleportCost": "standard", "teleportMov": 0
+      }
+    },
+    {
+      "name": "Light Tile",
+      "icon": "icons/svg/sun.svg",
+      "params": {
+        "movementCost": 1, "evasionMod": 0, "defMod": 0, "resMod": 0,
+        "effect": "blfx.misc.flare2.star1.blue", "effectScale": 1.05, "effectOpacity": 1, "effectSpan": false,
+        "tileEffects": [],
+        "soundFile": "", "soundRadius": 3, "soundVolume": 0.8, "soundEasing": true, "audioSpan": false,
+        "lightSpan": false,
+        "light": {
+          "dim": 5, "bright": 1, "walls": false, "color": "#ffd9a0", "alpha": 0.25,
+          "animType": "torch", "animSpeed": 5, "animIntensity": 5, "vision": true,
+          "coloration": 100, "luminosity": 0.55, "attenuation": 0.8, "saturation": 1, "contrast": 0, "shadows": 0
+        },
+        "obstacle": false, "impassable": false, "transition": "", "transitionRestrict": "",
+        "teleportLetter": "A", "teleportCost": "standard", "teleportMov": 0
+      }
+    },
+    {
+      "name": "Flasked Fire",
+      "icon": "icons/svg/fire.svg",
+      "params": {
+        "movementCost": 2, "evasionMod": -2, "defMod": -2, "resMod": 0,
+        "effect": "jb2a.flames.orange.03.2x1.1", "effectScale": 1.3, "effectOpacity": 0.8, "effectSpan": false,
+        "tileEffects": [{ "type": "fire", "value": 5 }],
+        "soundFile": "", "soundRadius": 3, "soundVolume": 0.8, "soundEasing": true, "audioSpan": false,
+        "lightSpan": false,
+        "light": {
+          "dim": 1.25, "bright": 0.25, "walls": true, "color": "#ff811a", "alpha": 0.5,
+          "animType": "torch", "animSpeed": 6, "animIntensity": 9, "vision": true,
+          "coloration": 100, "luminosity": 0.5, "attenuation": 0.7, "saturation": 0, "contrast": 0, "shadows": 0
+        },
+        "obstacle": false, "impassable": false, "transition": "", "transitionRestrict": "",
+        "teleportLetter": "A", "teleportCost": "standard", "teleportMov": 0
+      }
+    },
+    {
+      "name": "Ichorous Pool",
+      "icon": "icons/svg/biohazard.svg",
+      "params": {
+        "movementCost": 2, "evasionMod": -4, "defMod": -4, "resMod": -2,
+        "effect": "jb2a.grease.dark_green.loop", "effectScale": 1.2, "effectOpacity": 0.8, "effectSpan": false,
+        "tileEffects": [{ "type": "decay", "value": 4 }],
+        "exceptions": [{ "selector": "unitType", "value": "undead", "syncMove": true, "syncEffect": true }],
+        "soundFile": "", "soundRadius": 3, "soundVolume": 0.8, "soundEasing": true, "audioSpan": false,
+        "obstacle": false, "impassable": false, "transition": "", "transitionRestrict": "",
+        "teleportLetter": "A", "teleportCost": "standard", "teleportMov": 0
+      }
+    }
+  ]
+}
+

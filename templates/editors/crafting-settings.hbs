@@ -1,0 +1,203 @@
+<div class="ed-container craft-container">
+  <div class="craft-tab-row ed-tabs">
+    <button type="button" class="craft-tab-btn ed-tab is-active" data-tab="forging">
+      <i class="fas fa-hammer"></i> Forging
+    </button>
+    {{#if showRefinement}}
+    <button type="button" class="craft-tab-btn ed-tab" data-tab="refinement">
+      <i class="fas fa-gem"></i> Refinement
+    </button>
+    {{/if}}
+  </div>
+
+  <div class="craft-tab-pane" data-tab="forging">
+    <div class="ed-section craft-head-section">
+      <div class="ed-grid ed-grid--4 compact">
+        <label class="ed-field ed-field--check">
+          <span class="ed-label" data-tooltip="{{tooltip 'crafting.forgeable'}}">enabled</span>
+          <span class="ed-check-slot">
+            <input type="checkbox" name="forgingEnabled" {{#if forging.enabled}}checked{{/if}} />
+          </span>
+        </label>
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'crafting.forge-multiplier'}}">forge multiplier</span>
+          <input type="number" name="forgeMult" value="{{forging.forgeMult}}" min="0.1" step="0.1" placeholder="1.0" />
+        </label>
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'editor.crafting.skill'}}">skill check</span>
+          <select name="forgingSkillCheck">
+            {{#each skills}}
+            <option value="{{this}}" {{#if (eq @root.forging.skillCheck this)}}selected{{/if}}>{{this}}</option>
+            {{/each}}
+          </select>
+        </label>
+        {{#if embedded}}
+        <label class="ed-field">
+          <span class="ed-label" data-tooltip="{{tooltip 'crafting.forging-xp'}}">forging xp</span>
+          <input type="number" name="forgingXP" value="{{forgingXP}}" min="0" step="1" placeholder="0" />
+        </label>
+        {{/if}}
+      </div>
+    </div>
+
+    <div class="ed-section craft-materials-section">
+      <h3>forging materials</h3>
+      <div class="craft-material-search">
+        <input type="text" name="materialSearch" placeholder="search resources" />
+      </div>
+      <ul class="craft-material-list"></ul>
+    </div>
+  </div>
+
+  {{#if showRefinement}}
+  <div class="craft-tab-pane is-hidden" data-tab="refinement">
+    <div class="craft-tier-row">
+      {{#each tiers}}
+        <button type="button" data-tier="{{@index}}"
+          class="craft-tier-btn {{#if (eq @index 0)}}active{{/if}} {{#unless this.enabled}}is-off{{/unless}}">
+          +{{add @index 1}}
+        </button>
+      {{/each}}
+    </div>
+
+    {{#each tiers}}
+      <div data-tier="{{@index}}"
+        class="craft-tier-panel {{#unless (eq @index 0)}}is-hidden{{/unless}}
+          {{#unless this.enabled}}is-body-disabled{{/unless}}">
+        <div class="ed-section craft-head-section">
+          <div class="ed-grid ed-grid--4 compact">
+            <label class="ed-field ed-field--check">
+              <span class="ed-label" data-tooltip="{{tooltip 'crafting.tier-enabled'}}">enabled</span>
+              <span class="ed-check-slot">
+                <input type="checkbox" name="tierEnabled_{{@index}}" {{#if this.enabled}}checked{{/if}} />
+              </span>
+            </label>
+            <label class="ed-field">
+              <span class="ed-label" data-tooltip="{{tooltip 'editor.crafting.xp-needed'}}">xp needed</span>
+              <input type="number" name="tierXpReq_{{@index}}" value="{{this.xpReq}}" min="0" step="1"
+                placeholder="0" />
+            </label>
+            <label class="ed-field">
+              <span class="ed-label" data-tooltip="{{tooltip 'editor.crafting.forge-multiplier'}}">
+                forge multiplier
+              </span>
+              <input type="number" name="tierForgeMult_{{@index}}" value="{{this.forgeMult}}" min="0.1" step="0.1"
+                placeholder="inherit" />
+            </label>
+            <label class="ed-field">
+              <span class="ed-label" data-tooltip="{{tooltip 'editor.crafting.tier-skill'}}">skill check</span>
+              <select name="tierSkill_{{@index}}">
+                <option value="" {{#unless this.skillCheck}}selected{{/unless}}>inherit</option>
+                {{#each @root.skills}}
+                <option value="{{this}}" {{#if (eq ../skillCheck this)}}selected{{/if}}>{{this}}</option>
+                {{/each}}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="ed-section">
+          <div class="craft-section-header">
+            <span class="ed-label">bonuses at +{{add @index 1}}</span>
+            {{#unless (eq @index 0)}}
+            <button type="button" class="ed-btn craft-tier-sync" data-tier="{{@index}}"
+              data-tooltip="{{tooltip 'crafting.copy-tier' @index}}">
+              <i class="fas fa-arrow-turn-down"></i> copy from +{{@index}}
+            </button>
+            {{/unless}}
+          </div>
+          {{#if @root.isArmor}}
+          <div class="ed-grid compact craft-stat-grid">
+            <label class="ed-field craft-stat">
+              <span class="ed-label">stn</span>
+              <input type="number" name="tierStn_{{@index}}" value="{{this.modifiers.stn}}" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label">def</span>
+              <input type="number" name="tierDef_{{@index}}" value="{{this.modifiers.def}}" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label">res</span>
+              <input type="number" name="tierRes_{{@index}}" value="{{this.modifiers.res}}" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label" data-tooltip="{{tooltip 'crafting.weight-reduction'}}">wgt</span>
+              <input type="number" name="tierWgtRed_{{@index}}" value="{{this.modifiers.wgtRed}}" min="0" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label" data-tooltip="{{tooltip 'crafting.durability-gain'}}">durability</span>
+              <input type="number" name="tierDur_{{@index}}" value="{{this.modifiers.durability}}" />
+            </label>
+          </div>
+          <div class="craft-prot-row">
+            <span class="ed-label craft-prot-label">protection</span>
+            <div class="craft-prot-grid">
+              {{#each this.typeIcons}}
+              <label class="craft-prot-toggle {{#if this.locked}}is-locked{{/if}}"
+                data-tooltip="{{this.label}}{{#if this.locked}}: base protection{{/if}}">
+                <img src="{{this.img}}"
+                  style="opacity: {{#if this.locked}}1{{else}}{{#if this.on}}1{{else}}0.2{{/if}}{{/if}};" />
+                <input type="checkbox" name="tierProt_{{../index}}_{{this.key}}"
+                  {{#if this.on}}checked{{/if}} {{#if this.locked}}disabled{{/if}} />
+              </label>
+              {{/each}}
+            </div>
+          </div>
+          {{else}}
+          <div class="ed-grid compact craft-stat-grid">
+            <label class="ed-field craft-stat">
+              <span class="ed-label">atk</span>
+              <input type="number" name="tierAtk_{{@index}}" value="{{this.modifiers.atk}}" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label">brk</span>
+              <input type="number" name="tierBrk_{{@index}}" value="{{this.modifiers.brk}}" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label" data-tooltip="{{tooltip 'crafting.weight-reduction'}}">wgt</span>
+              <input type="number" name="tierWgt_{{@index}}" value="{{this.modifiers.wgt}}" min="0" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label">acc</span>
+              <input type="number" name="tierAcc_{{@index}}" value="{{this.modifiers.acc}}" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label">crit</span>
+              <input type="number" name="tierCrit_{{@index}}" value="{{this.modifiers.crit}}" />
+            </label>
+            <label class="ed-field craft-stat">
+              <span class="ed-label" data-tooltip="{{tooltip 'crafting.durability-gain'}}">durability</span>
+              <input type="number" name="tierDur_{{@index}}" value="{{this.modifiers.durability}}" />
+            </label>
+          </div>
+          <div class="craft-prot-row">
+            <span class="ed-label craft-prot-label" data-tooltip="{{tooltip 'crafting.damage-type-gain'}}">
+              damage types
+            </span>
+            <div class="craft-prot-grid">
+              {{#each this.typeIcons}}
+              <label class="craft-prot-toggle {{#if this.locked}}is-locked{{/if}}"
+                data-tooltip="{{this.label}}{{#if this.locked}}: base damage type{{/if}}">
+                <img src="{{this.img}}"
+                  style="opacity: {{#if this.locked}}1{{else}}{{#if this.on}}1{{else}}0.2{{/if}}{{/if}};" />
+                <input type="checkbox" name="tierDmg_{{../index}}_{{this.key}}"
+                  {{#if this.on}}checked{{/if}} {{#if this.locked}}disabled{{/if}} />
+              </label>
+              {{/each}}
+            </div>
+          </div>
+          {{/if}}
+        </div>
+
+        <div class="ed-section craft-materials-section">
+          <h3>forging materials</h3>
+          <div class="craft-material-search" data-tier="{{@index}}">
+            <input type="text" name="tierMaterialSearch_{{@index}}" placeholder="search resources" />
+          </div>
+          <ul class="craft-material-list" data-tier="{{@index}}"></ul>
+        </div>
+      </div>
+    {{/each}}
+  </div>
+  {{/if}}
+</div>

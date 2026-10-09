@@ -1,0 +1,161 @@
+<div class="gm-menu performance-menu">
+
+  <header class="gm-topbar">
+    <div class="gm-actor pf-actor-station">
+      <img class="gm-actor-img" src="{{station.image}}" alt="{{station.name}}" />
+      <div class="gm-actor-meta">
+        <div class="gm-actor-name">{{station.name}}</div>
+        <div class="gm-actor-sub">Instrument</div>
+      </div>
+    </div>
+    <div class="gm-topbar-spacer"></div>
+    <p class="pf-mode-desc">{{modeDesc}}</p>
+  </header>
+
+  <div class="gm-bottom pf-body">
+
+    <div class="pf-stack">
+
+      <section class="gm-panel pf-lead-panel">
+        <div class="gm-panel-head"><span class="gm-panel-title">Lead Performer</span></div>
+        <div class="gm-panel-scroll">
+          {{#if hasPerformers}}
+          <div class="gm-pick-list">
+            {{#each performers}}
+            <div class="gm-pick{{#if this.selected}} is-chosen{{/if}}{{#unless this.eligible}} is-blocked{{/unless}}"
+                 data-action="selectPerformer" data-uuid="{{this.actorUuid}}" data-eligible="{{this.eligible}}"
+                 {{#unless this.eligible}}data-tooltip="{{this.blocked}}"{{/unless}}>
+              <img class="gm-pick-img" src="{{this.image}}" alt="{{this.name}}" style="{{this.avatarStyle}}" />
+              <span class="gm-pick-body">
+                <span class="gm-pick-name">{{this.name}}</span>
+                {{#if this.eligible}}
+                <span class="gm-pick-sub">{{this.skillLabel}} {{#if this.skillDie}}<strong>{{this.skillDie}}</strong> {{/if}}+ {{this.skillBonus}}</span>
+                {{else}}
+                <span class="gm-pick-sub is-bad">{{this.blocked}}</span>
+                {{/if}}
+              </span>
+              <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+            </div>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="gm-empty">No party member is on this map.</div>
+          {{/if}}
+        </div>
+      </section>
+
+    </div>
+
+    <section class="gm-panel pf-songs-panel">
+      <div class="gm-panel-head">
+        <span class="gm-panel-title">Songs</span>
+        <span class="gm-panel-meta">{{songs.length}} known</span>
+      </div>
+      <div class="gm-panel-scroll">
+        {{#if hasSongs}}
+        <div class="gm-pick-list">
+          {{#each songs}}
+          <div class="gm-pick pf-song{{#if this.selected}} is-chosen{{/if}}{{#if this.short}} is-short{{/if}}" data-action="selectSong" data-id="{{this.id}}"
+               {{#if this.short}}data-tooltip="Not enough free party members to accompany this song"{{/if}}>
+            <img class="gm-pick-img pf-song-img" src="{{this.image}}" alt="{{this.name}}" />
+            <span class="gm-pick-body">
+              <span class="pf-song-name">{{this.name}}</span>
+              <span class="pf-song-meta">
+                <span>DC {{this.dc}}</span>
+                {{#if this.group}}<span class="pf-tag">{{this.performers}} performers</span>{{/if}}
+                {{#if this.personal}}<span class="pf-tag">Personal</span>{{/if}}
+              </span>
+            </span>
+            <span class="pf-song-end">{{#if this.hasTrack}}<i class="fas fa-music" data-tooltip="Linked track"></i>{{/if}}</span>
+          </div>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="gm-empty">{{#if leadName}}{{leadName}} knows no songs.{{else}}No lead performer selected.{{/if}}</div>
+        {{/if}}
+      </div>
+    </section>
+
+    <section class="gm-panel pf-details-panel">
+      {{#if hasSelection}}
+      <div class="pf-detail-group">
+        <div class="pf-detail-head">
+          <span class="pf-song-title">{{detail.name}}</span>
+          <span class="pf-plate"><span>DC</span><strong>{{detail.dc}}</strong></span>
+          <span class="pf-plate"><span>Performers</span><strong>{{detail.performersLabel}}</strong></span>
+        </div>
+        <div class="pf-song-desc"{{#if detail.description}} data-tooltip="{{detail.description}}"{{/if}}>{{detail.description}}</div>
+      </div>
+      <div class="pf-detail-group pf-detail-lower">
+        <span class="pf-label">Inspires</span>
+        <div class="pf-bonus-grid">
+          {{#each detail.bonuses}}
+          <span class="pf-bonus{{#if this.granted}} has-bonus{{/if}}" data-tooltip="{{this.title}}">
+            <span>{{this.label}}</span><strong>{{#if this.granted}}+{{this.value}}{{else}}--{{/if}}</strong></span>
+          {{/each}}
+        </div>
+        {{#if detail.track}}
+        <div class="pf-track"{{#if detail.track.path}} data-track-path="{{detail.track.path}}"{{/if}}>
+          <span class="pf-track-badge"><i class="fas fa-music"></i></span>
+          <span class="pf-track-text">
+            <span class="pf-track-name">{{detail.track.name}}</span>
+            <span class="pf-track-sub">{{detail.track.sub}}</span>
+          </span>
+          <span class="pf-track-facts">
+            {{#if detail.track.path}}<span class="pf-track-fact" data-tooltip="Length"><i class="fas fa-clock"></i><span class="pf-track-duration">{{detail.track.duration}}</span></span>{{/if}}
+            {{#if detail.track.sounds}}<span class="pf-track-fact"><i class="fas fa-list"></i>{{detail.track.sounds}}</span>{{/if}}
+            {{#if detail.track.repeat}}<span class="pf-track-fact"><i class="fas fa-repeat"></i>Repeats</span>{{/if}}
+          </span>
+        </div>
+        {{else if detail.trackMissing}}
+        <div class="pf-track-none is-missing"><i class="fas fa-music"></i> Linked track not found</div>
+        {{else}}
+        <div class="pf-track-none"><i class="fas fa-music"></i> No track linked</div>
+        {{/if}}
+        {{#if hasAccompanimentPicker}}
+        <div class="pf-accompaniment">
+          <div class="pf-accompaniment-bar">
+            <span class="pf-label">Accompaniment</span>
+            <span class="pf-accompaniment-note{{#if detail.short}} is-bad{{/if}}">{{detail.needLabel}}</span>
+          </div>
+          <div class="gm-panel-scroll pf-accompaniment-scroll">
+            {{#if hasAccompaniments}}
+            <div class="pf-tile-grid">
+              {{#each accompaniments}}
+              <div class="gm-pick pf-tile{{#if this.chosen}} is-chosen{{/if}}{{#if this.blocked}} is-blocked{{/if}}"
+                   data-action="toggleAccompaniment" data-uuid="{{this.actorUuid}}" data-blocked="{{#if this.blocked}}true{{else}}false{{/if}}"
+                   {{#if this.blocked}}data-tooltip="{{this.blocked}}"{{/if}}>
+                <img class="gm-pick-img" src="{{this.image}}" alt="{{this.name}}" style="{{this.avatarStyle}}" />
+                <span class="gm-pick-body">
+                  <span class="gm-pick-name">{{this.name}}</span>
+                  {{#if this.blocked}}<span class="gm-pick-sub is-bad">{{this.blocked}}</span>{{else}}<span class="gm-pick-sub">{{this.roll}}</span>{{/if}}
+                </span>
+                <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+              </div>
+              {{/each}}
+            </div>
+            {{else}}
+            <div class="gm-col-none">No other party member is on this map.</div>
+            {{/if}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{else}}
+      <div class="gm-empty">{{#if hasSongs}}Select a song to perform.{{else if leadName}}{{leadName}} knows no songs.{{else}}Select a lead performer.{{/if}}</div>
+      {{/if}}
+    </section>
+
+  </div>
+
+  <footer class="gm-footer"{{#if buttonTitle}} data-tooltip="{{buttonTitle}}"{{/if}}>
+    <span class="pf-ticket{{#if ticket.bad}} is-bad{{/if}}">
+      {{#if ticket.blocked}}{{ticket.blocked}}{{else if ticket.cast}}<strong>{{ticket.cast}}</strong> {{ticket.verb}} <strong>{{ticket.song}}</strong> <span class="pf-ticket-roll">(<span class="pf-ticket-lit">{{ticket.roll}}</span> vs DC {{detail.dc}})</span>{{/if}}
+    </span>
+    <button type="button" class="gm-action-btn{{#if buttonInsufficient}} is-insufficient{{/if}}" data-action="perform"
+            {{#unless canPerform}}disabled{{/unless}}>
+      {{#if buttonInsufficient}}<i class="fas fa-triangle-exclamation"></i> {{/if}}{{buttonLabel}}
+    </button>
+  </footer>
+
+</div>

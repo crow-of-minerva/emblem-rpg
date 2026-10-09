@@ -1,0 +1,72 @@
+{{!-- The sc-unit partial draws one unit column and is used for both the left and the right unit.
+  prepareSocialView in social-app.mjs decides which unit stands on each side. --}}
+{{#*inline "sc-unit"}}
+<div class="sc-unit{{#unless eligible}} is-blocked{{/unless}}"
+  {{~#unless eligible}} data-tooltip="{{blocked}}"{{/unless}}>
+  <img class="sc-portrait" src="{{image}}" alt="{{name}}" style="{{avatarStyle}}" />
+  <span class="sc-name">{{name}}</span>
+  {{#if role}}
+  <span class="sc-role">{{role}}</span>
+  {{/if}}
+  {{#if check}}
+  <span class="sc-line">{{check.label}} <strong>{{check.line}}</strong></span>
+  {{/if}}
+  {{#if (ne trainingXp null)}}
+  <span class="sc-line">EXP from Training: <strong>{{trainingXp}}</strong></span>
+  {{/if}}
+</div>
+{{/inline}}
+<div class="gm-menu social-menu{{#if isTrain}} is-train{{/if}}">
+  <div class="sc-layout">
+
+    <div class="sc-rail">
+      {{#each modes}}
+      <button type="button" class="sc-tab{{#if this.active}} is-active{{/if}}" data-action="setMode"
+        data-mode="{{this.key}}">
+        <i class="fas {{this.icon}}"></i>
+        <span>{{this.label}}</span>
+      </button>
+      {{/each}}
+    </div>
+
+    <div class="sc-main">
+      <div class="sc-stage">
+        <div class="sc-faces">
+          {{> sc-unit left}}
+          <div class="sc-center">
+            <i class="fas {{centerIcon}} sc-center-icon"></i>
+            <p class="sc-reminder">{{reminder}}</p>
+          </div>
+          {{> sc-unit right}}
+        </div>
+        {{#if isTrain}}
+        <div class="sc-grid" role="group" aria-label="Proficiencies">
+          {{#each grid}}
+          {{#if this.trainable}}
+          <button type="button" class="sc-cell{{#if this.selected}} is-chosen{{/if}}" data-action="selectProficiency"
+            data-key="{{this.key}}" data-tooltip="{{this.title}}"
+            aria-pressed="{{#if this.selected}}true{{else}}false{{/if}}">
+            <img class="sc-cell-img" src="{{this.icon}}" alt="{{this.label}}" />
+            {{#if this.badge}}
+            <span class="sc-badge">{{this.badge}}</span>
+            {{/if}}
+          </button>
+          {{else}}
+          <button type="button" class="sc-cell" data-key="{{this.key}}" data-tooltip="{{this.title}}" disabled>
+            <img class="sc-cell-img" src="{{this.icon}}" alt="{{this.label}}" />
+          </button>
+          {{/if}}
+          {{/each}}
+        </div>
+        {{/if}}
+      </div>
+
+      <footer class="gm-footer"{{#if buttonTitle}} data-tooltip="{{buttonTitle}}"{{/if}}>
+        <button type="button" class="gm-action-btn" data-action="begin" {{#unless canBegin}}disabled{{/unless}}>
+          {{buttonLabel}}
+        </button>
+      </footer>
+    </div>
+
+  </div>
+</div>

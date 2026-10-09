@@ -1,0 +1,20 @@
+<div class="ed-container">
+  <div class="ed-section">
+    <div class="ed-row"><label class="ed-label">Value</label><input type="number" name="value" value="{{value}}"></div>
+    {{#if showShields}}
+      <div class="ed-row"><label class="ed-label">Shields</label><input type="number" name="shields" value="{{shields}}" min="0" step="1"></div>
+    {{/if}}
+    <div class="ed-row"><label class="ed-label">Class Base</label><input type="text" value="{{classValue}}" disabled></div>
+    <div class="ed-row"><label class="ed-label">Modifiers</label><input type="text" value="{{modifiers}}" disabled></div>
+    <div class="ed-row"><label class="ed-label">Total</label><input type="text" value="{{total}}" disabled></div>
+  </div>
+  {{#if showGrowth}}
+    <div class="ed-section">
+      <h3>Growth</h3>
+      <div class="ed-row"><label class="ed-label">Value</label><input type="number" name="growthValue" value="{{growthValue}}"></div>
+      <div class="ed-row"><label class="ed-label">Class Base</label><input type="text" value="{{growthClass}}" disabled></div>
+      <div class="ed-row"><label class="ed-label">Modifiers</label><input type="text" value="{{growthModifiers}}" disabled></div>
+      <div class="ed-row"><label class="ed-label">Total</label><input type="text" value="{{growthTotal}}" disabled></div>
+    </div>
+  {{/if}}
+</div>

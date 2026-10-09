@@ -1,0 +1,104 @@
+<form class="emblem-rpg convoy-sheet" autocomplete="off">
+  {{#*inline "convoyUses"}}
+  {{#unless (eq this.system.uses.type "infinite")}}
+  {{#if (eq this.system.uses.current 0)}}
+  <div class="convoy-item-uses" style="color: #ff6b6b;">Broken</div>
+  {{else}}
+  <div class="convoy-item-uses" style="color: {{durabilityColor this.system.uses.current this.system.uses.max}};">{{this.system.uses.current}}/{{this.system.uses.max}}</div>
+  {{/if}}
+  {{/unless}}
+  {{/inline}}
+
+  {{#*inline "convoyItem"}}
+  <div class="convoy-item {{#if this.inbound}}convoy-inbound-item{{/if}}" data-item-id="{{this._id}}"{{#if this.inbound}} data-inbound="true" draggable="false" data-tooltip="{{#if @root.isGM}}{{tooltip 'convoy.inbound-item-staff'}}{{else}}{{tooltip 'convoy.inbound-item'}}{{/if}}"{{else}} draggable="true"{{/if}}>
+    <img class="convoy-item-img" src="{{this.img}}" alt="{{this.name}}" draggable="false" />
+    <div class="convoy-item-details">
+      <div class="convoy-item-name">{{this.name}}</div>
+      <div class="convoy-item-subtype">{{#if (eq cat 'all')}}{{this.type}}{{#if this.system.itemType}} |
+        {{this.system.itemType}}{{/if}}
+        {{else if (eq cat 'miscellaneous')}}{{this.type}}{{else if weapon}}{{this.system.weapon.req}}
+        Weapon{{else}}{{this.system.itemType}}{{/if}}</div>
+    </div>
+    {{#if this.inbound}}<span class="convoy-inbound-tag">Inbound</span>{{/if}}
+    {{#if (eq cat 'consumables')}}
+    {{#unless (eq this.system.uses.type "infinite")}}
+    <div class="convoy-item-uses">{{this.system.uses.current}}/{{this.system.uses.max}}</div>
+    {{/unless}}
+    {{else if (eq cat 'miscellaneous')}}
+    {{#if (eq this.type "Resource")}}
+    <div class="convoy-item-uses">×{{this.system.amount}}</div>
+    {{/if}}
+    {{else if (or weapon (eq cat 'staves'))}}
+    {{> convoyUses}}
+    {{else if (eq cat 'armor')}}
+    {{#if (eq this.system.itemType "Armor")}}{{> convoyUses}}{{/if}}
+    {{else if (or (eq this.system.itemType "Weapon") (eq this.system.itemType "Staff") (eq this.system.itemType "Staff (U)") (eq this.system.itemType "Armor"))}}
+    {{> convoyUses}}
+    {{else if (eq this.type "Consumable")}}
+    {{#unless (eq this.system.uses.type "infinite")}}
+    <div class="convoy-item-uses">{{this.system.uses.current}}/{{this.system.uses.max}}</div>
+    {{/unless}}
+    {{else if (eq this.type "Resource")}}
+    <div class="convoy-item-uses">×{{this.system.amount}}</div>
+    {{/if}}
+    {{#if this.canDelete}}
+    <div class="convoy-item-actions">
+      <button type="button" class="convoy-item-btn delete-item-btn" data-tooltip="{{tooltip 'sheet.delete'}}">
+        <i class="fas fa-trash"></i>
+      </button>
+    </div>
+    {{/if}}
+  </div>
+  {{/inline}}
+
+  <div class="convoy-box-shadow"></div>
+
+  <header class="convoy-header">
+    <div class="convoy-portrait" data-action="editImage">
+      <img src="{{actor.img}}" alt="{{actor.name}}" style="{{avatarScale actor clip=true}}" />
+    </div>
+    <div class="convoy-info">
+      <input class="convoy-name-input"
+             name="name"
+             type="text"
+             placeholder="Convoy Name"
+             maxlength="30"
+             value="{{actor.name}}" />
+      <div class="convoy-item-count">{{activeCountLabel}}</div>
+    </div>
+    <div class="convoy-controls">
+      <div class="convoy-inbound-switch">
+        <button type="button" class="convoy-inbound-toggle {{#unless inboundView}}is-active{{/unless}}" data-view="stored" data-tooltip="{{tooltip 'convoy.view-stored'}}">Stored</button>
+        <button type="button" class="convoy-inbound-toggle {{#if inboundView}}is-active{{/if}} {{#if inboundPending}}has-inbound{{/if}}" data-view="inbound" data-tooltip="{{tooltip 'convoy.view-inbound'}}">Inbound{{#if inboundCount}} <span class="convoy-inbound-count">{{inboundCount}}</span>{{/if}}</button>
+      </div>
+      <div class="convoy-controls-row">
+        {{#if isGM}}
+        {{#if inboundView}}
+        <button type="button" class="convoy-deliver-all" data-tooltip="{{tooltip 'convoy.deliver-all'}}"><i class="fas fa-truck-ramp-box"></i> Deliver</button>
+        {{/if}}
+        {{/if}}
+        <div class="convoy-gp {{#if inboundView}}is-inbound{{/if}}">
+          {{#if inboundView}}
+          <i class="fas fa-coins convoy-gp-drag" draggable="false" data-tooltip="{{#if isGM}}{{tooltip 'convoy.inbound-gold-staff'}}{{else}}{{tooltip 'convoy.inbound-gold'}}{{/if}}"></i>
+          {{else}}
+          <i class="fas fa-coins convoy-gp-drag" draggable="true" data-tooltip="{{tooltip 'convoy.drag-gold'}}"></i>
+          {{/if}}
+          <input class="convoy-gp-input" type="number" name="{{gpField}}" value="{{gpValue}}" min="0" placeholder="0"
+                 {{#if gpLocked}}disabled{{/if}} />
+          <span class="convoy-gp-unit">GP</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="convoy-tabs">
+    {{> category-tabs categories=categoryList tabClass="convoy-tab-button" iconClass="convoy-tab-icon" badgeClass="convoy-tab-badge" labels=true}}
+  </nav>
+
+  <section class="convoy-inventory">
+    {{#each categoryList}}
+    {{#> category-pane paneClass="convoy-tab-content" gridClass="convoy-item-grid" emptyClass="convoy-empty-message" empty=@root.emptyText}}{{#each items}}{{> convoyItem cat=../key weapon=../weapon}}{{/each}}{{/category-pane}}
+    {{/each}}
+  </section>
+
+</form>

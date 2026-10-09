@@ -1,0 +1,710 @@
+<div class="terrain-root">
+  {{!-- Mode tabs. _hoistModeBar in app.mjs moves this bar into the window header on each render. --}}
+  <div class="terrain-modebar">
+    <button type="button" class="terrain-mode-btn {{#if isTerrain}}is-active{{/if}}" data-action="setMode" data-mode="terrain"><i class="fas fa-mountain-sun"></i> Terrain</button>
+    <button type="button" class="terrain-mode-btn {{#if isWalls}}is-active{{/if}}" data-action="setMode" data-mode="walls"><i class="fas fa-bezier-curve"></i> Draw Walls</button>
+    <button type="button" class="terrain-mode-btn {{#if isSettings}}is-active{{/if}}" data-action="setMode" data-mode="settings"><i class="fas fa-gear"></i> Settings</button>
+  </div>
+
+  {{!-- Settings mode: combat music, movement, the builder grid, vision and fog, and the objectives summary. --}}
+  {{#if isSettings}}
+  <section class="terrain-pane terrain-settings-pane">
+    <header class="terrain-pane-header"><i class="fas fa-gear"></i><span>Settings</span></header>
+    <div class="terrain-pane-body terrain-settings-body">
+      <div class="terrain-settings-col">
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title"><i class="fas fa-music"></i><span>Combat Music</span></header>
+          {{#each sceneSettings.tracks}}
+          <label class="terrain-field" data-tooltip="{{tooltip this.tooltip}}">
+            <span class="ed-label">{{this.label}}</span>
+            <select class="ed-input" data-scene-setting="{{this.key}}">
+              <option value="" {{#if this.noneSelected}}selected{{/if}}>None</option>
+              {{#if this.stale}}<option value="{{this.value}}" selected>Unresolved Track</option>{{/if}}
+              {{#if this.playlists.length}}
+              <optgroup label="Playlists">
+                {{#each this.playlists}}<option value="{{this.uuid}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>{{/each}}
+              </optgroup>
+              {{/if}}
+              {{#each this.groups}}
+              <optgroup label="{{this.name}}">
+                {{#each this.sounds}}<option value="{{this.uuid}}" {{#if this.selected}}selected{{/if}}>{{this.name}}</option>{{/each}}
+              </optgroup>
+              {{/each}}
+            </select>
+          </label>
+          {{/each}}
+        </section>
+
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title"><i class="fas fa-shoe-prints"></i><span>Movement</span></header>
+          <label class="terrain-field" data-tooltip="{{tooltip 'scene.movement-permission'}}">
+            <span class="ed-label">Movement Type Permissions</span>
+            <select class="ed-input" data-scene-setting="movementPermission">
+              {{#each sceneSettings.movementOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+          <label class="terrain-field" data-tooltip="{{tooltip 'scene.move-scaling'}}">
+            <span class="ed-label">Move Scaling</span>
+            <select class="ed-input" data-scene-setting="moveScaling">
+              {{#each sceneSettings.moveScalingOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+        </section>
+
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title"><i class="fas fa-border-all"></i><span>Builder</span></header>
+          <label class="terrain-toggle"><input type="checkbox" name="showGrid" {{#if showGrid}}checked{{/if}} /><span>Show grid in builder</span></label>
+        </section>
+      </div>
+
+      <div class="terrain-settings-col">
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title"><i class="fas fa-eye"></i><span>Vision &amp; Fog</span></header>
+          <div class="terrain-toggles">
+            <label class="terrain-toggle"><input type="checkbox" data-scene-setting="tokenVision" {{#if sceneSettings.tokenVision}}checked{{/if}} /><span>Token Vision</span></label>
+            <label class="terrain-toggle" data-tooltip="{{tooltip 'scene.map-visible'}}"><input type="checkbox" data-scene-setting="mapVisible" {{#if sceneSettings.mapVisible}}checked{{/if}} /><span>Map Visible</span></label>
+            <label class="terrain-toggle"><input type="checkbox" data-scene-setting="globalLight" {{#if sceneSettings.globalLight}}checked{{/if}} /><span>Global Illumination</span></label>
+          </div>
+          <label class="terrain-field">
+            <span class="ed-label">Fog Exploration</span>
+            <select class="ed-input" data-scene-setting="fogMode">
+              {{#each sceneSettings.fogOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+          <label class="terrain-field terrain-slider">
+            <span class="ed-label">Darkness <span class="terrain-slider-val" data-for="darkness">{{sceneSettings.darkness}}</span></span>
+            <input type="range" data-scene-setting="darkness" min="0" max="1" step="0.05" value="{{sceneSettings.darkness}}" />
+          </label>
+        </section>
+
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title">
+            <i class="fas fa-bullseye"></i><span>Objectives</span>
+            <button type="button" class="ed-toggle-btn terrain-settings-card-btn" data-action="editObjectives" data-tooltip="{{tooltip 'encounter.edit-objectives'}}">
+              <i class="fas fa-pen"></i> Edit
+            </button>
+          </header>
+          <div class="terrain-settings-readout">
+            <span class="ed-label">Victory</span>
+            <span class="terrain-settings-chips">
+              {{#each sceneSettings.victory}}<span class="terrain-settings-chip">{{this}}</span>{{else}}<span class="terrain-settings-none">None</span>{{/each}}
+            </span>
+          </div>
+          <div class="terrain-settings-readout">
+            <span class="ed-label">Defeat</span>
+            <span class="terrain-settings-chips">
+              {{#each sceneSettings.defeat}}<span class="terrain-settings-chip">{{this}}</span>{{else}}<span class="terrain-settings-none">None</span>{{/each}}
+            </span>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+  {{/if}}
+
+  {{!-- Terrain mode: zones, the tray tabs, the Selection trays and the footer buttons. --}}
+  {{!-- Control names match form-fields.mjs; fields.* comes from that table and the selection readers in app.mjs. --}}
+  {{!-- The style="display:none" conditions below must match the show/hide rules in _wireTerrainControls. --}}
+  {{#if isTerrain}}
+  <div class="terrain-terrain-mode">
+    <section class="terrain-pane terrain-zones-pane">
+      <header class="terrain-pane-header">
+        <i class="fas fa-layer-group"></i><span>Zones</span>
+        <span class="terrain-zone-count">{{allZones.length}}</span>
+        <button type="button" class="terrain-zone-new" data-action="createZone" {{#unless canCreateZone}}disabled{{/unless}}
+          data-tooltip="{{tooltip 'terrain.new-zone'}}">
+          <i class="fas fa-draw-polygon"></i> New from Selection
+        </button>
+      </header>
+      <div class="terrain-pane-body terrain-zones-body">
+
+        {{#if spansZones}}
+          <p class="terrain-note">Selection spans multiple zones. Pick squares within one zone to edit it.</p>
+        {{/if}}
+
+        {{#if allZones.length}}
+          <ul class="terrain-zone-list">
+            {{#each allZones}}
+              <li class="terrain-zone-row{{#if this.isEditing}} is-editing{{/if}}">
+                <span class="terrain-zone-swatch" style="background:{{this.color}}"></span>
+                <span class="terrain-zone-row-name" data-tooltip="{{this.name}}">{{this.name}}</span>
+                <span class="terrain-zone-row-meta">Lv {{this.level}}</span>
+                <span class="terrain-zone-row-cells" data-tooltip="{{tooltip 'terrain.zone-cells'}}">{{this.cellCount}}</span>
+                <span class="terrain-zone-row-btns">
+                  <button type="button" class="ed-toggle-btn terrain-mini-btn" data-action="selectZone" data-zone-id="{{this.id}}" data-tooltip="{{tooltip 'terrain.select-zone'}}"><i class="fas fa-vector-square"></i></button>
+                  <button type="button" class="ed-toggle-btn terrain-mini-btn" data-action="addToZone" data-zone-id="{{this.id}}" data-tooltip="{{tooltip 'terrain.add-to-zone'}}" {{#unless ../hasSelection}}disabled{{/unless}}><i class="fas fa-plus"></i></button>
+                </span>
+              </li>
+              {{#if this.isEditing}}
+                <li class="terrain-zone-editrow">
+                  <div class="terrain-zone-form terrain-zone-edit">
+                    <div class="terrain-field-row">
+                      <label class="terrain-field terrain-field--grow">
+                        <span class="ed-label">Name</span>
+                        <input class="ed-input" type="text" name="zoneName" value="{{this.name}}" />
+                      </label>
+                      <label class="terrain-field terrain-field--color">
+                        <span class="ed-label">Outline</span>
+                        <input type="color" name="zoneColor" value="{{this.color}}" />
+                      </label>
+                      <label class="terrain-field terrain-field--elev">
+                        <span class="ed-label">Elev</span>
+                        <input class="ed-input" type="number" name="zoneLevel" value="{{this.level}}" />
+                      </label>
+                    </div>
+                    <div class="terrain-zone-form-actions">
+                      <button type="button" class="ed-toggle-btn terrain-save-btn" data-action="updateZone" data-zone-id="{{this.id}}">
+                        <i class="fas fa-check"></i> Update
+                      </button>
+                      <button type="button" class="ed-toggle-btn terrain-remove-btn" data-action="removeFromZone">
+                        <i class="fas fa-link-slash"></i> Unlink selection
+                      </button>
+                      <button type="button" class="ed-toggle-btn terrain-danger-btn" data-action="deleteZone" data-zone-id="{{this.id}}">
+                        <i class="fas fa-trash"></i> Delete zone
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              {{/if}}
+            {{/each}}
+          </ul>
+        {{else}}
+          <p class="terrain-empty">No zones yet. Select squares on the map to create one.</p>
+        {{/if}}
+      </div>
+    </section>
+  <nav class="terrain-tray-rail">
+    {{#if hasOverview}}
+    <button type="button" class="terrain-tray-tab terrain-tray-tab--overview {{#if isTrayOverview}}is-active{{/if}}" data-action="setTray" data-tray="overview" data-tooltip="{{tooltip 'terrain.overview'}}">
+      <i class="fas fa-clipboard-list"></i><span>Overview</span>
+    </button>
+    {{/if}}
+    <button type="button" class="terrain-tray-tab {{#if isTrayStats}}is-active{{/if}}" data-action="setTray" data-tray="stats" data-tooltip="{{tooltip 'terrain.stats'}}">
+      <i class="fas fa-shield-halved"></i><span>Stats</span>
+    </button>
+    <button type="button" class="terrain-tray-tab {{#if isTrayGeo}}is-active{{/if}}" data-action="setTray" data-tray="geo" data-tooltip="{{tooltip 'terrain.geography'}}">
+      <i class="fas fa-mountain-sun"></i><span>Geo</span>
+    </button>
+    <button type="button" class="terrain-tray-tab {{#if isTrayMech}}is-active{{/if}}" data-action="setTray" data-tray="mech" data-tooltip="{{tooltip 'terrain.mechanics'}}">
+      <i class="fas fa-burst"></i><span>Mech</span>
+    </button>
+    <button type="button" class="terrain-tray-tab {{#if isTrayFx}}is-active{{/if}}" data-action="setTray" data-tray="fx" data-tooltip="{{tooltip 'terrain.visual-fx'}}">
+      <i class="fas fa-wand-magic-sparkles"></i><span>FX</span>
+    </button>
+    <button type="button" class="terrain-tray-tab {{#if isTrayAudio}}is-active{{/if}}" data-action="setTray" data-tray="audio" data-tooltip="{{tooltip 'terrain.audio'}}">
+      <i class="fas fa-volume-high"></i><span>Audio</span>
+    </button>
+    <button type="button" class="terrain-tray-tab {{#if isTrayLight}}is-active{{/if}}" data-action="setTray" data-tray="light" data-tooltip="{{tooltip 'terrain.light'}}">
+      <i class="fas fa-lightbulb"></i><span>Light</span>
+    </button>
+    <button type="button" class="terrain-tray-tab {{#if isTrayAdv}}is-active{{/if}}" data-action="setTray" data-tray="adv" data-tooltip="{{tooltip 'terrain.advanced'}}">
+      <i class="fas fa-sliders"></i><span>Adv</span>
+    </button>
+  </nav>
+
+  <section class="terrain-pane terrain-tray-drawer">
+    <header class="terrain-pane-header">
+      <i class="fas {{trayIcon}}"></i><span>Selection: {{trayLabel}}</span>
+    </header>
+    {{#if single}}
+      <div class="terrain-sel-id">
+        <span class="terrain-sel-coord">Square {{single.row}}, {{single.col}}</span>
+        <span class="terrain-sel-elev">ELEV {{single.elev}}</span>
+      </div>
+    {{/if}}
+
+    <section class="terrain-tray-pane terrain-pane {{#if isTrayOverview}}is-active{{/if}}" data-tray-pane="overview">
+      <div class="terrain-pane-body">
+        <div class="terrain-detail-rows terrain-ov-rows">
+          {{#each single.groups}}
+            <div class="terrain-detail-row">
+              <div class="terrain-detail-cat"><span>{{this.label}}</span></div>
+              <div class="terrain-detail-pairs">
+                {{#each this.items}}
+                  {{#if this.cast}}
+                    <span class="terrain-pair terrain-pair--wide terrain-effect-edit">
+                      <span class="tp-k">Cast</span>
+                      <span class="terrain-effect-edit-value">
+                        <span class="tp-v"
+                          data-tooltip="{{this.cast.label}} | {{this.cast.remainingLabel}}">{{this.cast.label}}</span>
+                        <span class="terrain-effect-edit-remaining">{{this.cast.remainingLabel}}</span>
+                        <button type="button" class="terrain-effect-edit-del" data-action="removeEffectEdit" data-edit-key="{{this.cast.key}}" data-tooltip="{{tooltip 'terrain.remove-edit'}}"><i class="fas fa-trash"></i></button>
+                      </span>
+                    </span>
+                  {{else if this.tag}}
+                    <span class="terrain-detail-cell{{#if this.span2}} terrain-pair--span2{{/if}}">
+                      {{#if this.toggleName}}
+                        <button type="button" class="terrain-tag terrain-ov-tag is-on" data-action="overviewToggle" data-ov-field="{{this.toggleName}}" data-tooltip="{{tooltip 'terrain.overview-toggle'}}">{{this.tag}}</button>
+                      {{else}}
+                        <button type="button" class="terrain-tag terrain-ov-tag" data-action="overviewJump" data-ov-tray="{{this.jump}}" data-tooltip="{{tooltip 'terrain.overview-jump'}}">{{this.tag}}</button>
+                      {{/if}}
+                    </span>
+                  {{else if this.editName}}
+                    <span class="terrain-pair terrain-ov-pair">
+                      <span class="tp-k">{{this.k}}</span>
+                      <input class="terrain-ov-input" type="number" data-ov-mirror="{{this.editName}}" value="{{this.v}}" />
+                    </span>
+                  {{else}}
+                    <button type="button" class="terrain-pair terrain-ov-jump{{#if this.wide}} terrain-pair--wide{{/if}}{{#if this.span2}} terrain-pair--span2{{/if}}"
+                      data-action="overviewJump" data-ov-tray="{{this.jump}}" data-tooltip="{{this.v}}">
+                      <span class="tp-k">{{this.k}}</span>
+                      <span class="tp-v">{{this.v}}</span>
+                    </button>
+                  {{/if}}
+                {{/each}}
+              </div>
+            </div>
+          {{/each}}
+        </div>
+      </div>
+    </section>
+
+    <section class="terrain-tray-pane terrain-pane {{#if isTrayStats}}is-active{{/if}}" data-tray-pane="stats">
+      <div class="terrain-pane-body">
+        <div class="terrain-grid-fields terrain-grid-fields--3">
+          <label class="terrain-field">
+            <span class="ed-label">Eva</span>
+            <input class="ed-input" type="number" name="evasionMod" min="-10" max="10" value="{{fields.evasionMod}}" />
+          </label>
+          <label class="terrain-field">
+            <span class="ed-label">Def</span>
+            <input class="ed-input" type="number" name="defMod" min="-10" max="10" value="{{fields.defMod}}" />
+          </label>
+          <label class="terrain-field">
+            <span class="ed-label">Res</span>
+            <input class="ed-input" type="number" name="resMod" min="-10" max="10" value="{{fields.resMod}}" />
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="terrain-tray-pane terrain-pane {{#if isTrayGeo}}is-active{{/if}}" data-tray-pane="geo">
+      <div class="terrain-pane-body">
+        <div class="terrain-field-row">
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Move Cost</span>
+            <input class="ed-input" type="number" name="movementCost" min="0" max="10" value="{{fields.movementCost}}" />
+          </label>
+        </div>
+
+        <div class="terrain-toggles">
+          <label class="terrain-toggle"><input type="checkbox" name="obstacle" {{#if fields.obstacle}}checked{{/if}} /><span>Obstacle</span></label>
+          <label class="terrain-toggle"><input type="checkbox" name="impassable" {{#if fields.impassable}}checked{{/if}} /><span>Impassable</span></label>
+        </div>
+
+        <div class="terrain-field-row">
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Transition</span>
+            <select class="ed-input" name="transition">
+              <option value="" {{#if fields.transitionNone}}selected{{/if}}>None</option>
+              <option value="directional" {{#if fields.isDirectional}}selected{{/if}}>Directional</option>
+              <option value="teleport" {{#if fields.isTeleport}}selected{{/if}} {{#unless canTeleport}}disabled{{/unless}}>Teleport Pair</option>
+              <option value="crossing" {{#if fields.isCrossing}}selected{{/if}} {{#unless fields.canCross}}disabled{{/unless}}>Zone Crossing</option>
+            </select>
+          </label>
+          <label class="terrain-field terrain-tp-letter" {{#unless fields.isTeleport}}style="display:none"{{/unless}}>
+            <span class="ed-label">Tag</span>
+            <input class="ed-input terrain-tp-tag" type="text" name="teleportLetter" value="{{fields.teleportLetter}}"
+              maxlength="2" placeholder="A or AB" autocomplete="off" spellcheck="false" />
+          </label>
+        </div>
+        <div class="terrain-dpad" {{#unless fields.isDirectional}}style="display:none"{{/unless}}>
+          {{#each fields.transitionDirs}}
+            <button type="button" class="terrain-dpad-btn terrain-dpad-{{this.dir}} {{#if this.on}}is-on{{/if}}"
+              data-dir="{{this.dir}}" data-tooltip="{{this.label}}"><i class="fas {{this.icon}}"></i></button>
+          {{/each}}
+          <button type="button" class="terrain-dpad-btn terrain-dpad-all {{#if fields.transitionAllDirs}}is-on{{/if}}"
+            data-dir="all" data-tooltip="{{tooltip 'terrain.all-directions'}}"><i class="fas fa-plus"></i></button>
+        </div>
+        <div class="terrain-field-row terrain-tp-restrict" {{#unless fields.hasTransition}}style="display:none"{{/unless}}>
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Type Restriction</span>
+            <select class="ed-input" name="transitionRestrict">
+              {{#each restrictOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+        </div>
+        <div class="terrain-field-row terrain-tp-cost" {{#unless fields.isTeleport}}style="display:none"{{/unless}}>
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Activation Cost</span>
+            <select class="ed-input" name="teleportCost">
+              {{#each costOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+          <label class="terrain-field terrain-tp-mov" {{#unless fields.showTpMov}}style="display:none"{{/unless}}>
+            <span class="ed-label">Mov</span>
+            <input class="ed-input" type="number" name="teleportMov" min="0" value="{{fields.teleportMov}}" />
+          </label>
+          <label class="terrain-toggle terrain-tp-block" {{#unless fields.isTeleport}}style="display:none"{{/unless}}
+            data-tooltip="{{tooltip 'terrain.blockable'}}">
+            <input type="checkbox" name="teleportBlockable" {{#if fields.teleportBlockable}}checked{{/if}} /><span>Blockable?</span>
+          </label>
+        </div>
+        {{#unless canTeleport}}<p class="terrain-note terrain-tp-hint" {{#unless fields.isTeleport}}style="display:none"{{/unless}}>Select exactly two squares to make a Teleport Pair.</p>{{/unless}}
+        <div class="terrain-xz" {{#unless fields.isCrossing}}style="display:none"{{/unless}}>
+          <div class="terrain-xz-head">
+            <span class="terrain-xz-dir"></span>
+            <span class="ed-label terrain-xz-skill">Skill</span>
+            <span class="ed-label terrain-xz-mult">DC Mult</span>
+          </div>
+          {{#each fields.crossingDirs}}
+            <div class="terrain-xz-row {{#unless this.enabled}}is-off{{/unless}}">
+              <span class="terrain-xz-dir">{{this.label}}</span>
+              <select class="ed-input terrain-xz-skill" name="crossing-{{this.dir}}-skill" {{#unless this.enabled}}disabled{{/unless}}>
+                {{#each this.skillOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+              <input class="ed-input terrain-xz-mult" type="number" name="crossing-{{this.dir}}-mult" min="0" value="{{this.mult}}"
+                {{#unless this.enabled}}disabled{{/unless}} data-tooltip="{{tooltip 'terrain.crossing-dc'}}" />
+            </div>
+          {{/each}}
+        </div>
+
+      </div>
+    </section>
+
+    <section class="terrain-tray-pane terrain-pane {{#if isTrayMech}}is-active{{/if}}" data-tray-pane="mech">
+      <div class="terrain-pane-body">
+        <div class="terrain-field-row">
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Objective Point</span>
+            <select class="ed-input" name="objectivePoint" data-tooltip="{{tooltip 'terrain.objective'}}">
+              {{#each fields.objectivePointOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+        </div>
+
+        <div class="terrain-spawn-head">
+          <span class="terrain-spawn-heading">Tile Effect</span>
+          <button type="button" class="ed-toggle-btn terrain-spawn-add" data-action="addTileEffect">
+            <i class="fas fa-plus"></i> Add Effect Array
+          </button>
+        </div>
+        <div class="terrain-tile-effect-list"></div>
+
+        <div class="terrain-spawn-head">
+          <span class="terrain-spawn-heading">Spawn Unit</span>
+          <button type="button" class="ed-toggle-btn terrain-spawn-add" data-action="addSpawn">
+            <i class="fas fa-plus"></i> Add Spawn Array
+          </button>
+        </div>
+        <div class="terrain-spawn-list"></div>
+      </div>
+    </section>
+
+    <section class="terrain-tray-pane terrain-pane {{#if isTrayFx}}is-active{{/if}}" data-tray-pane="fx">
+      <div class="terrain-pane-body">
+        <div class="terrain-field-row">
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Effect (Sequencer DB path)</span>
+            <input class="ed-input" type="text" name="effect" value="{{fields.effect}}"
+              placeholder="e.g. jb2a.markers.on_token_mask.complete.01.purple" autocomplete="off" spellcheck="false" />
+          </label>
+        </div>
+
+        <label class="terrain-field terrain-slider">
+          <span class="ed-label">Scale <span class="terrain-slider-val" data-for="effectScale">{{fields.effectScale}}</span>×</span>
+          <input type="range" name="effectScale" min="0.25" max="3" step="0.05" value="{{fields.effectScale}}" />
+        </label>
+
+        <label class="terrain-field terrain-slider">
+          <span class="ed-label">Opacity <span class="terrain-slider-val" data-for="effectOpacity">{{fields.effectOpacity}}</span></span>
+          <input type="range" name="effectOpacity" min="0.05" max="1" step="0.05" value="{{fields.effectOpacity}}" />
+        </label>
+
+        <label class="terrain-field terrain-slider">
+          <span class="ed-label">Rotation <span class="terrain-slider-val" data-for="effectRotation">{{fields.effectRotation}}</span>°</span>
+          <input type="range" name="effectRotation" min="0" max="360" step="5" value="{{fields.effectRotation}}" />
+        </label>
+
+        <div class="terrain-toggles terrain-fx-toggles">
+          <label class="terrain-toggle terrain-span-toggle">
+            <input type="checkbox" name="effectSpan" {{#if fields.effectSpan}}checked{{/if}} {{#unless fields.canSpan}}disabled{{/unless}} />
+            <span>Span Selection</span>
+          </label>
+          <label class="terrain-toggle">
+            <input type="checkbox" name="effectMirrorX" {{#if fields.effectMirrorX}}checked{{/if}} />
+            <span>Mirror X</span>
+          </label>
+          <label class="terrain-toggle">
+            <input type="checkbox" name="effectMirrorY" {{#if fields.effectMirrorY}}checked{{/if}} />
+            <span>Mirror Y</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="terrain-tray-pane terrain-pane {{#if isTrayAudio}}is-active{{/if}}" data-tray-pane="audio">
+      <div class="terrain-pane-body">
+        <div class="terrain-field-row">
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Sound File</span>
+            <input class="ed-input" type="text" name="soundFile" value="{{fields.soundFile}}"
+              placeholder="path/to/sound.ogg  or  blfx.sound.spell.cast.fire.1" autocomplete="off" spellcheck="false" />
+          </label>
+        </div>
+
+        <div class="terrain-field-row">
+          <label class="terrain-field">
+            <span class="ed-label">Radius (squares)</span>
+            <input class="ed-input" type="number" name="soundRadius" min="1" max="999" value="{{fields.soundRadius}}" />
+          </label>
+        </div>
+
+        <label class="terrain-field terrain-slider">
+          <span class="ed-label">Volume <span class="terrain-slider-val" data-for="soundVolume">{{fields.soundVolume}}</span></span>
+          <input type="range" name="soundVolume" min="0" max="1" step="0.05" value="{{fields.soundVolume}}" />
+        </label>
+
+        <label class="terrain-toggle">
+          <input type="checkbox" name="soundEasing" {{#if fields.soundEasing}}checked{{/if}} /><span>Volume Easing</span>
+        </label>
+        <label class="terrain-toggle">
+          <input type="checkbox" name="audioSpan" {{#if fields.audioSpan}}checked{{/if}} /><span>Span Selection</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="terrain-tray-pane terrain-pane {{#if isTrayLight}}is-active{{/if}}" data-tray-pane="light">
+      <div class="terrain-pane-body">
+        <div class="terrain-field-row">
+          <label class="terrain-field">
+            <span class="ed-label">Dim Radius</span>
+            <input class="ed-input" type="number" name="lightDim" min="0" max="999" value="{{fields.lightDim}}" />
+          </label>
+          <label class="terrain-field">
+            <span class="ed-label">Bright Radius</span>
+            <input class="ed-input" type="number" name="lightBright" min="0" max="999" value="{{fields.lightBright}}" />
+          </label>
+        </div>
+
+        <div class="terrain-field-row">
+          <label class="terrain-field terrain-field--color">
+            <span class="ed-label">Color</span>
+            <input type="color" name="lightColor" value="{{fields.lightColor}}" />
+          </label>
+          <label class="terrain-field terrain-slider terrain-field--grow">
+            <span class="ed-label">Color Intensity <span class="terrain-slider-val" data-for="lightAlpha">{{fields.lightAlpha}}</span></span>
+            <input type="range" name="lightAlpha" min="0" max="1" step="0.05" value="{{fields.lightAlpha}}" />
+          </label>
+        </div>
+
+        <div class="terrain-field-row">
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Animation</span>
+            <select class="ed-input" name="lightAnimType">
+              {{#each fields.lightAnimOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+        </div>
+
+        <label class="terrain-toggle">
+          <input type="checkbox" name="lightWalls" {{#if fields.lightWalls}}checked{{/if}} /><span>Constrained by Walls</span>
+        </label>
+
+        <details class="terrain-advanced">
+          <summary>Advanced</summary>
+          <div class="terrain-advanced-body">
+            <label class="terrain-field terrain-slider">
+              <span class="ed-label">Anim Speed <span class="terrain-slider-val" data-for="lightAnimSpeed">{{fields.lightAnimSpeed}}</span></span>
+              <input type="range" name="lightAnimSpeed" min="1" max="10" step="1" value="{{fields.lightAnimSpeed}}" />
+            </label>
+            <label class="terrain-field terrain-slider">
+              <span class="ed-label">Anim Intensity <span class="terrain-slider-val" data-for="lightAnimIntensity">{{fields.lightAnimIntensity}}</span></span>
+              <input type="range" name="lightAnimIntensity" min="1" max="10" step="1" value="{{fields.lightAnimIntensity}}" />
+            </label>
+
+            <label class="terrain-toggle">
+              <input type="checkbox" name="lightVision" {{#if fields.lightVision}}checked{{/if}} /><span>Provides Vision</span>
+            </label>
+
+            <label class="terrain-field terrain-field--grow">
+              <span class="ed-label">Coloration Technique</span>
+              <select class="ed-input" name="lightColoration">
+                {{#each fields.colorationOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+
+            <label class="terrain-field terrain-slider">
+              <span class="ed-label">Luminosity <span class="terrain-slider-val" data-for="lightLuminosity">{{fields.lightLuminosity}}</span></span>
+              <input type="range" name="lightLuminosity" min="-1" max="1" step="0.05" value="{{fields.lightLuminosity}}" />
+            </label>
+            <label class="terrain-field terrain-slider">
+              <span class="ed-label">Attenuation <span class="terrain-slider-val" data-for="lightAttenuation">{{fields.lightAttenuation}}</span></span>
+              <input type="range" name="lightAttenuation" min="0" max="1" step="0.05" value="{{fields.lightAttenuation}}" />
+            </label>
+            <label class="terrain-field terrain-slider">
+              <span class="ed-label">Saturation <span class="terrain-slider-val" data-for="lightSaturation">{{fields.lightSaturation}}</span></span>
+              <input type="range" name="lightSaturation" min="-1" max="1" step="0.05" value="{{fields.lightSaturation}}" />
+            </label>
+            <label class="terrain-field terrain-slider">
+              <span class="ed-label">Contrast <span class="terrain-slider-val" data-for="lightContrast">{{fields.lightContrast}}</span></span>
+              <input type="range" name="lightContrast" min="-1" max="1" step="0.05" value="{{fields.lightContrast}}" />
+            </label>
+            <label class="terrain-field terrain-slider">
+              <span class="ed-label">Shadows <span class="terrain-slider-val" data-for="lightShadows">{{fields.lightShadows}}</span></span>
+              <input type="range" name="lightShadows" min="0" max="1" step="0.05" value="{{fields.lightShadows}}" />
+            </label>
+          </div>
+        </details>
+
+        <label class="terrain-toggle">
+          <input type="checkbox" name="lightSpan" {{#if fields.lightSpan}}checked{{/if}} /><span>Span Selection</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="terrain-tray-pane terrain-pane {{#if isTrayAdv}}is-active{{/if}}" data-tray-pane="adv">
+      <div class="terrain-pane-body">
+        <div class="terrain-field-row">
+          <label class="terrain-field terrain-field--grow">
+            <span class="ed-label">Overwrite Behavior</span>
+            <select class="ed-input" name="overwriteBehavior">
+              {{#each overwriteBehaviorOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+          <label class="terrain-field terrain-ow-rounds" {{#unless fields.isClearRespawn}}style="display:none"{{/unless}}>
+            <span class="ed-label">Rounds</span>
+            <input class="ed-input" type="number" name="respawnRounds" min="1" max="99" value="{{fields.respawnRounds}}" />
+          </label>
+        </div>
+
+        <div class="terrain-spawn-head">
+          <span class="terrain-spawn-heading">Exceptions</span>
+          <button type="button" class="ed-toggle-btn terrain-spawn-add" data-action="addException">
+            <i class="fas fa-plus"></i> Add Exception
+          </button>
+        </div>
+        <div class="terrain-exception-list"></div>
+      </div>
+    </section>
+
+    {{#unless hasSelection}}
+      <p class="terrain-sel-empty">Drag on the canvas to add squares to the selection.</p>
+    {{/unless}}
+  </section>
+  </div>
+
+  <footer class="terrain-pane-footer terrain-window-footer">
+    <button type="button" class="terrain-lock-btn {{#if selectionLocked}}is-locked{{/if}}" data-action="toggleLock"
+      data-tooltip="{{lockTooltip}}">
+      <i class="fas {{#if selectionLocked}}fa-lock{{else}}fa-lock-open{{/if}}"></i>
+    </button>
+    <div class="terrain-selection-status">{{statusText}}</div>
+    <div class="terrain-actions">
+      <button type="button" class="ed-toggle-btn terrain-clipboard-btn" data-action="copyTile" {{#unless hasSelection}}disabled{{/unless}} data-tooltip="{{tooltip 'terrain.copy'}}">
+        <i class="fas fa-copy"></i> Copy
+      </button>
+      <button type="button" class="ed-toggle-btn terrain-clipboard-btn" data-action="pasteTile" data-tooltip="{{tooltip 'terrain.paste'}}">
+        <i class="fas fa-paste"></i> Paste
+      </button>
+      <button type="button" class="ed-toggle-btn terrain-preset-btn" data-action="savePreset">
+        <i class="fas fa-bookmark"></i> Save to Preset
+      </button>
+      <button type="button" class="ed-toggle-btn terrain-preset-btn" data-action="loadPreset">
+        <i class="fas fa-folder-open"></i> Load from Preset
+      </button>
+      <button type="button" class="ed-toggle-btn terrain-save-btn terrain-apply-btn" data-action="saveSelection" {{#unless hasSelection}}disabled{{/unless}}>
+        <i class="fas fa-floppy-disk"></i> Save to Squares
+      </button>
+      <button type="button" class="ed-toggle-btn terrain-clear-btn" data-action="clearSelection" {{#unless hasSelection}}disabled{{/unless}}>
+        <i class="fas fa-eraser"></i> Clear
+      </button>
+    </div>
+  </footer>
+  {{/if}}
+
+  {{!-- Walls mode: drawing mode, wall types, the scene's wall counts, and restrictions for the next walls drawn. --}}
+  {{#if isWalls}}
+  <section class="terrain-pane terrain-walls-pane">
+    <header class="terrain-pane-header"><i class="fas fa-bezier-curve"></i><span>Draw Walls</span></header>
+    <div class="terrain-pane-body terrain-settings-body">
+      <div class="terrain-settings-col">
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title"><i class="fas fa-pen-ruler"></i><span>Drawing Mode</span></header>
+          <div class="terrain-segmented">
+            <button type="button" class="terrain-seg-btn {{#if isGridSnap}}is-active{{/if}}" data-action="setSnapMode" data-snap="grid">Snap to Grid</button>
+            <button type="button" class="terrain-seg-btn {{#if isFreeSnap}}is-active{{/if}}" data-action="setSnapMode" data-snap="free">Freestyle</button>
+            <button type="button" class="terrain-seg-btn {{#if isPolySnap}}is-active{{/if}}" data-action="setSnapMode" data-snap="polygon">Polygon</button>
+          </div>
+          {{#if isFreeSnap}}
+          <label class="terrain-field terrain-wall-bone" data-tooltip="{{tooltip 'terrain.wall-bone-length'}}">
+            <span class="ed-label">Bone Length</span>
+            <input class="ed-input" type="number" name="wallBoneLength" min="{{wallBoneMin}}" step="1" value="{{wallBoneLength}}" />
+          </label>
+          {{/if}}
+          {{#if isPolySnap}}
+          <p class="terrain-wall-howto">Click to place points | click the first point, Enter or right-click to finish | Esc to cancel</p>
+          {{else}}
+          <p class="terrain-wall-howto">Drag to draw | hold Alt to chain | right-click a wall to delete</p>
+          {{/if}}
+        </section>
+
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title"><i class="fas fa-shapes"></i><span>Wall Type</span></header>
+          <div class="terrain-wall-presets">
+            {{#each walls.presets}}
+            <button type="button" class="terrain-wall-preset {{#if this.active}}is-active{{/if}}" data-action="setWallPreset"
+              data-wall-preset="{{this.key}}" data-tooltip="{{tooltip this.tooltip}}">
+              <i class="fas {{this.icon}}"></i><span>{{this.label}}</span>
+            </button>
+            {{/each}}
+          </div>
+        </section>
+
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title">
+            <i class="fas fa-layer-group"></i><span>Scene Walls</span>
+            <button type="button" class="ed-toggle-btn terrain-settings-card-btn terrain-danger-btn" data-action="clearWalls"
+              data-tooltip="{{tooltip 'terrain.wall-clear'}}">
+              <i class="fas fa-trash"></i> Clear All
+            </button>
+          </header>
+          <div class="terrain-wall-counts">
+            <span class="terrain-wall-count"><span class="ed-label">Walls</span><span class="terrain-wall-count-val" data-wall-count="total">{{walls.counts.total}}</span></span>
+            <span class="terrain-wall-count"><span class="ed-label">Block Movement</span><span class="terrain-wall-count-val" data-wall-count="move">{{walls.counts.move}}</span></span>
+            <span class="terrain-wall-count"><span class="ed-label">Block Sight</span><span class="terrain-wall-count-val" data-wall-count="sight">{{walls.counts.sight}}</span></span>
+          </div>
+          <ul class="terrain-wall-legend">
+            <li><span class="terrain-wall-key terrain-wall-key--sight"></span> Sight only</li>
+            <li><span class="terrain-wall-key terrain-wall-key--move"></span> Movement only</li>
+            <li><span class="terrain-wall-key terrain-wall-key--both"></span> Both</li>
+          </ul>
+        </section>
+      </div>
+
+      <div class="terrain-settings-col">
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title"><i class="fas fa-ban"></i><span>Restrictions</span></header>
+          <div class="terrain-wall-grid">
+            {{#each walls.restrictions}}
+            <label class="terrain-field" {{#if this.tooltip}}data-tooltip="{{tooltip this.tooltip}}"{{/if}}>
+              <span class="ed-label">{{this.label}}</span>
+              <select class="ed-input" data-wall-restriction="{{this.key}}">
+                {{#each this.options}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+            {{/each}}
+          </div>
+          <p class="terrain-note">A wall must block movement or sight.</p>
+        </section>
+
+        <section class="terrain-settings-card">
+          <header class="terrain-settings-card-title"><i class="fas fa-ruler-horizontal"></i><span>Proximity Thresholds</span></header>
+          <div class="terrain-wall-grid terrain-wall-grid--3">
+            {{#each walls.thresholds}}
+            <label class="terrain-field" data-tooltip="{{tooltip 'terrain.wall-threshold'}}">
+              <span class="ed-label">{{this.label}}</span>
+              <input class="ed-input" type="number" min="0.5" step="0.5" data-wall-threshold="{{this.key}}" value="{{this.value}}" {{#if this.disabled}}disabled{{/if}} />
+            </label>
+            {{/each}}
+          </div>
+          <label class="terrain-toggle" data-tooltip="{{tooltip 'terrain.wall-attenuation'}}">
+            <input type="checkbox" data-wall-threshold="attenuation" {{#if walls.attenuation}}checked{{/if}} /><span>Attenuation</span>
+          </label>
+        </section>
+      </div>
+    </div>
+  </section>
+  {{/if}}
+</div>
+

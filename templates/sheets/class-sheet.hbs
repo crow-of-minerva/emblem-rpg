@@ -1,0 +1,242 @@
+<div class="class-sheet-root">
+  <header class="class-sheet-header">
+    <input class="class-name" name="name" value="{{item.name}}" placeholder="Class Name"
+      {{#unless canAuthor}}disabled{{/unless}}>
+    <label class="class-tier">
+      <span>Promotion Tier</span>
+      <select name="system.tier" {{#unless canAuthor}}disabled{{/unless}}>
+        {{#each tiers}}
+        <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.value}}</option>
+        {{/each}}
+      </select>
+    </label>
+    <img class="class-portrait {{#if pixelArt}}is-pixel-art{{/if}}" src="{{profileImg}}" alt="{{item.name}}"
+      data-action="editImage" data-edit="img"
+      data-tooltip="{{tooltip 'class.edit-image' item}}">
+  </header>
+
+  <nav class="class-tab-nav">
+    <button type="button" class="tab-button {{#if (eq activeTab 'overview')}}active{{/if}}"
+      data-action="setTab" data-tab="overview">Overview</button>
+    <button type="button" class="tab-button {{#if (eq activeTab 'stats')}}active{{/if}}"
+      data-action="setTab" data-tab="stats">Stats</button>
+    <button type="button" class="tab-button {{#if (eq activeTab 'features')}}active{{/if}}
+      {{#if needsFeaturePick}}needs-pick{{/if}}" data-action="setTab" data-tab="features">Features</button>
+    <button type="button" class="tab-button {{#if (eq activeTab 'promotions')}}active{{/if}}"
+      data-action="setTab" data-tab="promotions">Promotions</button>
+  </nav>
+
+  <section class="class-tab-content overview-tab {{#if (eq activeTab 'overview')}}active{{/if}}"
+    data-tab="overview">
+    <section class="class-section description-section">
+      <h2>Description</h2>
+      <textarea name="system.description" {{#unless canAuthor}}disabled{{/unless}}>{{system.description}}</textarea>
+    </section>
+
+    <section class="class-section proficiencies-section">
+      <h2>Proficiencies</h2>
+      <div class="class-proficiency-grid">
+        {{#each proficiencies}}
+        <button type="button" class="proficiency-item" data-action="stepProficiency" data-key="{{this.key}}"
+          data-type="numeric" data-tooltip="{{this.label}}">
+          <img class="proficiency-img" src="{{this.image}}" alt="{{this.label}}">
+          <img class="proficiency-rank" src="{{this.rankImage}}" alt="Rank {{this.rank}}"
+            style="opacity:{{#if this.rank}}1{{else}}0{{/if}}">
+        </button>
+        {{/each}}
+      </div>
+      <div class="class-trait-row">
+        {{#each miscProficiencies}}
+        <button type="button" class="proficiency-item" data-action="stepProficiency" data-key="{{this.key}}"
+          data-type="{{this.type}}" data-tooltip="{{this.label}}">
+          <img class="proficiency-img" src="{{this.image}}" alt="{{this.label}}">
+        </button>
+        {{/each}}
+        <span class="unit-type-label">Unit Type(s):</span>
+        {{#each unitTypes}}
+        <button type="button" class="unit-type" data-action="toggleUnitType" data-key="{{this.key}}"
+          data-tooltip="{{this.label}}">
+          <img src="{{this.image}}" alt="{{this.label}}">
+        </button>
+        {{/each}}
+      </div>
+    </section>
+
+    <section class="class-section skills-section">
+      <h2>Skills</h2>
+      <div class="class-skills-grid">
+        {{#each skills}}
+        <button type="button" class="skill-item" data-action="stepSkill" data-key="{{this.key}}"
+          data-tooltip="{{this.label}}">
+          <img class="skill-img {{#if this.mastery}}is-mastery{{/if}}" src="{{this.image}}" alt="{{this.label}}">
+          <span class="skill-rank">{{this.badge}}</span>
+        </button>
+        {{/each}}
+      </div>
+    </section>
+  </section>
+
+  <section class="class-tab-content stats-tab {{#if (eq activeTab 'stats')}}active{{/if}}" data-tab="stats">
+    <section class="class-section">
+      <h2>Base Stats</h2>
+      <div class="class-stat-grid class-stat-grid--base">
+        {{#each statRows}}
+          {{#each this}}
+          <label class="stat-item">
+            <span>{{this.label}}</span>
+            <input type="number" name="system.baseStats.{{this.key}}" value="{{this.value}}"
+              {{#unless @root.canAuthor}}disabled{{/unless}}>
+          </label>
+          {{/each}}
+        {{/each}}
+      </div>
+    </section>
+
+    <section class="class-section {{#if isUnplayable}}stats-greyed{{/if}}">
+      <h2>Stat Growths</h2>
+      <div class="class-stat-grid">
+        {{#each growths}}
+        <label class="stat-item">
+          <span>{{this.label}}</span>
+          {{#if @root.isUnplayable}}
+          <input type="number" placeholder="--" disabled>
+          {{else}}
+          <input type="number" name="system.baseGrowths.{{this.key}}" value="{{this.value}}"
+            {{#unless @root.canAuthor}}disabled{{/unless}}>
+          {{/if}}
+        </label>
+        {{/each}}
+      </div>
+    </section>
+
+    <section class="class-section {{#if isUnplayable}}stats-greyed{{/if}}">
+      <h2>Stat Limits</h2>
+      <div class="class-stat-grid">
+        {{#each caps}}
+        <label class="stat-item">
+          <span>{{this.label}}</span>
+          {{#if @root.isUnplayable}}
+          <input type="number" placeholder="--" disabled>
+          {{else}}
+          <input type="number" name="system.baseCaps.{{this.key}}" value="{{this.value}}"
+            {{#unless @root.canAuthor}}disabled{{/unless}}>
+          {{/if}}
+        </label>
+        {{/each}}
+      </div>
+    </section>
+  </section>
+
+  <section class="class-tab-content features-tab {{#if (eq activeTab 'features')}}active{{/if}}"
+    data-tab="features">
+    {{#if canAuthor}}
+    <button type="button" class="class-add-control" data-action="addBundle">
+      <i class="fas fa-plus"></i> Add Feature(s)
+    </button>
+    {{/if}}
+    <div class="bundle-box">
+      {{#each features}}
+      <article class="bundle-entry bundle-state-{{this.state}}" data-bundle-id="{{this._id}}">
+        <header class="bundle-top">
+          <strong>Lvl&nbsp; {{this.lvl}}</strong>
+          <span class="bundle-choice-label">
+            {{#if (eq this.state 'granted')}}Unlocked
+            {{else if (eq this.acquisitionType 'choice')}}( Choose {{this.choiceCount}} )
+            {{else}}( Unlock All ){{/if}}
+          </span>
+          {{#if this.unique}}
+          <span class="bundle-unique-tag"
+            data-tooltip="{{tooltip 'class.unique-features' this}}">Unique</span>
+          {{/if}}
+          {{#if @root.canAuthor}}
+          <span class="bundle-controls">
+            <button type="button" data-action="editBundle" aria-label="Edit feature bundle"
+              data-tooltip="{{tooltip 'class.edit-feature-bundle'}}"><i class="fas fa-edit"></i></button>
+            <button type="button" class="delete" data-action="deleteBundle" aria-label="Delete feature bundle"
+              data-tooltip="{{tooltip 'class.delete-feature-bundle'}}"><i class="fas fa-trash"></i></button>
+          </span>
+          {{/if}}
+        </header>
+        <div class="bundle-rule"></div>
+        <div class="bundle-items">
+          {{#each this.items}}
+          <div class="feature-item {{#if this.opaque}}is-opaque{{/if}}">
+            <button type="button" class="feature-link" data-action="openUuid" data-uuid="{{this.uuid}}"
+              data-tooltip="{{this.name}}">
+              <img src="{{this.img}}" alt="{{this.name}}"><span>{{this.name}}</span>
+            </button>
+            {{#if this.replaceName}}
+            <span class="feature-replacement" data-tooltip="{{tooltip 'class.remove-replaced-feature' this}}">
+              <i class="fas fa-right-left"></i> {{this.replaceName}}
+            </span>
+            {{/if}}
+            <span class="feature-tail">
+              {{#if this.acquired}}
+              <i class="fas fa-check acquired" data-tooltip="{{tooltip 'class.already-unlocked'}}"></i>
+              {{else if this.skipped}}
+              <i class="fas fa-times skipped" data-tooltip="{{tooltip 'class.skipped-upgrade' this}}"></i>
+              {{else if this.selectable}}
+              <button type="button" class="feature-select-box" data-action="selectFeature"
+                data-index="{{this.index}}"><span>Select</span><i class="fas fa-check"></i></button>
+              {{else if this.blocked}}
+              <i class="fas fa-lock blocked" data-tooltip="{{tooltip 'class.requires-replaced-feature' this}}"></i>
+              {{/if}}
+            </span>
+          </div>
+          {{/each}}
+        </div>
+      </article>
+      {{/each}}
+    </div>
+  </section>
+
+  <section class="class-tab-content promotions-tab {{#if (eq activeTab 'promotions')}}active{{/if}}"
+    data-tab="promotions">
+    {{#if canAuthor}}
+    <button type="button" class="class-add-control" data-action="addPromotion">
+      <i class="fas fa-plus"></i> Add Promotion
+    </button>
+    {{/if}}
+    <div class="promotion-box">
+      {{#each promotions}}
+      <article class="promotion-entry" data-promotion-id="{{this._id}}">
+        <button type="button" class="promotion-image" data-action="openUuid" data-uuid="{{this.classUuid}}"
+          data-tooltip="{{this.className}}">
+          <img src="{{this.classImg}}" alt="{{this.className}}">
+        </button>
+        <div class="promotion-body">
+          <header>
+            <button type="button" class="promotion-name" data-action="openUuid" data-uuid="{{this.classUuid}}"
+              data-tooltip="{{this.className}}">{{this.className}}</button>
+            <strong>Lvl {{this.lvl}}</strong>
+            {{#if @root.canAuthor}}
+            <span class="promotion-controls">
+              <button type="button" data-action="editPromotion" aria-label="Edit promotion"
+                data-tooltip="{{tooltip 'class.edit-promotion'}}"><i class="fas fa-edit"></i></button>
+              <button type="button" class="delete" data-action="deletePromotion" aria-label="Delete promotion"
+                data-tooltip="{{tooltip 'class.delete-promotion'}}"><i class="fas fa-trash"></i></button>
+            </span>
+            {{/if}}
+          </header>
+          <div class="promotion-rule"></div>
+          <div class="promotion-requirements">
+            <span>Requirements:</span>
+            {{#each this.proficiencyRequirements}}
+            <span class="promotion-requirement" data-tooltip="{{this.label}}">
+              <img src="{{this.image}}" alt="{{this.label}}">
+              <img class="promotion-rank" src="{{this.rankImage}}" alt="Rank {{this.rank}}">
+            </span>
+            {{/each}}
+            {{#each this.skillRequirements}}
+            <span class="promotion-requirement" data-tooltip="{{this.label}}">
+              <img src="{{this.image}}" alt="{{this.label}}"><small>{{this.badge}}</small>
+            </span>
+            {{/each}}
+            {{#unless this.hasRequirements}}<em>None</em>{{/unless}}
+          </div>
+        </div>
+      </article>
+      {{/each}}
+    </div>
+  </section>
+</div>

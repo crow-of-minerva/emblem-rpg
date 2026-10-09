@@ -1,0 +1,193 @@
+<div class="gm-menu crafting-menu">
+
+  <header class="gm-topbar">
+    <div class="gm-actor ws-actor-station">
+      <img class="gm-actor-img" src="{{station.image}}" alt="{{station.name}}" />
+      <div class="gm-actor-meta">
+        <div class="gm-actor-name">{{station.name}}</div>
+        <div class="gm-actor-sub">{{stationLabel}}</div>
+      </div>
+    </div>
+    <div class="gm-topbar-spacer"></div>
+    <span class="ws-mode-desc">{{modeDesc}}</span>
+  </header>
+
+  <div class="gm-bottom ws-body">
+
+    <div class="ws-stack">
+
+      <section class="gm-panel ws-crafter-panel">
+        <div class="gm-panel-head"><span class="gm-panel-title">Crafter</span></div>
+        <div class="gm-panel-scroll">
+          {{#if hasPerformers}}
+          <div class="gm-pick-list">
+            {{#each performers}}
+            <div class="gm-pick{{#if this.selected}} is-chosen{{/if}}{{#unless this.eligible}} is-blocked{{/unless}}"
+                 data-action="selectPerformer" data-uuid="{{this.actorUuid}}" data-eligible="{{this.eligible}}"
+                 {{#unless this.eligible}}data-tooltip="{{this.blocked}}"{{/unless}}>
+              <img class="gm-pick-img" src="{{this.image}}" alt="{{this.name}}" style="{{this.avatarStyle}}" />
+              <span class="gm-pick-body">
+                <span class="gm-pick-name">{{this.name}}</span>
+                {{#if this.eligible}}
+                <span class="gm-pick-sub">{{this.skillLabel}} {{#if this.skillDie}}<strong>{{this.skillDie}}</strong> {{/if}}+ {{this.skillBonus}}</span>
+                {{else}}
+                <span class="gm-pick-sub is-bad">{{this.blocked}}</span>
+                {{/if}}
+              </span>
+              <span class="gm-pick-pips">{{#each this.pips}}<span class="energy-pip{{#if this.filled}} filled{{/if}}"></span>{{/each}}</span>
+              <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+            </div>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="gm-empty">No party member is on this map.</div>
+          {{/if}}
+        </div>
+      </section>
+
+      <section class="gm-panel ws-supply-panel">
+        <div class="gm-panel-head"><span class="gm-panel-title">Materials On Hand</span></div>
+        <div class="gm-panel-scroll">
+          {{#if onHand.length}}
+          <div class="ws-supply-list">
+            {{#each onHand}}
+            <div class="ws-supply{{#if this.needed}} is-needed{{/if}}{{#unless this.ok}} is-bad{{/unless}}">
+              {{#if this.image}}<img class="ws-mat-img" src="{{this.image}}" alt="{{this.name}}" />{{else}}<span class="ws-mat-img"></span>{{/if}}
+              <span class="ws-supply-name">{{this.name}}</span>
+              <span class="ws-mat-qty">{{this.amount}}</span>
+            </div>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="gm-empty">Nothing to craft with.</div>
+          {{/if}}
+        </div>
+      </section>
+
+    </div>
+
+    <section class="gm-panel ws-items-panel">
+      <div class="gm-panel-head">
+        <span class="gm-panel-title">{{listTitle}}</span>
+        <span class="gm-panel-meta">{{listMeta}}</span>
+      </div>
+      <div class="ws-filter-bar">
+        <div class="ws-filters">
+          {{#each kindFilters}}
+          {{#unless @first}}<span class="ws-filter-bar-mark">|</span>{{/unless}}
+          <span class="ws-filter{{#if this.selected}} is-chosen{{/if}}" data-action="filterKind" data-key="{{this.key}}">{{this.label}}</span>
+          {{/each}}
+        </div>
+        <div class="ws-filters">
+          {{#each scopeFilters}}
+          {{#unless @first}}<span class="ws-filter-bar-mark">|</span>{{/unless}}
+          <span class="ws-filter{{#if this.selected}} is-chosen{{/if}}" data-action="filterScope" data-field="{{#if ../isBrew}}subtype{{else}}owner{{/if}}" data-label="{{this.label}}">{{this.label}}</span>
+          {{/each}}
+        </div>
+      </div>
+      <div class="gm-panel-scroll">
+        {{#if hasItems}}
+        <div class="gm-pick-list">
+          {{#each items}}
+          <div class="gm-pick ws-item{{#if this.selected}} is-chosen{{/if}}{{#if this.short}} is-short{{/if}}" data-action="selectItem" data-uuid="{{this.uuid}}"
+               {{#if this.reason}}data-tooltip="{{this.reason}}"{{/if}}>
+            <img class="gm-pick-img ws-item-img" src="{{this.image}}" alt="{{this.name}}" />
+            <span class="gm-pick-body">
+              <span class="ws-item-name">{{this.name}}</span>
+              {{#if this.sub}}<span class="gm-pick-sub">{{this.sub}}</span>{{/if}}
+            </span>
+            {{#if this.tier}}<span class="ws-item-tier">{{this.tier}}</span>{{/if}}
+            <span class="ws-item-dur {{this.tagClass}}">{{this.tag}}</span>
+            <span class="gm-pick-check"><i class="fas fa-check"></i></span>
+          </div>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="gm-empty">{{listEmpty}}</div>
+        {{/if}}
+      </div>
+    </section>
+
+    <section class="gm-panel ws-details-panel">
+      {{#if hasSelection}}
+      <div class="ws-card-head">
+        <img class="ws-card-img" src="{{detail.image}}" alt="{{detail.name}}" />
+        <span class="ws-card-name">{{detail.name}}{{#if detail.tierLabel}} <span class="ws-card-tier">{{detail.tierLabel}}</span>{{/if}}</span>
+        <span class="ws-badge">Skill <strong>{{detail.skill}}</strong></span>
+        {{#if isBrew}}
+        <span class="ws-badge">DC <strong>{{detail.dc}}</strong></span>
+        {{else}}
+        <span class="ws-badge">{{#if detail.repair}}Repair{{else}}Forge{{/if}} <strong>×{{detail.forgeMult}}</strong></span>
+        {{/if}}
+      </div>
+      <div class="ws-card-desc">{{#if detail.description}}{{{detail.description}}}{{else}}No description.{{/if}}</div>
+      <span class="gm-col-label ws-label-name">Required Materials</span>
+      {{#if detail.hasMaterials}}
+      <div class="ws-mat-row">
+        {{#each detail.materials}}
+        <span class="ws-mat{{#unless this.ok}} is-bad{{/unless}}" data-tooltip="{{this.name}}">
+          <img class="ws-mat-img" src="{{this.image}}" alt="{{this.name}}" />
+          <span class="ws-mat-name">{{this.name}}</span>
+          <span class="ws-mat-qty">{{this.have}}/{{this.need}}</span>
+        </span>
+        {{/each}}
+      </div>
+      {{else}}
+      <div class="gm-col-none">None</div>
+      {{/if}}
+      {{#if isBrew}}
+      <div class="ws-tier-head">
+        <span class="gm-col-label ws-label-name">Yield</span>
+        <span class="ws-tally{{#unless detail.delivery.ok}} is-bad{{/unless}}">Goes to {{detail.delivery.text}}</span>
+      </div>
+      <div class="ws-bonus-grid is-yield">
+        {{#each detail.yields}}
+        <span class="ws-bonus{{#if this.bad}} is-fail{{else}} has-delta{{/if}}">{{this.label}} <strong>{{this.value}}</strong></span>
+        {{/each}}
+      </div>
+      {{else if detail.repair}}
+      <div class="ws-tier-head">
+        <span class="gm-col-label ws-label-name">Uses</span>
+        <span class="ws-tally">{{detail.repair.tallyText}}</span>
+      </div>
+      <div class="ws-tally-track{{#if detail.repair.full}} is-reached{{/if}}"><span style="width: {{detail.repair.tallyPercent}}%"></span></div>
+      <div class="ws-repair-note">{{detail.repair.note}}</div>
+      {{else if detail.refinement}}
+      <div class="ws-tier-head">
+        <span class="gm-col-label ws-label-name">{{detail.refinement.heading}}</span>
+        <div class="ws-filters ws-tier-tabs">
+          {{#each detail.refinement.tabs}}
+          {{#unless @first}}<span class="ws-filter-bar-mark">|</span>{{/unless}}
+          <span class="ws-filter ws-tier-tab{{#if this.selected}} is-chosen{{/if}}{{#if this.reached}} is-reached{{/if}}" data-action="previewTier" data-tier="{{this.tier}}">{{this.label}}</span>
+          {{/each}}
+        </div>
+        <span class="ws-tally">{{detail.refinement.tallyText}}</span>
+      </div>
+      <div class="ws-tally-track{{#if detail.refinement.reached}} is-reached{{/if}}"><span style="width: {{detail.refinement.tallyPercent}}%"></span></div>
+      <div class="ws-bonus-grid {{detail.refinement.gridClass}}">
+        {{#each detail.refinement.bonuses}}
+        <span class="ws-bonus{{#if this.delta}} has-delta{{/if}}{{#if this.prot}} ws-bonus-prot{{/if}}">{{this.label}} <strong>{{#if this.delta}}{{this.delta}}{{else}}--{{/if}}</strong></span>
+        {{/each}}
+      </div>
+      {{else}}
+      <div class="gm-col-none ws-no-refine">Item cannot be Refined</div>
+      {{/if}}
+      {{else}}
+      <div class="gm-empty">{{selectPrompt}}</div>
+      {{/if}}
+    </section>
+
+  </div>
+
+  <footer class="gm-footer"{{#if buttonTitle}} data-tooltip="{{buttonTitle}}"{{/if}}>
+    <span class="ws-ticket{{#if ticket.bad}} is-bad{{/if}}">
+      {{#if ticket.blocked}}{{ticket.blocked}}{{else}}<strong>{{ticket.crafter}}</strong> {{ticket.verb}}
+      <strong>{{ticket.subject}}</strong> ({{ticket.roll}}, costs {{energyCost}} Energy){{/if}}
+    </span>
+    <button type="button" class="gm-action-btn{{#if buttonInsufficient}} is-insufficient{{/if}}" data-action="craft"
+            {{#unless canCraft}}disabled{{/unless}}>
+      {{#if buttonInsufficient}}<i class="fas fa-triangle-exclamation"></i> {{/if}}{{buttonLabel}}
+    </button>
+  </footer>
+
+</div>

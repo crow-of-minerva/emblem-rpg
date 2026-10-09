@@ -1,0 +1,27 @@
+<div class="ed-container dmg-cond-container">
+  <div class="ed-section">
+    <label class="ed-check" data-tooltip="{{tooltip 'editor.weapon.randomize-damage-type'}}">
+      <input type="checkbox" id="randomize-checkbox" {{#if randomize}}checked{{/if}} />
+      <span>randomize damage type</span>
+    </label>
+  </div>
+
+  {{#if enabledDmgTypes.length}}
+  <div class="dmg-cond-blocks">
+    {{#each enabledDmgTypes}}
+    <details class="dmg-cond-block" data-dmg-type="{{this.dmgType}}" {{#if this.hasCondition}}open{{/if}}>
+      <summary class="dmg-cond-summary">
+        <span class="dmg-cond-icon"><i class="fas fa-chevron-right"></i></span>
+        <span class="dmg-cond-name">{{this.displayName}}</span>
+        <span class="dmg-cond-state">{{this.summary}}</span>
+      </summary>
+      <div class="dmg-cond-body">
+        <div class="dmg-cond-tree" data-tree-container></div>
+      </div>
+    </details>
+    {{/each}}
+  </div>
+  {{else}}
+  <p class="ed-description">No damage types are enabled on this weapon. Enable damage types on the item sheet first.</p>
+  {{/if}}
+</div>

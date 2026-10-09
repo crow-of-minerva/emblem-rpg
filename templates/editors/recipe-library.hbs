@@ -1,0 +1,129 @@
+<div class="rl-root{{#if readOnly}} is-readonly{{/if}}">
+  <nav class="rl-rail">
+    {{#each tabs}}
+    <button type="button" class="rl-rail-tab{{#if this.active}} is-active{{/if}}" data-action="setTab" data-tab="{{this.key}}" data-tooltip="{{this.title}}">
+      <i class="{{this.icon}}"></i><span>{{this.label}}</span>
+    </button>
+    {{/each}}
+  </nav>
+
+  <aside class="rl-list-pane">
+    <div class="rl-list-head">
+      <span class="craft-section-title">{{tab.label}}</span>
+      {{#unless readOnly}}
+      <span class="rl-list-tools">
+        {{#if canRestore}}
+        <button type="button" class="rl-tool-btn" data-action="restoreBuiltins" data-tooltip="{{tooltip 'recipe.restore-builtins'}}"><i class="fas fa-rotate-left"></i></button>
+        {{/if}}
+        <button type="button" class="rl-tool-btn" data-action="addRecipe" data-tooltip="{{addTooltip}}"><i class="fas fa-plus"></i></button>
+      </span>
+      {{/unless}}
+    </div>
+    <div class="rl-list">
+      {{#if hasRecipes}}
+      {{#each recipes}}
+      <div class="rl-recipe{{#if this.selected}} is-selected{{/if}}" data-action="selectRecipe" data-id="{{this.id}}"
+           {{#if this.draggable}}draggable="true" data-tooltip="{{tooltip 'recipe.link'}}"{{/if}}>
+        <img class="rl-recipe-img" src="{{this.img}}" alt="{{this.name}}" />
+        <span class="rl-recipe-body">
+          <span class="rl-recipe-name">{{this.name}}</span>
+          <span class="rl-recipe-meta">
+            <span class="rl-recipe-dc">DC {{this.dc}}</span>
+          </span>
+        </span>
+        {{#if this.draggable}}<i class="fas fa-grip-vertical rl-recipe-grip"></i>{{/if}}
+      </div>
+      {{/each}}
+      {{else}}
+      <div class="rl-empty">{{#if isPersonalTab}}No Personal recipes yet.{{else}}No Default recipes yet.{{/if}}</div>
+      {{/if}}
+    </div>
+    {{#if isPersonalTab}}
+    <div class="rl-list-foot">Drag a Personal recipe onto a unit's sheet to link it.</div>
+    {{/if}}
+  </aside>
+
+  <section class="rl-editor-pane">
+    {{#if selected}}
+    <div class="rl-editor-scroll">
+      <div class="ed-section craft-head-section">
+        <div class="rl-head-row">
+          <img class="rl-editor-img" src="{{selected.img}}" alt="{{selected.name}}" {{#unless readOnly}}data-action="pickImage" data-tooltip="{{tooltip 'recipe.change-image'}}"{{/unless}} />
+          <div class="craft-field-row rl-head-fields">
+            <label class="craft-field rl-field-name">
+              <span>Name</span>
+              <input type="text" name="name" value="{{selected.name}}" placeholder="Recipe name" {{#if readOnly}}disabled{{/if}} />
+            </label>
+            <label class="craft-field rl-field-dc" data-tooltip="{{tooltip 'recipe.difficulty'}}">
+              <span>DC</span>
+              <input type="number" name="dc" value="{{selected.dc}}" min="1" step="1" {{#if readOnly}}disabled{{/if}} />
+            </label>
+          </div>
+        </div>
+        <label class="craft-field rl-field-desc">
+          <span>Description</span>
+          <textarea name="description" rows="5" placeholder="Description" {{#if readOnly}}disabled{{/if}}>{{selected.description}}</textarea>
+        </label>
+      </div>
+
+      <div class="ed-section">
+        <div class="craft-section-header">
+          <span class="craft-section-title">Growth Bonuses</span>
+        </div>
+        <div class="craft-stat-row">
+          {{#each growths}}
+          <label class="craft-stat" data-tooltip="{{this.tooltip}}">
+            <span>{{this.label}}</span>
+            <input type="number" name="growth_{{this.key}}" value="{{this.value}}" placeholder="--" step="1"
+              {{#if @root.readOnly}}disabled{{/if}} />
+          </label>
+          {{/each}}
+        </div>
+      </div>
+
+      <div class="ed-section craft-materials-section">
+        <div class="craft-section-header">
+          <span class="craft-section-title">Ingredients per Diner</span>
+        </div>
+        {{#if readOnly}}
+        <ul class="craft-material-list rl-static-list">
+          {{#each ingredients}}
+          <li class="craft-material-item">
+            <img src="{{this.img}}" class="craft-material-img" data-tooltip="{{this.name}}" />
+            <span class="craft-material-name">{{this.name}}</span>
+            <span class="craft-material-x">×</span>
+            <span class="rl-static-qty">{{this.quantity}}</span>
+          </li>
+          {{else}}
+          <li class="craft-material-empty">No ingredients required</li>
+          {{/each}}
+        </ul>
+        {{else}}
+        <div class="craft-material-search">
+          <input type="text" name="ingredientSearch" placeholder="Search ingredient" />
+        </div>
+        <ul class="craft-material-list"></ul>
+        {{/if}}
+      </div>
+
+      {{#unless readOnly}}
+      <div class="rl-danger-row">
+        <button type="button" class="rl-move-btn" data-action="moveRecipe">
+          <i class="fas fa-right-left"></i> {{#if selected.isDefault}}Make Personal{{else}}Make Default{{/if}}
+        </button>
+        <button type="button" class="rl-delete-btn" data-action="deleteRecipe"><i class="fas fa-trash"></i> Delete Recipe</button>
+      </div>
+      {{/unless}}
+    </div>
+    {{else}}
+    <div class="rl-empty rl-empty-editor">{{#if readOnly}}Select a recipe.{{else}}Select a recipe, or add one with <i class="fas fa-plus"></i>.{{/if}}</div>
+    {{/if}}
+  </section>
+
+  <footer class="rl-footer">
+    {{#unless readOnly}}
+    <button type="button" class="rl-footer-btn rl-save-btn" data-action="save"><i class="fas fa-save"></i> Save</button>
+    {{/unless}}
+    <button type="button" class="rl-footer-btn" data-action="cancel">Close</button>
+  </footer>
+</div>

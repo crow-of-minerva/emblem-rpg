@@ -1,0 +1,84 @@
+<div class="promote-preview">
+  <div class="promote-head">
+    <span class="promote-class">
+      <span class="promote-thumb"><img class="promote-thumb-img" data-thumb="current" src="{{current.thumb}}" alt=""></span>
+      <span class="promote-class-name">{{current.className}}</span>
+    </span>
+    <span class="promote-arrow">&raquo;</span>
+    <span class="promote-class">
+      <span class="promote-thumb"><img class="promote-thumb-img" data-thumb="target" src="{{selected.thumb}}" alt=""></span>
+      <span class="promote-class-name is-target" data-target-name>{{selected.className}}</span>
+    </span>
+    <span class="promote-mount-line">
+      <span class="promote-chip" data-mount-chip {{#unless selected.mount.has}}hidden{{/unless}}>
+        <img class="promote-chip-icon is-mount" src="{{selected.mount.icon}}" alt="">
+        <span class="promote-chip-label">{{selected.mount.name}}</span>
+      </span>
+      {{#each selected.mount.types as |type|}}
+      <span class="promote-chip" data-unit-type="{{type.key}}" {{#unless type.shown}}hidden{{/unless}}>
+        <img class="promote-chip-icon" src="{{type.icon}}" alt="">
+        <span class="promote-chip-label">{{type.label}}</span>
+      </span>
+      {{/each}}
+    </span>
+    <span class="promote-pick">
+      <span class="promote-pick-label">Choose Promotion:</span>
+      <select name="promotionSelect" class="promotion-select" aria-label="Choose Promotion">
+        {{#each options as |opt|}}
+        <option value="{{opt.id}}" {{#unless opt.selectable}}disabled{{/unless}} {{#if opt.selected}}selected{{/if}}
+          class="{{#unless opt.selectable}}is-unavailable{{/unless}}" data-class-uuid="{{opt.classUuid}}">
+          {{opt.className}}{{#unless opt.selectable}} ({{opt.unavailableReason}}){{/unless}}
+        </option>
+        {{/each}}
+      </select>
+    </span>
+  </div>
+
+  <div class="promote-bars">
+    {{#each selected.columns as |column|}}
+    <div class="promote-bar-column">
+      {{#each column as |row|}}
+      <div class="promote-bar-row">
+        <span class="promote-bar-label">{{row.label}}</span>
+        <span class="promote-bar-now">{{row.now}}</span>
+        <span class="promote-track{{#if row.capped}} is-capped{{/if}}" data-stat="{{row.key}}" style="{{row.trackStyle}}">
+          <span class="promote-seg-base"></span>
+          <span class="promote-seg-gain"></span>
+          <span class="promote-seg-mount"></span>
+          <span class="promote-seg-room"></span>
+          <span class="promote-seg-loss"></span>
+          <span class="promote-cap-now"></span>
+          <span class="promote-cap-new"></span>
+        </span>
+        <span class="promote-bar-after" data-stat="{{row.key}}">{{row.after}}</span>
+        <span class="promote-bar-bonus {{row.classTone}}" data-stat="{{row.key}}">{{row.classBonus}}</span>
+        <span class="promote-bar-mount" data-stat="{{row.key}}">{{row.mountBonus}}</span>
+      </div>
+      {{/each}}
+    </div>
+    {{/each}}
+  </div>
+
+  <div class="promote-profs">
+    {{#each selected.proficiencies as |cell|}}
+    <span class="promote-prof {{cell.tone}}" data-prof="{{cell.key}}">
+      <img class="promote-prof-icon" src="{{cell.icon}}" alt="{{cell.label}}">
+      <span class="promote-rank">
+        <img class="promote-rank-img" src="{{cell.badge}}" alt="">
+        <s class="promote-rank-lost">{{cell.lostLetter}}</s>
+      </span>
+    </span>
+    {{/each}}
+    {{#each selected.utility as |tile|}}
+    <span class="promote-utility {{tile.tone}}" data-prof="{{tile.key}}">
+      <img class="promote-utility-icon" src="{{tile.image}}" alt="{{tile.name}}">
+      <span class="promote-utility-label">{{tile.label}}</span>
+    </span>
+    {{/each}}
+  </div>
+
+  <div class="promote-footer">
+    <button type="button" class="promote-pill" data-promote="cancel">Cancel</button>
+    <button type="button" class="promote-pill" data-promote="confirm">Promote</button>
+  </div>
+</div>

@@ -1,0 +1,221 @@
+<div class="ect-root" data-application-part="tracker">
+  {{#if emblem.showBoard}}
+  <div class="ect-toggles">
+    <div class="ect-toggle-row">
+      <button type="button" class="ect-btn ect-btn-toggle{{#if emblem.autoAdvance}} is-on{{/if}}"
+              data-action="emblemToggleAutoAdvance" aria-pressed="{{emblem.autoAdvance}}"
+              {{#unless emblem.canToggle}}disabled{{/unless}}
+              data-tooltip="{{tooltip 'encounter.auto-advance'}}">
+        <i class="fa-solid {{#if emblem.autoAdvance}}fa-toggle-on{{else}}fa-toggle-off{{/if}}" inert></i>
+        <span>Auto-Advance</span>
+      </button>
+      {{#if emblem.isGM}}
+      <button type="button" class="ect-btn ect-btn-toggle{{#if emblem.combatMusic}} is-on{{/if}}"
+              data-action="emblemToggleCombatMusic" aria-pressed="{{emblem.combatMusic}}"
+              {{#unless emblem.canToggle}}disabled{{/unless}}
+              data-tooltip="{{tooltip 'encounter.combat-music'}}">
+        <i class="fa-solid {{#if emblem.combatMusic}}fa-toggle-on{{else}}fa-toggle-off{{/if}}" inert></i>
+        <span>Combat Music</span>
+      </button>
+      {{/if}}
+    </div>
+  </div>
+
+  <div class="ect-phase-panel ect-phase-{{emblem.phaseVariant}}">
+    <div class="ect-phase-row">
+      <span class="ect-round">Round {{#if emblem.canEditRound}}<span class="ect-round-value" data-action="emblemEditRound">{{emblem.round}}</span>{{else}}{{emblem.round}}{{/if}}{{#if emblem.roundLimit}}<span class="ect-round-limit">/{{emblem.roundLimit}}</span>{{/if}}</span>
+      {{#if emblem.phaseLabel}}
+      <span class="ect-phase-label">{{emblem.phaseLabel}}</span>
+      {{else}}
+      <span class="ect-phase-label ect-phase-pending">Not Started</span>
+      {{/if}}
+    </div>
+
+    {{#if emblem.showProgress}}
+    <div class="ect-progress" data-tooltip="{{tooltip 'encounter.phase-progress' emblem.progress}}">
+      <div class="ect-progress-bar" style="width: {{emblem.progress.pct}}%"></div>
+      <span class="ect-progress-text">{{emblem.progress.acted}} / {{emblem.progress.total}} Acted</span>
+    </div>
+    {{/if}}
+  </div>
+
+  <section class="ect-roster ect-roster-{{emblem.roster.side}}{{#if emblem.paused}} ect-roster-paused{{/if}}">
+    <div class="ect-roster-bar">
+      <div class="ect-side-tabs">
+        {{#each emblem.sides}}
+        <button type="button" class="ect-side-tab{{#if this.selected}} is-active{{/if}}{{#if this.isPhase}} is-phase{{/if}}"
+                data-action="emblemSetSide" data-side="{{this.side}}" style="--ect-faction: {{this.color}}">
+          <span class="ect-side-name">{{this.title}}</span>
+          <span class="ect-side-count">{{this.aliveCount}}</span>
+        </button>
+        {{/each}}
+      </div>
+      <div class="ect-sort-controls">
+        <button type="button" class="ect-sort-by" data-action="emblemCycleSort" data-tooltip="{{tooltip 'encounter.sort-field'}}">Sort: {{emblem.sortByLabel}}</button>
+        <button type="button" class="ect-sort-dir" data-action="emblemToggleSortDir" data-tooltip="{{tooltip 'encounter.sort-direction' emblem}}">
+          <i class="fas {{#if (eq emblem.sortDir 'asc')}}fa-arrow-up-short-wide{{else}}fa-arrow-down-wide-short{{/if}}"></i>
+        </button>
+      </div>
+    </div>
+
+    <ol class="ect-unit-list">
+      {{#each emblem.roster.units}}
+      <li class="ect-unit{{#if this.acted}} is-acted{{/if}}{{#if this.dead}} is-dead{{/if}}{{#if this.isObjective}} is-objective{{/if}}{{#if this.isProtected}} is-protected{{/if}}"
+          data-token-id="{{this.tokenId}}" data-actor-id="{{this.actorId}}"
+          style="--ect-faction: {{this.color}}">
+        <div class="ect-unit-portrait">
+          <img src="{{this.img}}" alt="{{this.name}}" style="{{avatarScale this clip=true}}">
+          {{#if this.acted}}<i class="ect-acted-check fa-solid fa-check"></i>{{/if}}
+        </div>
+        <div class="ect-unit-body">
+          <div class="ect-unit-topline">
+            {{#if this.isObjective}}
+            <img class="ect-name-badge" src="systems/emblem-rpg/assets/ui/objective.png" alt="Objective target"
+                 data-tooltip="{{tooltip 'encounter.objective-target'}}">
+            {{/if}}
+            {{#if this.isProtected}}
+            <img class="ect-name-badge" src="systems/emblem-rpg/assets/ui/protect.png" alt="Protected unit"
+                 data-tooltip="{{tooltip 'encounter.protected-unit'}}">
+            {{/if}}
+            {{#if this.arrived}}
+            <i class="ect-name-badge ect-arrived fa-solid fa-flag-checkered" data-tooltip="{{tooltip 'encounter.arrived-unit'}}"></i>
+            {{/if}}
+            {{#if this.isLord}}
+            <i class="ect-name-badge ect-lord-crown fa-solid fa-crown" data-tooltip="{{tooltip 'encounter.lord-unit'}}"></i>
+            {{/if}}
+            <span class="ect-unit-name">{{this.name}}</span>
+            <span class="ect-unit-icons">
+              {{#if this.lootKind}}
+              <i class="ect-unit-icon ect-loot ect-loot-{{this.lootKind}} fa-solid fa-sack"
+                 data-tooltip="{{this.lootLabel}}"></i>
+              {{/if}}
+              {{#if this.hasAura}}
+              <i class="ect-unit-icon ect-aura-icon fa-solid fa-tower-broadcast" data-tooltip="{{tooltip 'encounter.emitting-aura'}}"></i>
+              {{/if}}
+            </span>
+          </div>
+          <div class="ect-hp-bar">
+            <div class="ect-hp-fill" style="width: {{this.hpPct}}%"></div>
+            <span class="ect-hp-text">{{this.hpValue}}/{{this.hpMax}}</span>
+          </div>
+          <div class="ect-unit-footline">
+            <span class="ect-stn-pips">
+              {{#each this.stnPips}}<i class="fa-{{#if this}}solid{{else}}regular{{/if}} fa-shield ect-stn{{#if this}} is-on{{/if}}"></i>{{/each}}
+            </span>
+          </div>
+        </div>
+      </li>
+      {{/each}}
+      {{#unless emblem.roster.units.length}}
+      <li class="ect-empty">No units</li>
+      {{/unless}}
+    </ol>
+
+    <footer class="ect-pager">
+      <button type="button" class="ect-btn ect-page-btn" data-action="emblemPrevPage"
+              {{#unless emblem.roster.hasPrev}}disabled{{/unless}} data-tooltip="{{tooltip 'encounter.previous-page'}}">
+        <i class="fa-solid fa-chevron-left" inert></i>
+      </button>
+      <span class="ect-page-indicator">Page {{emblem.roster.page}} / {{emblem.roster.pageCount}}</span>
+      <button type="button" class="ect-btn ect-page-btn" data-action="emblemNextPage"
+              {{#unless emblem.roster.hasNext}}disabled{{/unless}} data-tooltip="{{tooltip 'encounter.next-page'}}">
+        <i class="fa-solid fa-chevron-right" inert></i>
+      </button>
+    </footer>
+  </section>
+
+  {{#if emblem.isGM}}
+  <footer class="ect-tracker-footer">
+    {{#if emblem.paused}}
+    <button type="button" class="ect-btn ect-btn-wide ect-btn-accent" data-action="emblemResumeEncounter"
+            data-tooltip="{{tooltip 'encounter.resume'}}">
+      <i class="fa-solid fa-play" inert></i><span>Resume Encounter</span>
+    </button>
+    <button type="button" class="ect-btn ect-btn-wide ect-btn-danger" data-action="emblemDiscardPause"
+            data-tooltip="{{tooltip 'encounter.discard-pause'}}">
+      <i class="fa-solid fa-xmark" inert></i><span>End Encounter</span>
+    </button>
+    {{else if emblem.started}}
+    <button type="button" class="combat-control ect-btn ect-btn-accent ect-btn-wide" data-action="emblemAdvancePhase">
+      <i class="fa-solid fa-flag-checkered" inert></i><span>End Phase</span>
+    </button>
+      {{#if emblem.endMenuOpen}}
+      <button type="button" class="ect-btn ect-btn-wide ect-btn-accent" data-action="emblemEndSuccess"
+              data-tooltip="{{tooltip 'encounter.end-success'}}">
+        <i class="fa-solid fa-flag-checkered" inert></i><span>End Map: Success</span>
+      </button>
+      <button type="button" class="ect-btn ect-btn-wide ect-btn-danger" data-action="emblemEndFailure"
+              data-tooltip="{{tooltip 'encounter.end-failure'}}">
+        <i class="fa-solid fa-skull" inert></i><span>End Map: Failure</span>
+      </button>
+      <button type="button" class="ect-btn ect-btn-wide" data-action="emblemPauseEncounter"
+              data-tooltip="{{tooltip 'encounter.pause'}}">
+        <i class="fa-solid fa-pause" inert></i><span>Pause Encounter</span>
+      </button>
+      <button type="button" class="ect-btn ect-btn-wide ect-btn-quiet" data-action="emblemToggleEndMenu"
+              data-tooltip="{{tooltip 'encounter.end-menu-back'}}">
+        <i class="fa-solid fa-arrow-left" inert></i><span>Back</span>
+      </button>
+      {{else}}
+      <button type="button" class="ect-btn ect-btn-wide ect-btn-objective" data-action="emblemSetObjectives"
+              data-tooltip="{{tooltip 'encounter.edit-objectives'}}">
+        <i class="fa-solid fa-bullseye" inert></i><span>Set Objectives</span>
+      </button>
+      <button type="button" class="ect-btn ect-btn-wide ect-btn-danger" data-action="emblemToggleEndMenu">
+        <i class="fa-solid fa-door-open" inert></i><span>End Encounter</span>
+      </button>
+      {{/if}}
+    {{else}}
+    <button type="button" class="ect-btn ect-btn-wide ect-btn-objective" data-action="emblemSetObjectives"
+            data-tooltip="{{tooltip 'encounter.set-objectives'}}">
+      <i class="fa-solid fa-bullseye" inert></i><span>Set Objectives</span>
+    </button>
+    <button type="button" class="ect-btn ect-btn-wide ect-btn-accent" data-action="emblemBeginEncounter"
+            data-tooltip="{{tooltip 'encounter.begin'}}">
+      <i class="fa-solid fa-play" inert></i><span>Begin Encounter</span>
+    </button>
+    <button type="button" class="ect-btn ect-btn-wide ect-btn-quiet" data-action="emblemCancelEncounter"
+            data-tooltip="{{tooltip 'encounter.cancel'}}">
+      <i class="fa-solid fa-rotate-left" inert></i><span>Cancel Encounter</span>
+    </button>
+    {{/if}}
+  </footer>
+  {{/if}}
+  {{else}}
+  {{#if emblem.explorationActive}}
+  <div class="ect-explore-roster">
+    <ol class="ect-explore-list">
+      {{#each emblem.exploreUnits}}
+      <li class="ect-explore-unit" data-token-id="{{this.tokenId}}" data-actor-id="{{this.actorId}}"
+          style="--ect-faction: {{this.color}}">
+        <div class="ect-explore-portrait">
+          <img src="{{this.img}}" alt="{{this.name}}" style="{{avatarScale this clip=true}}">
+        </div>
+        <div class="ect-explore-body">
+          <span class="ect-explore-name">{{this.name}}</span>
+          {{#if this.energyPips}}
+          <div class="ect-explore-energy" data-tooltip="{{this.energyLabel}}">
+            {{#each this.energyPips}}<span class="ect-explore-pip{{#if this}} is-on{{/if}}"></span>{{/each}}
+          </div>
+          {{/if}}
+          {{#if this.skills.length}}
+          <div class="ect-explore-skills">
+            {{#each this.skills}}
+            <img class="ect-explore-skill" src="systems/emblem-rpg/assets/ui/skills/{{this.key}}.png" alt="{{this.label}}"
+                 data-tooltip="{{this.label}}">
+            {{/each}}
+          </div>
+          {{/if}}
+        </div>
+      </li>
+      {{/each}}
+      {{#unless emblem.exploreUnits.length}}
+      <li class="ect-empty">No player units</li>
+      {{/unless}}
+    </ol>
+  </div>
+  {{else}}
+  <div class="ect-no-combat">No active encounter.</div>
+  {{/if}}
+  {{/if}}
+</div>

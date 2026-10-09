@@ -1,0 +1,10 @@
+<div class="promotion-editor">
+  <section class="editor-section">
+    <div class="pe-field-row"><label class="pe-field pe-field-level"><span>Req Level</span><input type="number" name="promotionLvl" value="{{promotion.lvl}}" min="1"></label><div class="pe-field pe-field-item"><span>Promotion Item</span><div class="promotion-item-drop"></div></div></div>
+    <div class="class-add"><input type="text" name="classSearch" placeholder="Search class"></div>
+    <div class="selected-class"></div>
+  </section>
+  <section class="editor-section"><div class="pe-section-header">Required Weapon Proficiencies</div><div class="pe-rank-grid">{{#each proficiencies}}<div class="pe-rank-item pe-prof-item" data-key="{{this.key}}" data-tooltip="{{this.label}}"><img class="pe-rank-icon" src="{{@root.systemPath}}/assets/ui/proficiencies/{{this.icon}}{{#unless this.rank}}-off{{/unless}}.png"><img class="pe-rank-badge" src="{{@root.systemPath}}/assets/ui/proficiencies/{{#if this.rank}}rank{{this.rank}}{{else}}norank{{/if}}.png"></div>{{/each}}</div></section>
+  <section class="editor-section"><div class="pe-section-header">Required Skill Ranks</div><div class="pe-rank-grid pe-skill-grid">{{#each skills}}<div class="pe-rank-item pe-skill-item" data-key="{{this.key}}" data-tooltip="{{this.label}}"><img class="pe-rank-icon" src="{{@root.systemPath}}/assets/ui/skills/{{this.key}}{{#unless this.rank}}-off{{/unless}}.png"><span class="pe-skill-badge {{#unless this.rank}}is-zero{{/unless}}">{{this.badge}}</span></div>{{/each}}</div></section>
+</div>
+

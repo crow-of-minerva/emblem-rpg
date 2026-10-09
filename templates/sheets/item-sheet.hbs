@@ -1,0 +1,1186 @@
+<form class="emblem-rpg item-sheet" autocomplete="off" style="{{#if typeFlags.isCoinpurse}}height: 105px!important; max-height: 105px!important;{{/if}}">
+
+
+  <section class="item-header">
+
+
+    <div class="item-image">
+      <img src="{{profileImg}}" class="{{#if pixelArt}}is-pixel-art{{/if}}" data-action="editImage" data-edit="img"
+        data-tooltip="{{item.name}}" />
+    </div>
+
+
+    <div class="item-details">
+      <input class="item-name" name="name" type="text" value="{{item.name}}" placeholder="Item Name" />
+      <div class="item-type-row">
+        <label class="item-type">{{item.type}}</label>
+        <select class="item-subType" name="system.itemType">
+          {{#if typeFlags.isEquipment}}
+            <option value="Weapon" {{#if typeFlags.isWeapon}}selected{{/if}}>Weapon</option>
+            <option value="Armor" {{#if typeFlags.isArmor}}selected{{/if}}>Armor</option>
+            <option value="Staff" {{#if typeFlags.isStaff}}selected{{/if}}>Staff</option>
+            <option value="Staff (U)" {{#if typeFlags.isStaffUtility}}selected{{/if}}>Staff (U)</option>
+            <option value="Shield" {{#if typeFlags.isShield}}selected{{/if}}>Shield</option>
+            <option value="Accessory" {{#if typeFlags.isAccessory}}selected{{/if}}>Accessory</option>
+          {{else if typeFlags.isAbility}}
+            <option value="Active" {{#if typeFlags.isActive}}selected{{/if}}>Active</option>
+            <option value="Passive" {{#if typeFlags.isPassive}}selected{{/if}}>Passive</option>
+            <option value="Weapon Art" {{#if typeFlags.isWeaponArt}}selected{{/if}}>Weapon Art</option>
+            <option value="Mount" {{#if typeFlags.isMount}}selected{{/if}}>Mount</option>
+          {{else if typeFlags.isSpell}}
+            <option value="Attack" {{#if typeFlags.isAttack}}selected{{/if}}>Attack</option>
+            <option value="Utility" {{#if typeFlags.isUtility}}selected{{/if}}>Utility</option>
+          {{else if typeFlags.isConsumable}}
+            <option value="Potion" {{#if typeFlags.isPotion}}selected{{/if}}>Potion</option>
+            <option value="Bomb" {{#if typeFlags.isBomb}}selected{{/if}}>Bomb</option>
+            <option value="Booster" {{#if typeFlags.isBooster}}selected{{/if}}>Booster</option>
+            <option value="Promotion" {{#if typeFlags.isPromotion}}selected{{/if}}>Promotion</option>
+          {{else if typeFlags.isMiscellaneous}}
+            <option value="Coinpurse" {{#if typeFlags.isCoinpurse}}selected{{/if}}>Coinpurse</option>
+            <option value="Other" {{#if typeFlags.isOther}}selected{{/if}}>Other</option>
+          {{/if}}
+        </select>
+
+        {{#if typeFlags.isWeaponArt}}
+        <div class="weapon-art-proficiencies">
+
+          <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-brawling.png"
+               data-action="toggleWeaponArtProficiency"
+               data-proficiency="brawling"
+               data-tooltip="{{tooltip 'type.brawling'}}"
+               style="opacity: {{#if item.system.wepArtData.brawling}}1{{else}}0.2{{/if}};" />
+
+
+          <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-blade.png"
+               data-action="toggleWeaponArtProficiency"
+               data-proficiency="blade"
+               data-tooltip="{{tooltip 'type.blade'}}"
+               style="opacity: {{#if item.system.wepArtData.blade}}1{{else}}0.2{{/if}};" />
+
+
+          <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-polearm.png"
+               data-action="toggleWeaponArtProficiency"
+               data-proficiency="polearm"
+               data-tooltip="{{tooltip 'type.polearm'}}"
+               style="opacity: {{#if item.system.wepArtData.polearm}}1{{else}}0.2{{/if}};" />
+
+
+          <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-heavy.png"
+               data-action="toggleWeaponArtProficiency"
+               data-proficiency="heavy"
+               data-tooltip="{{tooltip 'type.heavy'}}"
+               style="opacity: {{#if item.system.wepArtData.heavy}}1{{else}}0.2{{/if}};" />
+
+
+          <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-bow.png"
+               data-action="toggleWeaponArtProficiency"
+               data-proficiency="bow"
+               data-tooltip="{{tooltip 'type.bow'}}"
+               style="opacity: {{#if item.system.wepArtData.bow}}1{{else}}0.2{{/if}};" />
+
+
+          <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-covert.png"
+               data-action="toggleWeaponArtProficiency"
+               data-proficiency="covert"
+               data-tooltip="{{tooltip 'type.covert'}}"
+               style="opacity: {{#if item.system.wepArtData.covert}}1{{else}}0.2{{/if}};" />
+        </div>
+        {{/if}}
+
+        {{#if typeFlags.showProficiencySelect}}
+        <label class="proficiency-label" for="proficiency-select">Proficiency:</label>
+        <select class="proficiency-select"
+            name="{{#if typeFlags.isArmorOrShield}}system.armor.req{{else}}system.weapon.req{{/if}}"
+            id="proficiency-select">
+          {{#if typeFlags.isWeapon}}
+            <option value="Brawling" {{#if (eq item.system.weapon.req "Brawling")}}selected{{/if}}>Brawling</option>
+            <option value="Blade" {{#if (eq item.system.weapon.req "Blade")}}selected{{/if}}>Blade</option>
+            <option value="Polearm" {{#if (eq item.system.weapon.req "Polearm")}}selected{{/if}}>Polearm</option>
+            <option value="Heavy" {{#if (eq item.system.weapon.req "Heavy")}}selected{{/if}}>Heavy</option>
+            <option value="Bow" {{#if (eq item.system.weapon.req "Bow")}}selected{{/if}}>Bow</option>
+            <option value="Covert" {{#if (eq item.system.weapon.req "Covert")}}selected{{/if}}>Covert</option>
+          {{else if typeFlags.isMagicalProficiency}}
+            <option value="Arcane" {{#if (eq item.system.weapon.req "Arcane")}}selected{{/if}}>Arcane</option>
+            <option value="Elemental" {{#if (eq item.system.weapon.req "Elemental")}}selected{{/if}}>Elemental</option>
+            <option value="Divine" {{#if (eq item.system.weapon.req "Divine")}}selected{{/if}}>Divine</option>
+            <option value="Occult" {{#if (eq item.system.weapon.req "Occult")}}selected{{/if}}>Occult</option>
+          {{else if typeFlags.isArmorOrShield}}
+            <option value="None" {{#if (eq item.system.armor.req "None")}}selected{{/if}}>None</option>
+            <option value="Light" {{#if (eq item.system.armor.req "Light")}}selected{{/if}}>Light</option>
+            <option value="Medium" {{#if (eq item.system.armor.req "Medium")}}selected{{/if}}>Medium</option>
+            <option value="Heavy" {{#if (eq item.system.armor.req "Heavy")}}selected{{/if}}>Heavy</option>
+          {{/if}}
+        </select>
+        {{#if typeFlags.showRankSelect}}
+        <select class="proficiency-select-rank" name="system.weapon.rank" id="proficiency-select-rank">
+          <option value="0" {{#if (eq item.system.weapon.rank 0)}}selected{{/if}}>--</option>
+          <option value="1" {{#if (eq item.system.weapon.rank 1)}}selected{{/if}}>E</option>
+          <option value="2" {{#if (eq item.system.weapon.rank 2)}}selected{{/if}}>D</option>
+          <option value="3" {{#if (eq item.system.weapon.rank 3)}}selected{{/if}}>C</option>
+          <option value="4" {{#if (eq item.system.weapon.rank 4)}}selected{{/if}}>B</option>
+          <option value="5" {{#if (eq item.system.weapon.rank 5)}}selected{{/if}}>A</option>
+          <option value="6" {{#if (eq item.system.weapon.rank 6)}}selected{{/if}}>S</option>
+        </select>
+        {{/if}}
+        {{/if}}
+      </div>
+    </div>
+
+  </section>
+
+
+  <section class="item-left-divider" style="{{#if typeFlags.isCoinpurse}}display: none;{{/if}}">
+    {{#if typeFlags.showUsesTracker}}
+
+    <div class="usage-tracker">
+      {{!-- _wireFormulaEditors in ui/apps/sheets/item/sheet.mjs makes the Uses label open the scaling editor. --}}
+      <label class="uses-label-trigger" data-tooltip="{{tooltip 'item.click-to-edit-uses-parameters'}}">
+        {{#if typeFlags.isDurabilityItem}}
+          Durability
+        {{else}}
+          Uses
+        {{/if}}
+      </label>
+
+
+      {{#unless (eq item.system.uses.type "infinite")}}
+      <div class="uses-row">
+        <input class="uses-input" type="number" name="system.uses.current" value="{{item.system.uses.current}}" min="0" max="{{item.system.uses.max}}" />
+        <span class="uses-separator">/</span>
+        {{#if (eq item.system.uses.type "conditional")}}
+          <span class="uses-max-display" data-tooltip="{{tooltip 'item.maximum-uses-scaled-edit-via-the-uses-label'}}">{{item.system.uses.max}}</span>
+        {{else}}
+          <input class="uses-input" type="number" name="system.uses.max" value="{{item.system.uses.max}}" min="1" />
+        {{/if}}
+      </div>
+      {{/unless}}
+
+
+      <div class="uses-type-group" data-tooltip="{{tooltip 'item.uses-type-edit-via-the-uses-label'}}">
+        <select class="uses-type-select" disabled>
+          <option value="limited" {{#if (eq item.system.uses.type "limited")}}selected{{/if}}>Limited</option>
+          <option value="infinite" {{#if (eq item.system.uses.type "infinite")}}selected{{/if}}>Infinite</option>
+          <option value="conditional" {{#if (eq item.system.uses.type "conditional")}}selected{{/if}}>Conditional</option>
+        </select>
+      </div>
+
+
+      {{#unless (eq item.system.uses.type "infinite")}}
+      <label class="refreshes-row" data-tooltip="{{tooltip 'item.if-checked-this-item-s-remaining-uses-will-refresh-at-the-st'}}">
+        <span class="toggle-text">Refreshes</span>
+        <input class="refreshes-checkbox" type="checkbox" name="system.refreshes" {{#if item.system.refreshes}}checked{{/if}} />
+      </label>
+      {{/unless}}
+
+    </div>
+    {{/if}}
+
+    {{#if typeFlags.isWeaponArt}}
+
+    <div class="weapon-art-cost">
+      <label data-tooltip="{{tooltip 'item.the-weapon-durability-cost-of-this-ability'}}">
+        Cost
+      </label>
+      <input type="number" name="system.wepArtData.cost" value="{{item.system.wepArtData.cost}}"
+             min="0" />
+    </div>
+    {{/if}}
+
+    {{#if typeFlags.showTargetGroup}}
+
+    <div class="target-group"{{#if typeFlags.isPotion}} data-tooltip="{{tooltip 'item.potions-always-target-self'}}"{{else if typeFlags.isBooster}} data-tooltip="{{tooltip 'item.boosters-always-target-self'}}"{{/if}}>
+     {{#if typeFlags.isPotion}}
+     <label class="target-label" data-tooltip="{{tooltip 'item.potions-always-target-self'}}">Target</label>
+      <select class="compact-select" disabled>
+        <option value="Self" selected>Self</option>
+      </select>
+      <input type="hidden" name="system.effectData.targetType" value="Self" />
+     {{else if typeFlags.isBooster}}
+     <label class="target-label" data-tooltip="{{tooltip 'item.boosters-always-target-self'}}">Target</label>
+      <select class="compact-select" disabled>
+        <option value="Self" selected>Self</option>
+      </select>
+      <input type="hidden" name="system.effectData.targetType" value="Self" />
+     {{else}}
+     <label class="target-label-trigger" data-tooltip="{{tooltip 'item.click-to-edit-target-parameters'}}">Target</label>
+      <select class="compact-select" name="system.effectData.targetType">
+        <option value="Any" {{#if (eq item.system.effectData.targetType "Any")}}selected{{/if}}>Any</option>
+        <option value="Self" {{#if (eq item.system.effectData.targetType "Self")}}selected{{/if}}>Self</option>
+        <option value="Friendly" {{#if (eq item.system.effectData.targetType "Friendly")}}selected{{/if}}>Friendly</option>
+        <option value="Hostile" {{#if (eq item.system.effectData.targetType "Hostile")}}selected{{/if}}>Hostile</option>
+        <option value="Ground" {{#if (eq item.system.effectData.targetType "Ground")}}selected{{/if}}>Ground</option>
+      </select>
+      {{/if}}
+      {{#unless (eq item.system.effectData.targetType "Self")}}
+      <select class="compact-select-spaced" name="system.effectData.rngType">
+        <option value="Single" {{#if (eq item.system.effectData.rngType "Single")}}selected{{/if}}>Single</option>
+        <option value="Multiple" {{#if (eq item.system.effectData.rngType "Multiple")}}selected{{/if}}>Multiple</option>
+        <option value="Line" {{#if (eq item.system.effectData.rngType "Line")}}selected{{/if}}>Line</option>
+        <option value="Area" {{#if (eq item.system.effectData.rngType "Area")}}selected{{/if}}>Area</option>
+        <option value="Cone" {{#if (eq item.system.effectData.rngType "Cone")}}selected{{/if}}>Cone</option>
+        <option value="Location" {{#if (eq item.system.effectData.rngType "Location")}}selected{{/if}}>Location</option>
+      </select>
+       {{/unless}}
+       {{#if (eq item.system.effectData.rngType "Multiple")}}
+       <div class="targets-row">
+         <label>Num</label>
+         <input type="number" name="system.effectData.targets" value="{{item.system.effectData.targets}}"
+                min="2" />
+       </div>
+       {{/if}}
+    </div>
+
+
+      {{#unless (eq item.system.effectData.targetType "Self")}}
+      <div class="range-group">
+        <label class="range-label-trigger" data-tooltip="{{tooltip 'item.click-to-edit-range-scaling'}}">Range</label>
+        <input type="text" name="system.effectData.rng" value="{{item.system.effectData.rng}}"
+                min="1" />
+          {{#if (eq item.system.effectData.rngType "Location")}}
+          <div class="radius-row">
+            <label data-tooltip="{{tooltip 'item.effect-size-at-the-target-location'}}">Radius</label>
+            <input type="number" name="system.effectData.locationRng" value="{{item.system.effectData.locationRng}}"
+                    min="1" />
+          </div>
+          {{/if}}
+      {{#unless (or (eq item.system.effectData.rngType "Line") (eq item.system.effectData.rngType "Cone") (and (eq item.system.effectData.rngType "Location") (not (gt item.system.effectData.locationRng 0))))}}
+      <select class="compact-select-spaced" name="system.effectData.rngShape">
+        <option value="Normal" {{#if (eq item.system.effectData.rngShape "Normal")}}selected{{/if}}>Cross</option>
+        <option value="Square" {{#if (eq item.system.effectData.rngShape "Square")}}selected{{/if}}>Square</option>
+      </select>
+      {{/unless}}
+      </div>
+      {{/unless}}
+    {{/if}}
+
+    {{#if typeFlags.isWeaponLike}}
+
+    <div class="damage-stat-selector">
+
+      <label data-tooltip="{{tooltip 'item.attacks-receive-a-damage-bonus-from-this-stat'}}">Atk Stat</label>
+
+
+      <select name="system.weapon.atkStat" class="atk-stat-select">
+        <option value="Might" {{#if (eq item.system.weapon.atkStat "Might")}}selected{{/if}}>Might</option>
+        <option value="Wit" {{#if (eq item.system.weapon.atkStat "Wit")}}selected{{/if}}>Wit</option>
+        <option value="Hybrid" {{#if (eq item.system.weapon.atkStat "Hybrid")}}selected{{/if}}>Hybrid</option>
+      </select>
+    </div>
+    {{/if}}
+
+    {{#if typeFlags.showLineOfSight}}
+    <div class="los-selector">
+
+      <label data-tooltip="{{tooltip 'item.what-this-item-s-range-ignores-when-checking-line-of-sight'}}">Line of Sight</label>
+
+
+      <select name="system.effectData.losRule" class="los-rule-select">
+        <option value="normal" {{#if (eq item.system.effectData.losRule "normal")}}selected{{/if}}>Normal</option>
+        <option value="ignoreHeight" {{#if (eq item.system.effectData.losRule "ignoreHeight")}}selected{{/if}}>Ignore Elev.</option>
+        <option value="ignoreLoS" {{#if (eq item.system.effectData.losRule "ignoreLoS")}}selected{{/if}}>Ignore LoS</option>
+      </select>
+    </div>
+    {{/if}}
+
+    {{#if typeFlags.isWeapon}}
+    <div class="twohanded-selector">
+      <label>Hands</label>
+      <select name="system.weapon.twoHanded">
+        <option value="false" {{#unless item.system.weapon.twoHanded}}selected{{/unless}}>One-Handed</option>
+        <option value="true" {{#if item.system.weapon.twoHanded}}selected{{/if}}>Two-Handed</option>
+      </select>
+    </div>
+    {{/if}}
+  </section>
+
+
+  <section class="item-right-divider" style="{{#if typeFlags.isCoinpurse}}display: none;{{/if}}">
+
+    <div class="tab-navigator">
+      <button type="button" class="tab-button {{#if (eq activeTab "overview")}}active{{/if}}" data-tab="overview">Overview</button>
+       {{#if typeFlags.showEffectsTab}}
+      <button type="button" class="tab-button {{#if (eq activeTab "effects")}}active{{/if}}" data-tab="effects">Effects</button>
+      {{/if}}
+      {{#unless typeFlags.isBooster}}
+      <button type="button" class="tab-button {{#if (eq activeTab "modifiers")}}active{{/if}}" data-tab="modifiers">Modifiers</button>
+      {{/unless}}
+      {{#if typeFlags.showRequirementsTab}}
+      <button type="button" class="tab-button {{#if (eq activeTab "requirements")}}active{{/if}}" data-tab="requirements">Requirements</button>
+      {{/if}}
+    </div>
+
+
+    <div class="tab-content">
+      <div class="tab-pane {{#if (eq activeTab "overview")}}active{{/if}}" data-tab-content="overview"{{#unless (eq activeTab "overview")}} style="display: none;"{{/unless}}>
+        {{!-- This contenteditable is not a form field. _wireDescription in ui/apps/sheets/item/sheet.mjs saves it
+          on blur, and bold and italic come from the browser's own shortcuts. --}}
+        <div class="item-description-editor" style="height: {{typeFlags.descriptionHeight}}px;">
+          <div class="ide-content" contenteditable="{{#if isGM}}true{{else}}false{{/if}}" data-placeholder="Item description">{{{descriptionHtml}}}</div>
+        </div>
+
+        {{#if typeFlags.isWeaponLike}}
+        <div class="stats-container">
+            <div class="weapon-stats">
+
+            <label>Stats</label>
+
+
+            <div class="wep-stats-grid">
+
+                <div class="stat-row">
+                <label>Atk</label>
+                <input type="text" name="system.weapon.atk" value="{{item.system.weapon.atk}}" />
+                </div>
+
+                <div class="stat-row">
+                <label>Brk</label>
+                <input type="number" name="system.weapon.brk" value="{{item.system.weapon.brk}}" />
+                </div>
+
+                <div class="stat-row">
+                <label>Rng</label>
+                <input type="text" name="system.weapon.rng" value="{{item.system.weapon.rng}}" />
+                </div>
+
+
+                <div class="stat-row">
+                <label>Wgt</label>
+                <input type="number" name="system.wgt" value="{{item.system.wgt}}" />
+                </div>
+
+                <div class="stat-row">
+                <label>Acc</label>
+                <input type="number" name="system.weapon.acc" value="{{item.system.weapon.acc}}" />
+                </div>
+
+                <div class="stat-row">
+                <label>Crit</label>
+                <input type="number" name="system.weapon.crit" value="{{item.system.weapon.crit}}" />
+                </div>
+            </div>
+            </div>
+
+            <div class="wep-damage-types">
+            <label class="dmg-conditions-trigger" data-tooltip="{{tooltip 'item.click-to-edit-per-damage-type-conditions'}}">Damage Types</label>
+            <div class="dmg-type-grid">
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.slashing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/slashing.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.slashing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.slashing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.slashing" {{#if item.system.weapon.dmgTypes.slashing}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.piercing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/piercing.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.piercing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.piercing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.piercing" {{#if item.system.weapon.dmgTypes.piercing}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.crushing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/crushing.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.crushing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.crushing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.crushing" {{#if item.system.weapon.dmgTypes.crushing}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.missile'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/missile.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.missile}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.missile'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.missile" {{#if item.system.weapon.dmgTypes.missile}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.fire'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/fire.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.fire}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.fire'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.fire" {{#if item.system.weapon.dmgTypes.fire}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.ice'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/ice.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.ice}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.ice'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.ice" {{#if item.system.weapon.dmgTypes.ice}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.lightning'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/lightning.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.lightning}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.lightning'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.lightning" {{#if item.system.weapon.dmgTypes.lightning}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.wind'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/wind.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.wind}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.wind'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.wind" {{#if item.system.weapon.dmgTypes.wind}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.arcane'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/arcane.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.arcane}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.arcane'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.arcane" {{#if item.system.weapon.dmgTypes.arcane}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.decay'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/decay.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.decay}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.decay'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.decay" {{#if item.system.weapon.dmgTypes.decay}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.shadow'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/shadow.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.shadow}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.shadow'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.shadow" {{#if item.system.weapon.dmgTypes.shadow}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.holy'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/holy.png"
+                    style="opacity: {{#if item.system.weapon.dmgTypes.holy}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.holy'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.weapon.dmgTypes.holy" {{#if item.system.weapon.dmgTypes.holy}}checked{{/if}} />
+                </label>
+            </div>
+            </div>
+        </div>
+        {{/if}}
+
+
+        {{#if typeFlags.isArmor}}
+        <div class="stats-container">
+            <div class="armor-stats">
+
+            <label>Stats</label>
+
+
+            <div class="armor-stats-grid">
+
+                <div class="stat-row">
+                <label>Stn</label>
+                <input type="number" name="system.armor.stn" value="{{item.system.armor.stn}}" />
+                </div>
+
+                <div class="stat-row">
+                <label>Def</label>
+                <input type="number" name="system.armor.def" value="{{item.system.armor.def}}" />
+                </div>
+
+
+                <div class="stat-row">
+                <label>Wgt</label>
+                <input type="number" name="system.wgt" value="{{item.system.wgt}}" />
+                </div>
+
+                <div class="stat-row">
+                <label>Res</label>
+                <input type="number" name="system.armor.res" value="{{item.system.armor.res}}" />
+                </div>
+            </div>
+            </div>
+
+            <div class="armor-vulns">
+            <label>Vulnerabilities</label>
+            <div class="dmg-type-grid">
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.slashing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/slashing.png"
+                    style="opacity: {{#if item.system.armor.vulns.slashing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.slashing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.slashing" {{#if item.system.armor.vulns.slashing}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.piercing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/piercing.png"
+                    style="opacity: {{#if item.system.armor.vulns.piercing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.piercing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.piercing" {{#if item.system.armor.vulns.piercing}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.crushing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/crushing.png"
+                    style="opacity: {{#if item.system.armor.vulns.crushing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.crushing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.crushing" {{#if item.system.armor.vulns.crushing}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.missile'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/missile.png"
+                    style="opacity: {{#if item.system.armor.vulns.missile}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.missile'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.missile" {{#if item.system.armor.vulns.missile}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.fire'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/fire.png"
+                    style="opacity: {{#if item.system.armor.vulns.fire}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.fire'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.fire" {{#if item.system.armor.vulns.fire}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.ice'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/ice.png"
+                    style="opacity: {{#if item.system.armor.vulns.ice}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.ice'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.ice" {{#if item.system.armor.vulns.ice}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.lightning'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/lightning.png"
+                    style="opacity: {{#if item.system.armor.vulns.lightning}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.lightning'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.lightning" {{#if item.system.armor.vulns.lightning}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.wind'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/wind.png"
+                    style="opacity: {{#if item.system.armor.vulns.wind}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.wind'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.wind" {{#if item.system.armor.vulns.wind}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.arcane'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/arcane.png"
+                    style="opacity: {{#if item.system.armor.vulns.arcane}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.arcane'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.arcane" {{#if item.system.armor.vulns.arcane}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.decay'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/decay.png"
+                    style="opacity: {{#if item.system.armor.vulns.decay}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.decay'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.decay" {{#if item.system.armor.vulns.decay}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.shadow'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/shadow.png"
+                    style="opacity: {{#if item.system.armor.vulns.shadow}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.shadow'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.shadow" {{#if item.system.armor.vulns.shadow}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.holy'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/holy.png"
+                    style="opacity: {{#if item.system.armor.vulns.holy}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.holy'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.vulns.holy" {{#if item.system.armor.vulns.holy}}checked{{/if}} />
+                </label>
+            </div>
+            </div>
+
+            <div class="armor-prots">
+            <label>Protections</label>
+            <div class="dmg-type-grid">
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.slashing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/slashing.png"
+                    style="opacity: {{#if item.system.armor.prots.slashing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.slashing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.slashing" {{#if item.system.armor.prots.slashing}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.piercing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/piercing.png"
+                    style="opacity: {{#if item.system.armor.prots.piercing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.piercing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.piercing" {{#if item.system.armor.prots.piercing}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.crushing'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/crushing.png"
+                    style="opacity: {{#if item.system.armor.prots.crushing}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.crushing'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.crushing" {{#if item.system.armor.prots.crushing}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.missile'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/missile.png"
+                    style="opacity: {{#if item.system.armor.prots.missile}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.missile'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.missile" {{#if item.system.armor.prots.missile}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.fire'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/fire.png"
+                    style="opacity: {{#if item.system.armor.prots.fire}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.fire'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.fire" {{#if item.system.armor.prots.fire}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.ice'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/ice.png"
+                    style="opacity: {{#if item.system.armor.prots.ice}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.ice'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.ice" {{#if item.system.armor.prots.ice}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.lightning'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/lightning.png"
+                    style="opacity: {{#if item.system.armor.prots.lightning}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.lightning'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.lightning" {{#if item.system.armor.prots.lightning}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.wind'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/wind.png"
+                    style="opacity: {{#if item.system.armor.prots.wind}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.wind'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.wind" {{#if item.system.armor.prots.wind}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.arcane'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/arcane.png"
+                    style="opacity: {{#if item.system.armor.prots.arcane}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.arcane'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.arcane" {{#if item.system.armor.prots.arcane}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.decay'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/decay.png"
+                    style="opacity: {{#if item.system.armor.prots.decay}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.decay'}}"/>
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.decay" {{#if item.system.armor.prots.decay}}checked{{/if}} />
+                </label>
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.shadow'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/shadow.png"
+                    style="opacity: {{#if item.system.armor.prots.shadow}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.shadow'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.shadow" {{#if item.system.armor.prots.shadow}}checked{{/if}} />
+                </label>
+
+                <label class="type-toggle" data-tooltip="{{tooltip 'type.holy'}}">
+                <img src="systems/emblem-rpg/assets/ui/dmg-types/holy.png"
+                    style="opacity: {{#if item.system.armor.prots.holy}}1{{else}}0.2{{/if}};"
+                    data-tooltip="{{tooltip 'type.holy'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.armor.prots.holy" {{#if item.system.armor.prots.holy}}checked{{/if}} />
+                </label>
+            </div>
+            </div>
+        </div>
+        {{/if}}
+
+        {{#if typeFlags.isMount}}
+        <div class="stats-container">
+          <div class="mount-stats">
+            <label>Stats</label>
+            <div class="mount-stats-grid">
+              <div class="stat-row">
+                <label>Mov</label>
+                <input type="number" name="system.mountData.stats.mov" value="{{item.system.mountData.stats.mov}}" />
+              </div>
+              <div class="stat-row">
+                <label>HP</label>
+                <input type="number" name="system.mountData.stats.hp" value="{{item.system.mountData.stats.hp}}" />
+              </div>
+              <div class="stat-row">
+                <label>Stn</label>
+                <input type="number" name="system.mountData.stats.stn" value="{{item.system.mountData.stats.stn}}" />
+              </div>
+              <div class="stat-row">
+                <label>Eva</label>
+                <input type="number" name="system.mountData.stats.eva" value="{{item.system.mountData.stats.eva}}" />
+              </div>
+              <div class="stat-row">
+                <label>Atk</label>
+                <input type="number" name="system.mountData.stats.atk" value="{{item.system.mountData.stats.atk}}" />
+              </div>
+              <div class="stat-row">
+                <label>Spd</label>
+                <input type="number" name="system.mountData.stats.spd" value="{{item.system.mountData.stats.spd}}" />
+              </div>
+              <div class="stat-row">
+                <label>Acc</label>
+                <input type="number" name="system.mountData.stats.acc" value="{{item.system.mountData.stats.acc}}" />
+              </div>
+              <div class="stat-row">
+                <label>Crit</label>
+                <input type="number" name="system.mountData.stats.crit" value="{{item.system.mountData.stats.crit}}" />
+              </div>
+            </div>
+          </div>
+          <div class="mount-unit-types">
+            <label>Unit Types</label>
+            <div class="mount-unit-type-grid">
+              <label class="type-toggle" data-tooltip="{{tooltip 'type.cavalry'}}">
+                <img src="systems/emblem-rpg/assets/ui/unit-types/cavalry-type.png"
+                     style="opacity: {{#if item.system.mountData.unitTypes.cavalry}}1{{else}}0.2{{/if}};"
+                     data-tooltip="{{tooltip 'type.cavalry'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.mountData.unitTypes.cavalry" {{#if item.system.mountData.unitTypes.cavalry}}checked{{/if}} />
+              </label>
+              <label class="type-toggle" data-tooltip="{{tooltip 'type.flying'}}">
+                <img src="systems/emblem-rpg/assets/ui/unit-types/flying-type.png"
+                     style="opacity: {{#if item.system.mountData.unitTypes.flying}}1{{else}}0.2{{/if}};"
+                     data-tooltip="{{tooltip 'type.flying'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.mountData.unitTypes.flying" {{#if item.system.mountData.unitTypes.flying}}checked{{/if}} />
+              </label>
+              <label class="type-toggle" data-tooltip="{{tooltip 'type.dragon'}}">
+                <img src="systems/emblem-rpg/assets/ui/unit-types/dragon-type.png"
+                     style="opacity: {{#if item.system.mountData.unitTypes.dragon}}1{{else}}0.2{{/if}};"
+                     data-tooltip="{{tooltip 'type.dragon'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.mountData.unitTypes.dragon" {{#if item.system.mountData.unitTypes.dragon}}checked{{/if}} />
+              </label>
+              <label class="type-toggle" data-tooltip="{{tooltip 'type.beast'}}">
+                <img src="systems/emblem-rpg/assets/ui/unit-types/beast-type.png"
+                     style="opacity: {{#if item.system.mountData.unitTypes.beast}}1{{else}}0.2{{/if}};"
+                     data-tooltip="{{tooltip 'type.beast'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.mountData.unitTypes.beast" {{#if item.system.mountData.unitTypes.beast}}checked{{/if}} />
+              </label>
+              <label class="type-toggle" data-tooltip="{{tooltip 'item.monstrosity'}}">
+                <img src="systems/emblem-rpg/assets/ui/unit-types/monster-type.png"
+                     style="opacity: {{#if item.system.mountData.unitTypes.monster}}1{{else}}0.2{{/if}};"
+                     data-tooltip="{{tooltip 'item.monstrosity'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.mountData.unitTypes.monster" {{#if item.system.mountData.unitTypes.monster}}checked{{/if}} />
+              </label>
+              <label class="type-toggle" data-tooltip="{{tooltip 'type.undead'}}">
+                <img src="systems/emblem-rpg/assets/ui/unit-types/undead-type.png"
+                     style="opacity: {{#if item.system.mountData.unitTypes.undead}}1{{else}}0.2{{/if}};"
+                     data-tooltip="{{tooltip 'type.undead'}}" />
+                <input class="hidden-checkbox" type="checkbox" name="system.mountData.unitTypes.undead" {{#if item.system.mountData.unitTypes.undead}}checked{{/if}} />
+              </label>
+            </div>
+          </div>
+        </div>
+        {{/if}}
+
+        {{#if typeFlags.isBooster}}
+        <div class="booster-row">
+          <label data-tooltip="{{tooltip 'item.booster-stats'}}">Stat</label>
+          <input type="text" name="system.consumableData.stat" value="{{item.system.consumableData.stat}}" />
+          <label data-tooltip="{{tooltip 'item.booster-stat-value'}}">Value</label>
+          <input type="number" name="system.consumableData.statValue" value="{{item.system.consumableData.statValue}}" step="1" />
+        </div>
+        <div class="booster-row">
+          <label data-tooltip="{{tooltip 'item.booster-growths'}}">Growth</label>
+          <input type="text" name="system.consumableData.growth" value="{{item.system.consumableData.growth}}" />
+          <label data-tooltip="{{tooltip 'item.booster-growth-value'}}">Value</label>
+          <input type="number" name="system.consumableData.growthValue" value="{{item.system.consumableData.growthValue}}" step="1" />
+        </div>
+        <input type="hidden" name="system.actionType" value="Standard Action" />
+        {{/if}}
+
+        {{#if typeFlags.isActivatedItem}}
+        <div class="action-type-row">
+            <label>Action Type</label>
+            <select name="system.actionType">
+              <option value="Standard Action" {{#if (eq item.system.actionType "Standard Action")}}selected{{/if}}>Standard Action</option>
+              <option value="Bonus Action" {{#if (eq item.system.actionType "Bonus Action")}}selected{{/if}}>Bonus Action</option>
+            </select>
+            <label class="retractable-row" data-tooltip="{{tooltip 'item.retractable'}}">
+              <span class="toggle-text">Retractable</span>
+              <input class="retractable-checkbox" type="checkbox" name="system.retractable" {{#if item.system.retractable}}checked{{/if}} {{#unless retractableAllowed}}disabled{{/unless}} />
+            </label>
+        </div>
+        {{/if}}
+
+        {{#if typeFlags.isShield}}
+        <div class="shield-stats-row">
+          <div class="stat-row">
+            <label>Wgt</label>
+            <input type="number" name="system.wgt" value="{{item.system.wgt}}" />
+          </div>
+          <div class="stat-row">
+          <label>Def</label>
+          <input type="number" name="system.armor.def" value="{{item.system.armor.def}}" />
+          </div>
+          <div class="stat-row">
+          <label>Res</label>
+          <input type="number" name="system.armor.res" value="{{item.system.armor.res}}" />
+          </div>
+          <div class="stat-row">
+          <label>Stn</label>
+          <input type="number" name="system.armor.stn" value="{{item.system.armor.stn}}" />
+          </div>
+        </div>
+        {{/if}}
+
+      </div>
+
+      <div class="tab-pane {{#if (eq activeTab "effects")}}active{{/if}}" data-tab-content="effects"{{#unless (eq activeTab "effects")}} style="display: none;"{{/unless}}>
+
+        {{#if typeFlags.showEffectivenessBoxes}}
+
+
+        <div class="effects-boxes-row">
+
+
+        <div class="effects-box effective-against-section">
+          <label class="effects-box-label">Effective Type(s)</label>
+          <div class="effective-icons">
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.armor'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/armored-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.armored}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.armor'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.armored" {{#if item.system.weapon.effectiveAgainst.armored}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.infantry'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/infantry-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.infantry}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.infantry'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.infantry" {{#if item.system.weapon.effectiveAgainst.infantry}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.cavalry'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/cavalry-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.cavalry}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.cavalry'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.cavalry" {{#if item.system.weapon.effectiveAgainst.cavalry}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.flying'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/flying-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.flying}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.flying'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.flying" {{#if item.system.weapon.effectiveAgainst.flying}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.beast'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/beast-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.beast}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.beast'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.beast" {{#if item.system.weapon.effectiveAgainst.beast}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.dragon'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/dragon-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.dragon}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.dragon'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.dragon" {{#if item.system.weapon.effectiveAgainst.dragon}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.undead'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/undead-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.undead}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.undead'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.undead" {{#if item.system.weapon.effectiveAgainst.undead}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.monster'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/monster-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.monster}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.monster'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.monster" {{#if item.system.weapon.effectiveAgainst.monster}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.magic'}}">
+              <img src="systems/emblem-rpg/assets/ui/unit-types/magic-type.png"
+                   style="opacity: {{#if item.system.weapon.effectiveAgainst.magic}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.magic'}}"/>
+              <input type="checkbox" name="system.weapon.effectiveAgainst.magic" {{#if item.system.weapon.effectiveAgainst.magic}}checked{{/if}} />
+            </label>
+          </div>
+        </div>
+
+
+        <div class="effects-box weapon-advantage-section">
+          <label class="effects-box-label">Weapon Breaker(s)</label>
+          <div class="breaker-icons">
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.blade'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-blade.png"
+                   style="opacity: {{#if item.system.weapon.breaker.blade}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.blade'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.blade" {{#if item.system.weapon.breaker.blade}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.polearm'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-polearm.png"
+                   style="opacity: {{#if item.system.weapon.breaker.polearm}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.polearm'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.polearm" {{#if item.system.weapon.breaker.polearm}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.brawling'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-brawling.png"
+                   style="opacity: {{#if item.system.weapon.breaker.brawling}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.brawling'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.brawling" {{#if item.system.weapon.breaker.brawling}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.heavy'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-heavy.png"
+                   style="opacity: {{#if item.system.weapon.breaker.heavy}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.heavy'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.heavy" {{#if item.system.weapon.breaker.heavy}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.bow'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-bow.png"
+                   style="opacity: {{#if item.system.weapon.breaker.bow}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.bow'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.bow" {{#if item.system.weapon.breaker.bow}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.covert'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-covert.png"
+                   style="opacity: {{#if item.system.weapon.breaker.covert}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.covert'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.covert" {{#if item.system.weapon.breaker.covert}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.elemental'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-element.png"
+                   style="opacity: {{#if item.system.weapon.breaker.elemental}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.elemental'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.elemental" {{#if item.system.weapon.breaker.elemental}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.divine'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-divine.png"
+                   style="opacity: {{#if item.system.weapon.breaker.divine}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.divine'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.divine" {{#if item.system.weapon.breaker.divine}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.occult'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-occult.png"
+                   style="opacity: {{#if item.system.weapon.breaker.occult}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.occult'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.occult" {{#if item.system.weapon.breaker.occult}}checked{{/if}} />
+            </label>
+
+            <label class="unit-toggle" data-tooltip="{{tooltip 'type.arcane'}}">
+              <img src="systems/emblem-rpg/assets/ui/proficiencies/prof-arcane.png"
+                   style="opacity: {{#if item.system.weapon.breaker.arcane}}1.0{{else}}0.2{{/if}};"
+                   data-tooltip="{{tooltip 'type.arcane'}}"/>
+              <input type="checkbox" name="system.weapon.breaker.arcane" {{#if item.system.weapon.breaker.arcane}}checked{{/if}} />
+            </label>
+          </div>
+        </div>
+
+        <div class="effects-box extra-attacks-section">
+          <label class="effects-box-label">Extra Attacks</label>
+          <input class="extra-attacks-bonus-input {{#if item.system.weapon.noExtraAttacks}}is-disabled{{/if}}" type="number" name="system.weapon.extraAttacks" value="{{item.system.weapon.extraAttacks}}" min="0" step="1" {{#if item.system.weapon.noExtraAttacks}}disabled{{/if}} />
+          <label class="extra-attacks-disable" data-tooltip="{{tooltip 'item.click-toggle-grey-off-red-on'}}">
+            <span class="toggle-text">Disabled</span>
+            <input class="no-extra-attacks-checkbox" type="checkbox" name="system.weapon.noExtraAttacks" {{#if item.system.weapon.noExtraAttacks}}checked{{/if}} />
+          </label>
+        </div>
+
+        {{!-- Effective Types spans both grid rows, and Add Effect sits under the Weapon Breaker and Extra Attacks
+          boxes. --}}
+        <div class="effects-row-hit-effect">
+          <button type="button" class="add-effect-btn">
+            <i class="fas fa-plus"></i> Add Effect
+          </button>
+        </div>
+
+        </div>
+
+        {{!-- _wireEffects in ui/apps/sheets/item/sheet.mjs makes these rows drag-reorderable and saves the new
+          order to system.effects. --}}
+        <div class="effects-entries">
+          {{#each item.system.effects as |entry idx|}}
+          <div class="effects-entry" data-effect-index="{{idx}}" draggable="true">
+            <span class="eff-row-drag" data-tooltip="{{tooltip 'item.drag-to-reorder'}}"><i class="fas fa-grip-vertical"></i></span>
+            <span class="eff-row-pill eff-row-pill-{{entry.trigger}}">{{triggerLabel entry.trigger}}</span>
+            <input type="text" class="eff-row-name" data-effect-index="{{idx}}" value="{{entry.name}}" placeholder="Effect name" />
+            <span class="eff-row-summary" data-tooltip="{{entry.action.steps.length}} step(s)">{{entry.action.steps.length}} step{{#unless (eq entry.action.steps.length 1)}}s{{/unless}}</span>
+            <button type="button" class="eff-row-btn eff-row-edit" data-effect-index="{{idx}}" data-tooltip="{{tooltip 'item.edit'}}"><i class="fas fa-pen"></i></button>
+            <button type="button" class="eff-row-btn eff-row-delete" data-effect-index="{{idx}}" data-tooltip="{{tooltip 'item.delete'}}"><i class="fas fa-trash"></i></button>
+          </div>
+          {{/each}}
+        </div>
+
+        {{/if}}
+
+        {{#if typeFlags.isPassive}}
+
+        <div class="eff-groupb-header">
+          <button type="button" class="eff-groupb-btn add-effect-btn">
+            <i class="fas fa-plus"></i> Add Effect
+          </button>
+        </div>
+
+        <div class="effects-entries">
+          {{#each item.system.effects as |entry idx|}}
+          <div class="effects-entry" data-effect-index="{{idx}}" draggable="true">
+            <span class="eff-row-drag" data-tooltip="{{tooltip 'item.drag-to-reorder'}}"><i class="fas fa-grip-vertical"></i></span>
+            <span class="eff-row-pill eff-row-pill-{{entry.trigger}}">{{triggerLabel entry.trigger}}</span>
+            <input type="text" class="eff-row-name" data-effect-index="{{idx}}" value="{{entry.name}}" placeholder="Effect name" />
+            <span class="eff-row-summary" data-tooltip="{{entry.action.steps.length}} step(s)">{{entry.action.steps.length}} step{{#unless (eq entry.action.steps.length 1)}}s{{/unless}}</span>
+            <button type="button" class="eff-row-btn eff-row-edit" data-effect-index="{{idx}}" data-tooltip="{{tooltip 'item.edit'}}"><i class="fas fa-pen"></i></button>
+            <button type="button" class="eff-row-btn eff-row-delete" data-effect-index="{{idx}}" data-tooltip="{{tooltip 'item.delete'}}"><i class="fas fa-trash"></i></button>
+          </div>
+          {{/each}}
+        </div>
+
+        {{/if}}
+
+        {{#if typeFlags.isActivatedItem}}
+
+        <div class="eff-groupb-header">
+          <button type="button" class="eff-groupb-btn add-effect-btn">
+            <i class="fas fa-plus"></i> Add Effect
+          </button>
+          <button type="button" class="eff-groupb-btn open-params-btn">
+            {{#if hasParams}}
+              <i class="fas fa-square-check"></i> Edit Params
+            {{else}}
+              <i class="fas fa-square"></i> Add Params
+            {{/if}}
+          </button>
+        </div>
+
+        <div class="effects-entries">
+          {{#each item.system.effects as |entry idx|}}
+          <div class="effects-entry" data-effect-index="{{idx}}" draggable="true">
+            <span class="eff-row-drag" data-tooltip="{{tooltip 'item.drag-to-reorder'}}"><i class="fas fa-grip-vertical"></i></span>
+            <span class="eff-row-pill eff-row-pill-{{entry.trigger}}">{{triggerLabel entry.trigger}}</span>
+            <input type="text" class="eff-row-name" data-effect-index="{{idx}}" value="{{entry.name}}" placeholder="Effect name" />
+            <span class="eff-row-summary" data-tooltip="{{entry.action.steps.length}} step(s)">{{entry.action.steps.length}} step{{#unless (eq entry.action.steps.length 1)}}s{{/unless}}</span>
+            <button type="button" class="eff-row-btn eff-row-edit" data-effect-index="{{idx}}" data-tooltip="{{tooltip 'item.edit'}}"><i class="fas fa-pen"></i></button>
+            <button type="button" class="eff-row-btn eff-row-delete" data-effect-index="{{idx}}" data-tooltip="{{tooltip 'item.delete'}}"><i class="fas fa-trash"></i></button>
+          </div>
+          {{/each}}
+        </div>
+
+        {{/if}}
+
+      </div>
+      {{#unless typeFlags.isBooster}}
+      <div class="tab-pane {{#if (eq activeTab "modifiers")}}active{{/if}}" data-tab-content="modifiers"{{#unless (eq activeTab "modifiers")}} style="display: none;"{{/unless}}>
+
+        <div class="modifiers-header-row">
+          <button type="button" class="add-modifier{{#if item.system.aura.enabled}} add-modifier--with-aura{{/if}}">
+            <i class="fas fa-plus"></i> Add Modifier
+          </button>
+          <div class="aura-toggle-group" data-tooltip="{{tooltip 'item.emit-an-aura-with-the-aura-modifiers-below'}}">
+            <label class="aura-toggle-label">
+              <span>Enable Aura</span>
+              <input type="checkbox" class="aura-enabled-checkbox" name="system.aura.enabled" {{#if item.system.aura.enabled}}checked{{/if}} />
+            </label>
+            <label class="aura-rng-label">
+              <span>Rng</span>
+              <input type="number" class="aura-rng-input" name="system.aura.rng"
+                     value="{{item.system.aura.rng}}" min="0" max="5"
+                     {{#unless item.system.aura.enabled}}disabled{{/unless}} />
+            </label>
+          </div>
+        </div>
+
+
+        <div class="modifier-entries">
+          {{#each item.system.modifiers as |modifier i|}}
+            <div class="modifier-entry{{#if (eq modifier.kind "aura")}} modifier-entry--aura{{/if}}" draggable="true" data-modifier-index="{{i}}">
+
+              {{!-- compileCharacterData applies modifiers in row order, unconditional ones before gated ones. --}}
+              <span class="modifier-drag-handle" data-tooltip="{{tooltip 'item.drag-to-reorder-top-applied-first'}}">
+                <i class="fas fa-grip-vertical"></i>
+              </span>
+
+              {{#if (eq modifier.kind "aura")}}
+              {{!-- The badge marks an aura modifier. The saved kind comes from the hidden kind input below. --}}
+              <span class="modifier-aura-badge" data-tooltip="{{tooltip 'item.aura-modifier-applies-to-actors-in-range-by-target-type'}}">
+                <i class="fas fa-broadcast-tower"></i>
+              </span>
+              {{/if}}
+
+
+              <input type="text" name="system.modifiers.{{i}}.name"
+                    value="{{modifier.name}}"
+                    placeholder="Name" />
+
+              {{!-- The sheet submits the whole form on every change, and the submitted modifiers replace the saved
+                list. These hidden inputs carry the fields the modifier dialog edits, so each submit keeps them. --}}
+              <input type="hidden" name="system.modifiers.{{i}}.target" value="{{modifier.target}}" />
+              <input type="hidden" name="system.modifiers.{{i}}.quantity" value="{{modifier.quantity}}" />
+              <input type="hidden" name="system.modifiers.{{i}}.condition" value="{{modifier.condition}}" />
+              <input type="hidden" name="system.modifiers.{{i}}.requiresEquipped" value="{{modifier.requiresEquipped}}" />
+              <input type="hidden" name="system.modifiers.{{i}}.requiresActivation" value="{{modifier.requiresActivation}}" />
+              <input type="hidden" name="system.modifiers.{{i}}.stackable" value="{{modifier.stackable}}" />
+              <input type="hidden" name="system.modifiers.{{i}}.kind" value="{{modifier.kind}}" />
+              <input type="hidden" name="system.modifiers.{{i}}.targetType" value="{{modifier.targetType}}" />
+
+
+              <button type="button" class="edit-modifier" data-index="{{i}}" data-tooltip="{{tooltip 'item.edit'}}">
+                <i class="fas fa-pen"></i>
+              </button>
+
+
+              <button type="button" class="delete-modifier" data-index="{{i}}" data-tooltip="{{tooltip 'item.delete'}}">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          {{/each}}
+
+          {{#unless item.system.modifiers.length}}
+            <div class="no-entries-msg">
+              No modifiers defined. Click "Add Modifier" to create one.
+            </div>
+          {{/unless}}
+        </div>
+      </div>
+      {{/unless}}
+      {{#if typeFlags.showRequirementsTab}}
+      <div class="tab-pane {{#if (eq activeTab "requirements")}}active{{/if}}" data-tab-content="requirements"{{#unless (eq activeTab "requirements")}} style="display: none;"{{/unless}}>
+        {{!-- _wireRequirements in ui/apps/sheets/item/sheet.mjs wires the Add, Edit and Delete controls below. --}}
+        <div class="requirements-header-row">
+          <button type="button" class="add-requirement-btn">
+            <i class="fas fa-plus"></i> Add Activation Requirement
+          </button>
+        </div>
+
+        <div class="requirement-entries">
+          {{#each item.system.requirements as |entry idx|}}
+          <div class="requirement-entry" data-requirement-index="{{idx}}" draggable="true">
+            <span class="req-row-drag" data-tooltip="{{tooltip 'item.drag-to-reorder'}}"><i class="fas fa-grip-vertical"></i></span>
+            <span class="req-row-pill req-row-pill-{{entry.type}}">{{#if (eq entry.type 'terrainGeometry')}}Placement{{else}}Condition{{/if}}</span>
+            <input type="text" class="req-row-name" data-requirement-index="{{idx}}" value="{{entry.name}}" placeholder="Requirement name" />
+            <button type="button" class="req-row-btn req-row-edit" data-requirement-index="{{idx}}" data-tooltip="{{tooltip 'item.edit'}}"><i class="fas fa-pen"></i></button>
+            <button type="button" class="req-row-btn req-row-delete" data-requirement-index="{{idx}}" data-tooltip="{{tooltip 'item.delete'}}"><i class="fas fa-trash"></i></button>
+          </div>
+          {{/each}}
+
+          {{#unless item.system.requirements.length}}
+          <div class="no-entries-msg">
+            No activation requirements defined. Click "Add Activation Requirement" to create one.
+          </div>
+          {{/unless}}
+        </div>
+      </div>
+      {{/if}}
+    </div>
+  </section>
+
+    {{#if owner}}
+  <div class="item-owner-badge {{#if owner.isNpc}}is-npc-owner{{/if}}" data-tooltip="{{owner.tooltip}}">
+      {{#if showOwnerStealControls}}
+        <label class="item-owner-flag-label">Flag:</label>
+        <select class="item-owner-flag" name="system.stealable.flag">
+          <option value="None"      {{#if (eq owner.stealableFlag "None")}}selected{{/if}}>None</option>
+          <option value="Drops"     {{#if (eq owner.stealableFlag "Drops")}}selected{{/if}}>Drops</option>
+          <option value="Stealable" {{#if (eq owner.stealableFlag "Stealable")}}selected{{/if}}>Stealable</option>
+        </select>
+        {{#unless (eq owner.stealableFlag "None")}}
+          <label class="item-owner-dc-label">DC:</label>
+          <input class="item-owner-dc" type="number" name="system.stealable.dc" value="{{owner.stealableDC}}" min="0" />
+        {{/unless}}
+        {{#if (eq owner.stealableFlag "Drops")}}
+          <label class="item-owner-dc-label">%</label>
+          <input class="item-owner-dc item-owner-chance" type="number" name="system.stealable.chance" value="{{owner.stealableChance}}" min="0" max="100" />
+        {{/if}}
+        <span class="item-owner-label">Owner:</span>
+      {{else}}
+        <span class="item-owner-label">Owner:</span>
+        <span class="item-owner-name">{{owner.name}}</span>
+      {{/if}}
+      <img class="item-owner-img" src="{{owner.img}}" alt="{{owner.name}}" style="{{avatarScale owner clip=true}}" />
+    </div>
+    {{/if}}
+
+    {{#if typeFlags.showValue}}
+    {{#unless hideValueField}}
+
+    <div class="cost-tracker{{#if tradeDisabled}} trade-disabled{{/if}}">
+
+      {{#if typeFlags.isCoinpurse}}
+      <label>Total</label>
+      {{else}}
+      <label class="trade-toggle" data-action="toggleTradeDisabled"
+             data-tooltip="{{#if tradeDisabled}}Not tradeable{{else}}Mark untradeable{{/if}}">
+        Value
+      </label>
+      {{/if}}
+
+
+      <div class="cost-input-row">
+        <input type="number" name="system.cost" value="{{item.system.cost}}" max="99999" min="0" />
+        <span>GP</span>
+      </div>
+    </div>
+    {{/unless}}
+    {{/if}}
+</form>

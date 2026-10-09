@@ -1,0 +1,77 @@
+<form class="emblem-rpg vendor-sheet" autocomplete="off">
+
+  {{#*inline "vendorItem"}}
+  <div class="vendor-item{{#if this.locked}} is-locked{{/if}}" data-item-id="{{this.id}}" draggable="true"
+       {{#if @root.isGM}}data-tooltip="{{#if this.locked}}Locked through Clear Stock{{/if}}"{{/if}}>
+    <img class="vendor-item-img" src="{{this.img}}" alt="{{this.name}}" />
+    <div class="vendor-item-details">
+      <div class="vendor-item-name">{{this.name}}</div>
+      <div class="vendor-item-stock">
+        <span class="vendor-stock-label">In Stock:</span>
+        {{#if @root.isEditable}}
+        <input type="number" class="vendor-stock-input" min="1" step="1" placeholder="[Unlimited]" value="{{this.stock}}" />
+        {{else}}
+        <span class="vendor-stock-value">{{#if this.stock}}{{this.stock}}{{else}}Unlimited{{/if}}</span>
+        {{/if}}
+      </div>
+    </div>
+    <div class="vendor-item-cost"><i class="fas fa-coins"></i> {{this.cost}}</div>
+    {{#if @root.isGM}}
+    <div class="vendor-item-actions">
+      <button type="button" class="vendor-item-btn delete-item-btn" data-tooltip="{{tooltip 'vendor.remove-item'}}">
+        <i class="fas fa-trash"></i>
+      </button>
+    </div>
+    {{/if}}
+  </div>
+  {{/inline}}
+
+  <div class="vendor-box-shadow"></div>
+
+  <header class="vendor-header">
+    <div class="vendor-portrait" data-action="editImage">
+      <img src="{{actor.img}}" alt="{{actor.name}}" style="{{avatarScale actor clip=true}}" />
+    </div>
+    <div class="vendor-info">
+      <input class="vendor-name-input"
+             name="name"
+             type="text"
+             placeholder="Vendor Name"
+             maxlength="30"
+             value="{{actor.name}}" />
+      <div class="vendor-subtitle">Merchant</div>
+      <div class="vendor-stats-row">
+        <div class="vendor-disposition">
+          <span class="vendor-disposition-label">Disposition to Buyer:</span>
+          {{#if isEditable}}
+          <input class="vendor-disposition-input" type="number" min="-10" max="10" step="1" value="{{system.disposition}}" />
+          {{else}}
+          <span class="vendor-disposition-value">{{system.disposition}}</span>
+          {{/if}}
+        </div>
+        {{#unless isTokenActor}}
+        <label class="vendor-linked" data-tooltip="{{tooltip 'vendor.link-actor'}}">
+          <input type="checkbox" class="vendor-linked-input" {{#if actorLink}}checked{{/if}} {{#unless isEditable}}disabled{{/unless}} />
+          <span>Linked Actor</span>
+        </label>
+        {{/unless}}
+        <div class="vendor-gp">
+          <i class="fas fa-coins"></i>
+          <input class="vendor-gp-input" type="number" name="system.gp" value="{{system.gp}}" min="0" placeholder="0" />
+          <span class="vendor-gp-unit">GP</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="vendor-tabs">
+    {{> category-tabs categories=categoryList tabClass="vendor-tab-button" iconClass="vendor-tab-icon" badgeClass="vendor-tab-badge" labels=true}}
+  </nav>
+
+  <section class="vendor-inventory">
+    {{#each categoryList}}
+    {{#> category-pane paneClass="vendor-tab-content" gridClass="vendor-item-grid" emptyClass="vendor-empty-message"}}{{#each items}}{{> vendorItem}}{{/each}}{{/category-pane}}
+    {{/each}}
+  </section>
+
+</form>
